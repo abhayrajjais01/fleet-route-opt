@@ -58,3 +58,7 @@ yarn-error.log*
 *.swo
 .DS_Store
 Thumbs.db
+
+# Docs & Planning Documentation (Local Workspace Only)
+Docs/
+*.pdf
