@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.api.v1.health import router as health_router
+from app.api.v1.fleet import router as fleet_router
 
 api_router = APIRouter()
 
@@ -9,12 +10,12 @@ api_router.include_router(health_router, prefix="")
 # =====================================================================
 # TRACK A MOUNT POINTS (Manthan Nimodiya - Optimization & Operations)
 # =====================================================================
-# from app.api.v1.fleet import router as fleet_router
+api_router.include_router(fleet_router, prefix="/fleet", tags=["Fleet Asset Management"])
+
+# Future Track A endpoints:
 # from app.api.v1.shipments import router as shipments_router
 # from app.api.v1.routes import router as routes_router
 # from app.api.v1.tracking import router as tracking_router
-#
-# api_router.include_router(fleet_router, prefix="/fleet", tags=["Fleet Asset Management"])
 # api_router.include_router(shipments_router, prefix="/shipments", tags=["Shipment Orders & Ingestion"])
 # api_router.include_router(routes_router, prefix="/routes", tags=["Route Optimization (VRPTW)"])
 # api_router.include_router(tracking_router, prefix="/tracking", tags=["Live Tracking & FSM"])
