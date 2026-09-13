@@ -31,40 +31,65 @@ export interface LoginPayload {
 // ----------------------------------------------------------------------------
 // 2. FLEET ASSET MANAGEMENT (US-002)
 // ----------------------------------------------------------------------------
-export type VehicleStatus = 'IDLE' | 'ASSIGNED' | 'IN_TRANSIT' | 'MAINTENANCE';
+export type VehicleType = 'VAN' | 'BOX_TRUCK' | 'SEMI_TRUCK' | 'EV';
+export type VehicleStatus = 'AVAILABLE' | 'IN_TRANSIT' | 'MAINTENANCE' | 'DECOMMISSIONED';
 
 export interface Vehicle {
   id: number;
+  name: string;
   plate_number: string;
-  vehicle_type: 'LIGHT_VAN' | 'MEDIUM_TRUCK' | 'HEAVY_FREIGHT';
+  vehicle_type: VehicleType;
   max_payload_kg: number;
   max_volume_m3: number;
-  fuel_efficiency_km_per_l: number;
+  fuel_efficiency_kpl: number;
   current_status: VehicleStatus;
-  current_hub_id?: number;
+  assigned_hub_id: number;
+  current_latitude?: number | null;
+  current_longitude?: number | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
-export type DriverStatus = 'OFF_DUTY' | 'AVAILABLE' | 'DRIVING' | 'RESTING';
+export type LicenseType = 'CLASS_A' | 'CLASS_B' | 'COMMERCIAL';
+export type DriverStatus = 'ON_DUTY' | 'OFF_DUTY' | 'ON_TRIP' | 'RESTING';
 
 export interface Driver {
   id: number;
   full_name: string;
   license_number: string;
-  shift_start: string; // e.g. "08:00"
-  shift_end: string;   // e.g. "17:00"
+  license_type: LicenseType;
+  phone_number: string;
+  status: DriverStatus;
   max_driving_hours_per_day: number;
-  current_status: DriverStatus;
-  current_vehicle_id?: number;
+  assigned_hub_id: number;
+  user_id?: number | null;
+  current_vehicle_id?: number | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Hub {
   id: number;
   name: string;
   code: string;
+  address: string;
   latitude: number;
   longitude: number;
-  address: string;
-  capacity_vehicles: number;
+  contact_phone: string;
+  operating_hours: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FleetOverview {
+  total_vehicles: number;
+  available_vehicles: number;
+  in_transit_vehicles: number;
+  maintenance_vehicles: number;
+  total_drivers: number;
+  on_duty_drivers: number;
+  total_hubs: number;
+  fleet_capacity_kg: number;
 }
 
 // ----------------------------------------------------------------------------

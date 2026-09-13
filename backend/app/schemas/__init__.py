@@ -1,3 +1,4 @@
+"""Pydantic data contracts / schemas module."""
 from app.schemas.health import HealthCheckResponse, DatabaseStatus
 from app.schemas.auth import (
     UserBase,
@@ -7,6 +8,21 @@ from app.schemas.auth import (
     LoginRequest,
     Token,
     TokenPayload,
+)
+from app.schemas.fleet import (
+    HubBase,
+    HubCreate,
+    HubUpdate,
+    HubResponse,
+    VehicleBase,
+    VehicleCreate,
+    VehicleUpdate,
+    VehicleResponse,
+    DriverBase,
+    DriverCreate,
+    DriverUpdate,
+    DriverResponse,
+    FleetOverviewResponse,
 )
 
 __all__ = [
@@ -19,4 +35,17 @@ __all__ = [
     "LoginRequest",
     "Token",
     "TokenPayload",
+    "HubBase",
+    "HubCreate",
+    "HubUpdate",
+    "HubResponse",
+    "VehicleBase",
+    "VehicleCreate",
+    "VehicleUpdate",
+    "VehicleResponse",
+    "DriverBase",
+    "DriverCreate",
+    "DriverUpdate",
+    "DriverResponse",
+    "FleetOverviewResponse",
 ]

@@ -12,6 +12,7 @@ interface AuthContextType {
   register: (email: string, password: string, fullName: string, role?: UserRole) => Promise<void>;
   logout: () => void;
   quickSwitchDemo: (role: UserRole) => Promise<void>;
+  switchRole: (role: UserRole) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -104,6 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         register,
         logout,
         quickSwitchDemo,
+        switchRole: quickSwitchDemo,
       }}
     >
       {children}
