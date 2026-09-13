@@ -21,6 +21,18 @@ The platform fuses **deterministic graph optimization algorithms (DSA)** with **
 
 ---
 
+## Live Roadmap & Milestone Status
+
+| Milestone | Scope & Deliverables | Track A (Manthan) | Track B (Abhayraj) | Status |
+| :--- | :--- | :--- | :--- | :---: |
+| **Week 1** | **Foundations, Security & App Shell** | FastAPI Core, DB Engine, Health Probes | RBAC Auth, JWT Security, Command Center UI Shell | `COMPLETED` |
+| **Week 2** | **Fleet Asset Management (US-002)** | Fleet CRUD APIs, DB Models, Constraints | Interactive Fleet Workspace UI, Modals, Typed Client | `COMPLETED` |
+| **Week 3** | **Shipments Engine & Audit Trail** | Shipment Models, Geocoding, Clustering | Immutable AuditLog Model, Audit Explorer UI | `READY` |
+| **Week 4** | **Batch Ingestion & Month 1 Polish** | CSV/JSON Batch Ingestion & Cluster Preview| Asset Role Guards, Polish & Month 1 Regression | `PLANNED` |
+
+- **Automated Backend Tests**: `python -m pytest backend/tests -v` → **12 / 12 PASSED (100%)**
+- **Frontend Production Build**: `npm run build` → **6 / 6 Static Routes Compiled (100%)**
+
 ## Architectural Highlights
 
 ```
