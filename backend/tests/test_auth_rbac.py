@@ -1,41 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
-from app.main import app
-from app.core.database import Base, get_db
-from app.core.security import hash_password, verify_password, create_access_token
+from app.core.security import hash_password, verify_password
 from app.models.user import User, UserRole
-
-# Use in-memory SQLite database for isolated unit tests
-TEST_DATABASE_URL = "sqlite:///:memory:"
-engine = create_engine(
-    TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-client = TestClient(app)
-
-
-@pytest.fixture(autouse=True)
-def setup_database():
-    Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
 
 
 def test_password_hashing():
@@ -46,7 +12,7 @@ def test_password_hashing():
     assert verify_password("WrongPassword!", hashed) is False
 
 
-def test_user_registration():
+def test_user_registration(client: TestClient):
     payload = {
         "email": "dispatcher@fleetopt.io",
         "password": "Password123!",
@@ -63,7 +29,7 @@ def test_user_registration():
     assert data["user"]["role"] == "ADMIN"
 
 
-def test_duplicate_registration_fails():
+def test_duplicate_registration_fails(client: TestClient):
     payload = {
         "email": "unique@fleetopt.io",
         "password": "Password123!",
@@ -78,7 +44,7 @@ def test_duplicate_registration_fails():
     assert "already exists" in r2.json()["detail"]
 
 
-def test_login_flow():
+def test_login_flow(client: TestClient):
     # Register user first
     reg_payload = {
         "email": "driver@fleetopt.io",
@@ -113,7 +79,7 @@ def test_login_flow():
     assert bad_resp.status_code == 401
 
 
-def test_seed_demo_accounts():
+def test_seed_demo_accounts(client: TestClient):
     resp = client.post("/api/v1/auth/seed-demo-users")
     assert resp.status_code == 200
     data = resp.json()
