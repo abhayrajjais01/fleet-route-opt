@@ -2,9 +2,27 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Truck, ShieldCheck, Activity, BrainCircuit } from 'lucide-react';
+import { Truck, LogIn, LogOut, User as UserIcon } from 'lucide-react';
+import { useAuth } from '@/lib/authContext';
 
 export default function Navbar() {
+  const { user, logout } = useAuth();
+
+  const getRoleBadgeColor = (role?: string) => {
+    switch (role) {
+      case 'ADMIN':
+        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+      case 'DISPATCHER':
+        return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+      case 'DRIVER':
+        return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+      case 'FLEET_MANAGER':
+        return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
+      default:
+        return 'bg-slate-700 text-slate-300 border-slate-600';
+    }
+  };
+
   return (
     <header className="h-16 bg-command-surface border-b border-command-border px-6 flex items-center justify-between sticky top-0 z-40">
       <div className="flex items-center gap-3">
@@ -23,15 +41,35 @@ export default function Navbar() {
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          Backend API: Online
-        </div>
-
-        <div className="text-xs text-command-muted border-l border-command-border pl-4 flex items-center gap-2">
-          <span>Active Track:</span>
-          <span className="text-slate-300 font-mono">Parallel Dev Mode</span>
-        </div>
+        {user ? (
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-xs font-semibold text-white">{user.full_name}</p>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded font-mono border ${getRoleBadgeColor(
+                  user.role
+                )}`}
+              >
+                {user.role}
+              </span>
+            </div>
+            <button
+              onClick={logout}
+              title="Sign Out"
+              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <Link
+            href="/login"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span>Sign In / Demo</span>
+          </Link>
+        )}
       </div>
     </header>
   );
