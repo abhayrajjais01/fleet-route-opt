@@ -5,15 +5,13 @@ from app.api.v1.fleet import router as fleet_router
 
 api_router = APIRouter()
 
-# System Probes & Health
+# Core System Health Probes
 api_router.include_router(health_router, prefix="")
 
 # =====================================================================
-# TRACK A MOUNT POINTS (Manthan Nimodiya - Optimization & Operations)
+# TRACK A: Operations & Optimization Engine (Manthan Nimodiya)
 # =====================================================================
 api_router.include_router(fleet_router, prefix="/fleet", tags=["Fleet Asset Management"])
-
-# Future Track A endpoints:
 # from app.api.v1.shipments import router as shipments_router
 # from app.api.v1.routes import router as routes_router
 # from app.api.v1.tracking import router as tracking_router
@@ -22,11 +20,9 @@ api_router.include_router(fleet_router, prefix="/fleet", tags=["Fleet Asset Mana
 # api_router.include_router(tracking_router, prefix="/tracking", tags=["Live Tracking & FSM"])
 
 # =====================================================================
-# TRACK B MOUNT POINTS (Abhayraj Jaiswal - GenAI Copilot & Governance)
+# TRACK B: Multi-Agent AI & Governance (Abhayraj Jaiswal)
 # =====================================================================
 api_router.include_router(auth_router, prefix="/auth", tags=["Authentication & RBAC"])
-
-# Future Track B endpoints:
 # from app.api.v1.copilot import router as copilot_router
 # from app.api.v1.rag import router as rag_router
 # from app.api.v1.audit import router as audit_router

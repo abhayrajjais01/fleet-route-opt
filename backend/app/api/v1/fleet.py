@@ -1,4 +1,4 @@
-"""RESTful APIs for Fleet Asset Management (Hubs, Vehicles, Drivers) (US-002)."""
+"""RESTful API endpoints for Fleet Assets Management (US-002 Track A)."""
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -9,9 +9,9 @@ from app.models.fleet import (
     Hub,
     Vehicle,
     Driver,
+    VehicleType,
     VehicleStatus,
     DriverStatus,
-    VehicleType,
 )
 from app.schemas.fleet import (
     HubCreate,
@@ -30,19 +30,38 @@ router = APIRouter()
 
 
 # ==================== FLEET OVERVIEW ==================== #
-@router.get("/overview", response_model=FleetOverviewResponse, summary="Get fleet aggregated stats")
+@router.get("/overview", response_model=FleetOverviewResponse, summary="Get high-level fleet metrics")
 def get_fleet_overview(db: Session = Depends(get_db)):
-    """Returns real-time aggregated metrics of fleet vehicles, drivers, and hubs."""
-    total_vehicles = db.query(Vehicle).count()
-    available_vehicles = db.query(Vehicle).filter(Vehicle.current_status == VehicleStatus.AVAILABLE).count()
-    in_transit_vehicles = db.query(Vehicle).filter(Vehicle.current_status == VehicleStatus.IN_TRANSIT).count()
-    maintenance_vehicles = db.query(Vehicle).filter(Vehicle.current_status == VehicleStatus.MAINTENANCE).count()
+    total_vehicles = db.query(func.count(Vehicle.id)).scalar() or 0
+    available_vehicles = (
+        db.query(func.count(Vehicle.id))
+        .filter(Vehicle.current_status == VehicleStatus.AVAILABLE)
+        .scalar()
+        or 0
+    )
+    in_transit_vehicles = (
+        db.query(func.count(Vehicle.id))
+        .filter(Vehicle.current_status == VehicleStatus.IN_TRANSIT)
+        .scalar()
+        or 0
+    )
+    maintenance_vehicles = (
+        db.query(func.count(Vehicle.id))
+        .filter(Vehicle.current_status == VehicleStatus.MAINTENANCE)
+        .scalar()
+        or 0
+    )
 
-    total_drivers = db.query(Driver).count()
-    on_duty_drivers = db.query(Driver).filter(Driver.status == DriverStatus.ON_DUTY).count()
-    total_hubs = db.query(Hub).count()
+    total_drivers = db.query(func.count(Driver.id)).scalar() or 0
+    on_duty_drivers = (
+        db.query(func.count(Driver.id))
+        .filter(Driver.status.in_([DriverStatus.ON_DUTY, DriverStatus.ON_TRIP]))
+        .scalar()
+        or 0
+    )
 
-    total_capacity = db.query(func.sum(Vehicle.max_payload_kg)).scalar() or 0.0
+    total_hubs = db.query(func.count(Hub.id)).scalar() or 0
+    fleet_capacity_kg = db.query(func.sum(Vehicle.max_payload_kg)).scalar() or 0.0
 
     return {
         "total_vehicles": total_vehicles,
@@ -52,7 +71,7 @@ def get_fleet_overview(db: Session = Depends(get_db)):
         "total_drivers": total_drivers,
         "on_duty_drivers": on_duty_drivers,
         "total_hubs": total_hubs,
-        "fleet_capacity_kg": float(total_capacity),
+        "fleet_capacity_kg": float(fleet_capacity_kg),
     }
 
 
@@ -66,7 +85,7 @@ def list_hubs(
     return db.query(Hub).offset(skip).limit(limit).all()
 
 
-@router.post("/hubs", response_model=HubResponse, status_code=status.HTTP_201_CREATED, summary="Create a hub")
+@router.post("/hubs", response_model=HubResponse, status_code=status.HTTP_201_CREATED, summary="Create a new hub")
 def create_hub(
     hub_in: HubCreate,
     db: Session = Depends(get_db),

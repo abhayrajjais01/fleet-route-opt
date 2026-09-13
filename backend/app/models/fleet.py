@@ -103,7 +103,7 @@ class Driver(Base, TimestampMixin):
     __tablename__ = "drivers"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     full_name = Column(String(255), nullable=False, index=True)
     license_number = Column(String(100), unique=True, nullable=False, index=True)
     license_type = Column(Enum(LicenseType), default=LicenseType.COMMERCIAL, nullable=False)
