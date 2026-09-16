@@ -4,14 +4,19 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from app.core.config import settings
 from app.core.logging import logger
 
+# Normalize postgres:// to postgresql:// for SQLAlchemy compatibility (e.g. from Supabase / Render)
+db_url = settings.DATABASE_URL
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
 # SQLite thread safety configuration
 connect_args = {}
-if settings.DATABASE_URL.startswith("sqlite"):
+if db_url.startswith("sqlite"):
     connect_args["check_same_thread"] = False
 
 # Create database engine with pooling
 engine = create_engine(
-    settings.DATABASE_URL,
+    db_url,
     connect_args=connect_args,
     echo=False,
     pool_pre_ping=True,
@@ -40,7 +45,7 @@ def check_database_connection() -> dict:
             return {
                 "status": "healthy",
                 "dialect": dialect,
-                "database_url": settings.DATABASE_URL.split("@")[-1] if "@" in settings.DATABASE_URL else settings.DATABASE_URL.split("///")[-1],
+                "database_url": db_url.split("@")[-1] if "@" in db_url else db_url.split("///")[-1],
                 "error": None
             }
     except Exception as e:

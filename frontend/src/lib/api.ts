@@ -2,7 +2,7 @@
 // API CLIENT UTILITY: Axios / Fetch wrapper with automatic JWT token attachment
 // ============================================================================
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api/v1';
 
 export async function apiClient<T>(
   endpoint: string,
@@ -28,7 +28,19 @@ export async function apiClient<T>(
     let errorDetail = 'API request failed';
     try {
       const errorJson = await response.json();
-      errorDetail = errorJson.detail || errorJson.message || errorDetail;
+      if (Array.isArray(errorJson.detail)) {
+        errorDetail = errorJson.detail
+          .map((item: any) => {
+            const field = item.loc ? item.loc[item.loc.length - 1] : '';
+            const fieldName = field ? field.charAt(0).toUpperCase() + String(field).slice(1).replace('_', ' ') : '';
+            return fieldName ? `${fieldName}: ${item.msg}` : item.msg;
+          })
+          .join(' • ');
+      } else if (typeof errorJson.detail === 'string') {
+        errorDetail = errorJson.detail;
+      } else if (errorJson.message) {
+        errorDetail = errorJson.message;
+      }
     } catch {
       errorDetail = `${response.status} ${response.statusText}`;
     }

@@ -16,8 +16,8 @@ The platform fuses **deterministic graph optimization algorithms (DSA)** with **
 
 ## Authors & Engineering Leads
 
-- **Manthan Nimodiya** — *Track A Lead: Optimization & Operations (VRPTW Solver, Leaflet Map, FSM Telemetry, Driver View, Route Metrics)*
-- **Abhayraj Jaiswal** — *Track B Lead: GenAI, RAG & Platform Governance (LangGraph Copilot, RAG Vector Store, RBAC Auth, Executive Dashboard, Audit Log)*
+- **Manthan Nimodiya** — *Track A Lead: RAG Systems, Vector Store, VRPTW Solver, Routing & Map Operations*
+- **Abhayraj Jaiswal** — *Track B Lead: Multi-Agent Architecture, FSM Telemetry, Driver View, Analytics & Platform Governance*
 
 ---
 
@@ -27,8 +27,8 @@ The platform fuses **deterministic graph optimization algorithms (DSA)** with **
 | :--- | :--- | :--- | :--- | :---: |
 | **Week 1** | **Foundations, Security & App Shell** | FastAPI Core, DB Engine, Health Probes | RBAC Auth, JWT Security, Command Center UI Shell | `COMPLETED` |
 | **Week 2** | **Fleet Asset Management (US-002)** | Fleet CRUD APIs, DB Models, Constraints | Interactive Fleet Workspace UI, Modals, Typed Client | `COMPLETED` |
-| **Week 3** | **Shipments Engine & Audit Trail** | Shipment Models, Geocoding, Clustering | Immutable AuditLog Model, Audit Explorer UI | `READY` |
-| **Week 4** | **Batch Ingestion & Month 1 Polish** | CSV/JSON Batch Ingestion & Cluster Preview| Asset Role Guards, Polish & Month 1 Regression | `PLANNED` |
+| **Week 3** | **RAG Knowledge Base & Shipment Engine** | Vector Store Engine & RAG Ingestion (US-006) | Shipment Models & Audit System UI (US-002 & US-008) | `READY` |
+| **Week 4** | **Batch Ingestion & RAG Inspector** | RAG Compliance Inspector Search UI | Batch Order Uploader & Month 1 Polish | `PLANNED` |
 
 - **Automated Backend Tests**: `python -m pytest backend/tests -v` → **12 / 12 PASSED (100%)**
 - **Frontend Production Build**: `npm run build` → **6 / 6 Static Routes Compiled (100%)**
@@ -53,16 +53,17 @@ The platform fuses **deterministic graph optimization algorithms (DSA)** with **
   ├── Multi-Mode DB Layer: SQLite (Zero-Config Local) & PostgreSQL (Production)
   │
   ├── Track A Engines (Manthan Nimodiya):
+  │   ├── RAG Knowledge Base & Vector Store (Cosine Similarity Store & SOP Ingestion)
+  │   ├── Zero-Hallucination Guardrails & Confidence Scoring Engine
   │   ├── VRPTW Solver (Clarke-Wright Savings + 2-opt Heuristic < 5s for 50 stops)
   │   ├── Spatial Engine (Haversine Matrix & Road Detour Correction)
-  │   ├── In-Transit State Machine (FSM: UNASSIGNED → IN_TRANSIT → COMPLETED)
-  │   └── Dynamic Downstream ETA Recalculation Engine
+  │   └── LangGraph Optimization Agent (LLM Tool-Calling Disruption Solver)
   │
   └── Track B Engines (Abhayraj Jaiswal):
-      ├── LangGraph Multi-Agent Copilot (Router, Optimization & Policy Agents)
-      ├── RAG Compliance Engine (Cosine Similarity Vector Store & Citations)
-      ├── Strict Grounding Guardrail ("Policy not found in verified knowledge base")
-      └── Immutable Audit Trail (Tamper-Proof State & Override Logging)
+      ├── LangGraph Multi-Agent Engine (StateGraph, Router Agent, Policy Agent)
+      ├── In-Transit State Machine (FSM: UNASSIGNED → IN_TRANSIT → COMPLETED)
+      ├── Driver Action API & Real-time Telemetry Simulator
+      └── Immutable Audit Logging System (Tamper-Proof State & Override Explorer UI)
 ```
 
 ---
@@ -88,11 +89,11 @@ To maximize engineering growth and maintain parallel momentum without merge conf
 
 | Dimension | Track A: Manthan Nimodiya | Track B: Abhayraj Jaiswal |
 | :--- | :--- | :--- |
-| **Domain** | **Optimization, Routing & Live Operations** | **GenAI Copilot, Compliance & Governance** |
-| **Backend** | VRPTW Solver, Distance Matrix, FSM Engine | LangGraph Agents, RAG Vector Store, RBAC Auth |
-| **Frontend** | Leaflet Map, Manifest Drag-and-Drop, Driver UI | Copilot Drawer, Proposal Cards, KPI Dashboard |
-| **Database** | Fleet Models (Vehicle, Driver, Hub, Route, Stop) | User Model, AuditLog Model, Policy Embeddings |
-| **Algorithms** | Clarke-Wright Savings, 2-opt, Haversine | LLM Prompt Chains, Cosine Vector Retrieval |
+| **Domain** | **RAG Knowledge Base, VRPTW Solver & Map** | **Multi-Agent Architecture, FSM Telemetry & Governance** |
+| **GenAI / AI** | Vector DB, Embedding Pipeline, SOP RAG, Optimization Agent | LangGraph StateGraph, Router Agent, Policy Agent, Copilot Drawer |
+| **Full-Stack / Core** | VRPTW Solver, Leaflet Map, Resequencing, Compliance UI | RBAC Auth, Fleet Workspace UI, Shipment Engine, Audit Logger & UI |
+| **Database** | Vehicle, Driver, Hub, Route, Stop Models | User, Shipment, AuditLog Models |
+| **Algorithms** | Cosine Vector Similarity, Clarke-Wright Savings, 2-opt | Intent Classifier, FSM Lifecycle Transitions, Metric Calculators |
 
 For complete weekly details, refer to [team_work_split.md](team_work_split.md) and [conflict_free_architecture_guide.md](conflict_free_architecture_guide.md).
 

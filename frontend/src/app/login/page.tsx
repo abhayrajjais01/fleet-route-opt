@@ -41,11 +41,11 @@ export default function LoginPage() {
       if (mode === 'login') {
         await login(email, password);
         setSuccessMsg('Authentication successful! Redirecting...');
-        setTimeout(() => router.push('/dashboard'), 800);
+        setTimeout(() => router.push('/'), 800);
       } else {
         await register(email, password, fullName, role);
         setSuccessMsg('Account registered successfully! Redirecting...');
-        setTimeout(() => router.push('/dashboard'), 800);
+        setTimeout(() => router.push('/'), 800);
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Authentication failed');
@@ -60,7 +60,7 @@ export default function LoginPage() {
     try {
       await quickSwitchDemo(demoRole);
       setSuccessMsg(`Logged in as Demo ${demoRole}!`);
-      setTimeout(() => router.push('/dashboard'), 600);
+      setTimeout(() => router.push('/'), 600);
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to switch demo account');
     } finally {
@@ -86,10 +86,10 @@ export default function LoginPage() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push('/')}
               className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium flex items-center gap-1.5 transition"
             >
-              Go to Dashboard <ArrowRight className="w-3.5 h-3.5" />
+              Go to Command Center <ArrowRight className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={logout}
@@ -211,12 +211,14 @@ export default function LoginPage() {
                   <input
                     type="text"
                     required
+                    minLength={2}
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="Jane Dispatcher"
                     className="w-full bg-command-card border border-command-border rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
+                <p className="text-[10px] text-command-muted mt-1">Minimum 2 characters</p>
               </div>
 
               <div>
@@ -257,12 +259,16 @@ export default function LoginPage() {
               <input
                 type="password"
                 required
+                minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 className="w-full bg-command-card border border-command-border rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
               />
             </div>
+            {mode === 'register' && (
+              <p className="text-[10px] text-command-muted mt-1">Minimum 6 characters</p>
+            )}
           </div>
 
           <button
