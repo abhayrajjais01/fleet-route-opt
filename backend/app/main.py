@@ -10,12 +10,15 @@ from app.api.v1.router import api_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Initializing {settings.APP_NAME} [{settings.APP_ENV}]...")
-    db_status = check_database_connection()
-    logger.info(f"Database dialect: {db_status['dialect']}, status: {db_status['status']}")
-    
-    # Auto-initialize database tables
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database schemas verified.")
+    try:
+        db_status = check_database_connection()
+        logger.info(f"Database dialect: {db_status['dialect']}, status: {db_status['status']}")
+        
+        # Auto-initialize database tables
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database schemas verified.")
+    except Exception as e:
+        logger.error(f"Database startup initialization error: {e}", exc_info=True)
     yield
     logger.info(f"Shutting down {settings.APP_NAME}...")
 
