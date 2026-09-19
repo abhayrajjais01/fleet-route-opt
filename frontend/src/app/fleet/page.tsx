@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Vehicle, Driver, Hub, FleetOverview, VehicleStatus, DriverStatus } from '@/lib/types';
+import { Vehicle, Driver, Hub, FleetOverview } from '@/lib/types';
 import { fleetApi } from '@/lib/api';
 import { useAuth } from '@/lib/authContext';
 import HubModal from '@/components/fleet/HubModal';
@@ -26,10 +26,13 @@ import {
   Shield,
   Layers,
   Sparkles,
-  Info,
+  Download,
+  Fuel,
+  Gauge,
+  SlidersHorizontal,
+  ChevronRight,
 } from 'lucide-react';
 
-// Default initial tactical demo dataset for zero-latency instant rendering and offline mode
 const DEMO_HUBS: Hub[] = [
   {
     id: 1,
@@ -178,11 +181,13 @@ const DEMO_DRIVERS: Driver[] = [
 export default function FleetWorkspacePage() {
   const { user } = useAuth();
 
-  // State
+  // Navigation & Filtering State
   const [activeTab, setActiveTab] = useState<'vehicles' | 'drivers' | 'hubs'>('vehicles');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [hubFilter, setHubFilter] = useState('ALL');
 
+  // Asset Datasets
   const [hubs, setHubs] = useState<Hub[]>(DEMO_HUBS);
   const [vehicles, setVehicles] = useState<Vehicle[]>(DEMO_VEHICLES);
   const [drivers, setDrivers] = useState<Driver[]>(DEMO_DRIVERS);
@@ -199,7 +204,6 @@ export default function FleetWorkspacePage() {
   const [selectedItemForEdit, setSelectedItemForEdit] = useState<any | null>(null);
 
   // RBAC Permission Check
-  // ADMIN and FLEET_MANAGER can create/edit/delete; DISPATCHER can view/filter; DRIVER is read-only
   const canManageAssets = user?.role === 'ADMIN' || user?.role === 'FLEET_MANAGER';
 
   // Load live data from FastAPI backend
@@ -227,7 +231,6 @@ export default function FleetWorkspacePage() {
         setOverview(fetchedOverview);
       }
     } catch {
-      // Fallback seamlessly to local demo dataset
       setIsBackendConnected(false);
     } finally {
       setIsLoading(false);
@@ -243,6 +246,35 @@ export default function FleetWorkspacePage() {
     setTimeout(() => setFeedbackMessage(null), 4000);
   };
 
+  // ---------------- Export CSV ---------------- //
+  const exportRosterCsv = () => {
+    let csvContent = 'data:text/csv;charset=utf-8,';
+    if (activeTab === 'vehicles') {
+      csvContent += 'ID,Name,Plate Number,Type,Max Payload (kg),Max Volume (m3),Fuel Eff (kpl),Status,Hub ID\n';
+      filteredVehicles.forEach((v) => {
+        csvContent += `${v.id},"${v.name}","${v.plate_number}","${v.vehicle_type}",${v.max_payload_kg},${v.max_volume_m3},${v.fuel_efficiency_kpl},"${v.current_status}",${v.assigned_hub_id}\n`;
+      });
+    } else if (activeTab === 'drivers') {
+      csvContent += 'ID,Full Name,License Number,License Type,Phone,Max Daily Hours,Status,Hub ID\n';
+      filteredDrivers.forEach((d) => {
+        csvContent += `${d.id},"${d.full_name}","${d.license_number}","${d.license_type}","${d.phone_number}",${d.max_driving_hours_per_day},"${d.status}",${d.assigned_hub_id}\n`;
+      });
+    } else {
+      csvContent += 'ID,Name,Code,Address,Latitude,Longitude,Phone,Operating Hours\n';
+      filteredHubs.forEach((h) => {
+        csvContent += `${h.id},"${h.name}","${h.code}","${h.address}",${h.latitude},${h.longitude},"${h.contact_phone}","${h.operating_hours}"\n`;
+      });
+    }
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `fleet_${activeTab}_export_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showFeedback(`Exported ${activeTab} roster as CSV.`);
+  };
+
   // ---------------- Hub CRUD Handlers ---------------- //
   const handleSaveHub = async (data: Omit<Hub, 'id' | 'created_at' | 'updated_at'>) => {
     try {
@@ -253,7 +285,7 @@ export default function FleetWorkspacePage() {
           updated_at: new Date().toISOString(),
         }));
         setHubs((prev) => prev.map((h) => (h.id === selectedItemForEdit.id ? updated : h)));
-        showFeedback(`Hub "${data.name}" updated successfully!`);
+        showFeedback(`Hub "${data.name}" updated successfully.`);
       } else {
         const created = await fleetApi.createHub(data).catch(() => ({
           ...data,
@@ -262,7 +294,7 @@ export default function FleetWorkspacePage() {
           updated_at: new Date().toISOString(),
         }));
         setHubs((prev) => [created, ...prev]);
-        showFeedback(`Hub "${data.name}" registered successfully!`);
+        showFeedback(`Hub "${data.name}" registered in fleet network.`);
       }
       setSelectedItemForEdit(null);
     } catch (err: any) {
@@ -271,7 +303,7 @@ export default function FleetWorkspacePage() {
   };
 
   const handleDeleteHub = async (id: number, name: string) => {
-    if (!confirm(`Are you sure you want to delete hub "${name}"? All assigned vehicles and drivers will be affected.`)) return;
+    if (!confirm(`Are you sure you want to delete hub "${name}"? All assigned assets will need to be reallocated.`)) return;
     try {
       await fleetApi.deleteHub(id).catch(() => null);
       setHubs((prev) => prev.filter((h) => h.id !== id));
@@ -291,7 +323,7 @@ export default function FleetWorkspacePage() {
           updated_at: new Date().toISOString(),
         }));
         setVehicles((prev) => prev.map((v) => (v.id === selectedItemForEdit.id ? updated : v)));
-        showFeedback(`Vehicle "${data.plate_number}" updated successfully!`);
+        showFeedback(`Vehicle "${data.plate_number}" updated successfully.`);
       } else {
         const created = await fleetApi.createVehicle(data).catch(() => ({
           ...data,
@@ -300,7 +332,7 @@ export default function FleetWorkspacePage() {
           updated_at: new Date().toISOString(),
         }));
         setVehicles((prev) => [created, ...prev]);
-        showFeedback(`Vehicle "${data.plate_number}" added to fleet!`);
+        showFeedback(`Vehicle "${data.plate_number}" enrolled in fleet roster.`);
       }
       setSelectedItemForEdit(null);
     } catch (err: any) {
@@ -309,11 +341,11 @@ export default function FleetWorkspacePage() {
   };
 
   const handleDeleteVehicle = async (id: number, plate: string) => {
-    if (!confirm(`Are you sure you want to decommission vehicle ${plate}?`)) return;
+    if (!confirm(`Decommission vehicle ${plate} from active fleet operations?`)) return;
     try {
       await fleetApi.deleteVehicle(id).catch(() => null);
       setVehicles((prev) => prev.filter((v) => v.id !== id));
-      showFeedback(`Vehicle ${plate} removed from active roster.`);
+      showFeedback(`Vehicle ${plate} decommissioned.`);
     } catch (err: any) {
       showFeedback(err.message || 'Failed to delete vehicle', 'error');
     }
@@ -329,7 +361,7 @@ export default function FleetWorkspacePage() {
           updated_at: new Date().toISOString(),
         }));
         setDrivers((prev) => prev.map((d) => (d.id === selectedItemForEdit.id ? updated : d)));
-        showFeedback(`Driver "${data.full_name}" updated!`);
+        showFeedback(`Driver "${data.full_name}" updated.`);
       } else {
         const created = await fleetApi.createDriver(data).catch(() => ({
           ...data,
@@ -338,7 +370,7 @@ export default function FleetWorkspacePage() {
           updated_at: new Date().toISOString(),
         }));
         setDrivers((prev) => [created, ...prev]);
-        showFeedback(`Driver "${data.full_name}" registered!`);
+        showFeedback(`Certified driver "${data.full_name}" registered.`);
       }
       setSelectedItemForEdit(null);
     } catch (err: any) {
@@ -347,7 +379,7 @@ export default function FleetWorkspacePage() {
   };
 
   const handleDeleteDriver = async (id: number, name: string) => {
-    if (!confirm(`Are you sure you want to remove driver ${name}?`)) return;
+    if (!confirm(`Remove certified driver ${name} from active roster?`)) return;
     try {
       await fleetApi.deleteDriver(id).catch(() => null);
       setDrivers((prev) => prev.filter((d) => d.id !== id));
@@ -360,6 +392,10 @@ export default function FleetWorkspacePage() {
   // ---------------- Calculations & KPI Overview ---------------- //
   const totalCapacityKg = useMemo(() => {
     return vehicles.reduce((acc, v) => acc + (v.max_payload_kg || 0), 0);
+  }, [vehicles]);
+
+  const totalVolumeM3 = useMemo(() => {
+    return vehicles.reduce((acc, v) => acc + (v.max_volume_m3 || 0), 0);
   }, [vehicles]);
 
   const availableVehiclesCount = useMemo(() => {
@@ -378,9 +414,10 @@ export default function FleetWorkspacePage() {
         v.plate_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
         v.vehicle_type.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesStatus = statusFilter === 'ALL' || v.current_status === statusFilter;
-      return matchesSearch && matchesStatus;
+      const matchesHub = hubFilter === 'ALL' || v.assigned_hub_id.toString() === hubFilter;
+      return matchesSearch && matchesStatus && matchesHub;
     });
-  }, [vehicles, searchQuery, statusFilter]);
+  }, [vehicles, searchQuery, statusFilter, hubFilter]);
 
   const filteredDrivers = useMemo(() => {
     return drivers.filter((d) => {
@@ -389,9 +426,10 @@ export default function FleetWorkspacePage() {
         d.license_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
         d.license_type.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesStatus = statusFilter === 'ALL' || d.status === statusFilter;
-      return matchesSearch && matchesStatus;
+      const matchesHub = hubFilter === 'ALL' || d.assigned_hub_id.toString() === hubFilter;
+      return matchesSearch && matchesStatus && matchesHub;
     });
-  }, [drivers, searchQuery, statusFilter]);
+  }, [drivers, searchQuery, statusFilter, hubFilter]);
 
   const filteredHubs = useMemo(() => {
     return hubs.filter((h) => {
@@ -410,61 +448,79 @@ export default function FleetWorkspacePage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
-      {/* Toast Feedback Notification */}
+      {/* Toast Notification Banner */}
       {feedbackMessage && (
         <div
-          className={`p-4 rounded-xl border flex items-center justify-between text-xs font-semibold shadow-xl animate-in slide-in-from-top-4 duration-200 ${
+          className={`p-4 rounded-xl border flex items-center justify-between text-xs font-semibold shadow-2xl animate-in slide-in-from-top-4 duration-200 ${
             feedbackMessage.type === 'success'
-              ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
-              : 'bg-rose-950/80 border-rose-500/40 text-rose-300'
+              ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-300'
+              : 'bg-rose-950/90 border-rose-500/40 text-rose-300'
           }`}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             {feedbackMessage.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
             ) : (
-              <AlertTriangle className="w-4 h-4 text-rose-400" />
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
             )}
             <span>{feedbackMessage.text}</span>
           </div>
-          <button onClick={() => setFeedbackMessage(null)} className="text-slate-400 hover:text-white">
+          <button
+            onClick={() => setFeedbackMessage(null)}
+            className="text-slate-400 hover:text-white px-2 text-base font-bold"
+          >
             &times;
           </button>
         </div>
       )}
 
-      {/* Header & Role Action Bar */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6 bg-slate-900/60 border border-slate-800/80 rounded-2xl backdrop-blur-md">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase tracking-wider">
-              Track A & Track B Co-Engineered
+      {/* Workspace Header & Action Bar */}
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-6 bg-[#0f1728]/80 border border-white/[0.08] rounded-2xl shadow-xl backdrop-blur-md">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider">
+              Fleet Operations
             </span>
-            <span className="text-slate-500 text-xs">•</span>
+            <span className="text-slate-600 text-xs">/</span>
+            <span className="text-[10px] font-mono font-bold text-blue-400 uppercase tracking-wider">
+              Asset Registry & Telematics
+            </span>
+            <span className="text-slate-600 text-xs">•</span>
             <div className="flex items-center gap-1.5 text-xs text-slate-400">
               <span
                 className={`w-2 h-2 rounded-full ${
                   isBackendConnected ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-amber-500'
                 }`}
               />
-              <span>{isBackendConnected ? 'Connected to FastAPI Core' : 'Tactical Local State Mode'}</span>
+              <span className="text-[11px] font-mono text-slate-300">
+                {isBackendConnected ? 'FastAPI Core Connected' : 'Local State Engine'}
+              </span>
             </div>
           </div>
           <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
             <Layers className="w-6 h-6 text-blue-400" />
-            Fleet Asset Management Workspace (US-002)
+            Fleet Asset Management Directory
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Centrally govern distribution depots, vehicle payloads, fuel economy metrics, and driver DOT hours.
+          <p className="text-xs text-slate-400">
+            Centrally govern distribution depots, vehicle payload limits, volumetric capacity, and certified driver DOT hours.
           </p>
         </div>
 
-        {/* Action Controls */}
+        {/* Global Toolbar Buttons */}
         <div className="flex items-center gap-2.5 w-full md:w-auto">
+          <button
+            onClick={exportRosterCsv}
+            className="p-2.5 bg-[#090e18] hover:bg-[#141d30] text-slate-300 hover:text-white rounded-xl border border-white/[0.08] transition flex items-center gap-2 text-xs font-semibold"
+            title="Export current view to CSV"
+          >
+            <Download className="w-4 h-4 text-slate-400" />
+            <span className="hidden sm:inline">Export CSV</span>
+          </button>
+
           <button
             onClick={loadFleetData}
             disabled={isLoading}
-            className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition"
+            className="p-2.5 bg-[#090e18] hover:bg-[#141d30] text-slate-300 rounded-xl border border-white/[0.08] transition"
             title="Reload live assets from API"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-blue-400' : ''}`} />
@@ -478,9 +534,9 @@ export default function FleetWorkspacePage() {
                     setSelectedItemForEdit(null);
                     setIsVehicleModalOpen(true);
                   }}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/20 flex items-center gap-2 transition"
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/25 flex items-center gap-2 transition"
                 >
-                  <Plus className="w-4 h-4" /> Add Vehicle
+                  <Plus className="w-4 h-4" /> Add Fleet Vehicle
                 </button>
               )}
               {activeTab === 'drivers' && (
@@ -489,7 +545,7 @@ export default function FleetWorkspacePage() {
                     setSelectedItemForEdit(null);
                     setIsDriverModalOpen(true);
                   }}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/20 flex items-center gap-2 transition"
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/25 flex items-center gap-2 transition"
                 >
                   <Plus className="w-4 h-4" /> Register Driver
                 </button>
@@ -500,94 +556,114 @@ export default function FleetWorkspacePage() {
                     setSelectedItemForEdit(null);
                     setIsHubModalOpen(true);
                   }}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/20 flex items-center gap-2 transition"
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/25 flex items-center gap-2 transition"
                 >
                   <Plus className="w-4 h-4" /> Register Hub
                 </button>
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-xs text-slate-400">
+            <div className="flex items-center gap-1.5 px-3.5 py-2 bg-[#090e18] border border-white/[0.08] rounded-xl text-xs text-slate-400 font-mono">
               <Shield className="w-3.5 h-3.5 text-amber-400" />
-              <span>Read-Only View ({user?.role || 'DRIVER'})</span>
+              <span>Read-Only ({user?.role || 'DRIVER'})</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Real-time KPI Metric Cards */}
+      {/* Operational KPI Telemetry Cards (Samsara Style) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-4 bg-slate-900/40 border border-slate-800/80 rounded-2xl relative overflow-hidden group hover:border-slate-700 transition">
+        {/* Card 1: Total Vehicles */}
+        <div className="p-4 bg-[#0f1728]/70 border border-white/[0.07] hover:border-white/[0.14] rounded-2xl transition space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Total Fleet Vehicles</span>
             <div className="p-2 bg-blue-500/10 text-blue-400 rounded-xl">
               <Truck className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-white">{vehicles.length}</span>
-            <span className="text-xs text-emerald-400 font-medium">{availableVehiclesCount} Available</span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-white font-mono">{vehicles.length}</span>
+            <span className="text-xs font-mono text-emerald-400 font-semibold">{availableVehiclesCount} Available</span>
           </div>
-          <div className="mt-2 w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+          <div className="w-full bg-slate-800/80 h-1.5 rounded-full overflow-hidden">
             <div
               className="bg-blue-500 h-full rounded-full transition-all"
               style={{ width: `${vehicles.length ? (availableVehiclesCount / vehicles.length) * 100 : 0}%` }}
             />
           </div>
+          <p className="text-[11px] text-slate-500 font-mono">
+            {vehicles.length - availableVehiclesCount} units currently deployed/shop
+          </p>
         </div>
 
-        <div className="p-4 bg-slate-900/40 border border-slate-800/80 rounded-2xl relative overflow-hidden group hover:border-slate-700 transition">
+        {/* Card 2: Payload & Volume Capacity */}
+        <div className="p-4 bg-[#0f1728]/70 border border-white/[0.07] hover:border-white/[0.14] rounded-2xl transition space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400">Fleet Payload Capacity</span>
+            <span className="text-xs font-semibold text-slate-400">Total Payload Capacity</span>
             <div className="p-2 bg-purple-500/10 text-purple-400 rounded-xl">
               <Package className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-white">{totalCapacityKg.toLocaleString()}</span>
-            <span className="text-xs text-slate-400">kg total</span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-white font-mono">{totalCapacityKg.toLocaleString()}</span>
+            <span className="text-xs text-slate-400 font-mono">kg total</span>
           </div>
-          <p className="mt-1 text-[11px] text-slate-500">Across {vehicles.length} operational units</p>
+          <div className="w-full bg-slate-800/80 h-1.5 rounded-full overflow-hidden">
+            <div className="bg-purple-500 h-full rounded-full w-full" />
+          </div>
+          <p className="text-[11px] text-slate-500 font-mono">
+            {totalVolumeM3.toFixed(1)} m³ volumetric capacity
+          </p>
         </div>
 
-        <div className="p-4 bg-slate-900/40 border border-slate-800/80 rounded-2xl relative overflow-hidden group hover:border-slate-700 transition">
+        {/* Card 3: Certified Drivers */}
+        <div className="p-4 bg-[#0f1728]/70 border border-white/[0.07] hover:border-white/[0.14] rounded-2xl transition space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Certified Drivers</span>
             <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl">
               <Users className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-white">{drivers.length}</span>
-            <span className="text-xs text-emerald-400 font-medium">{onDutyDriversCount} On Duty</span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-white font-mono">{drivers.length}</span>
+            <span className="text-xs font-mono text-emerald-400 font-semibold">{onDutyDriversCount} On Duty</span>
           </div>
-          <div className="mt-2 w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+          <div className="w-full bg-slate-800/80 h-1.5 rounded-full overflow-hidden">
             <div
               className="bg-emerald-500 h-full rounded-full transition-all"
               style={{ width: `${drivers.length ? (onDutyDriversCount / drivers.length) * 100 : 0}%` }}
             />
           </div>
+          <p className="text-[11px] text-slate-500 font-mono">
+            DOT Hours Compliant • Commercial Validated
+          </p>
         </div>
 
-        <div className="p-4 bg-slate-900/40 border border-slate-800/80 rounded-2xl relative overflow-hidden group hover:border-slate-700 transition">
+        {/* Card 4: Regional Depots */}
+        <div className="p-4 bg-[#0f1728]/70 border border-white/[0.07] hover:border-white/[0.14] rounded-2xl transition space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Distribution Hubs</span>
             <div className="p-2 bg-amber-500/10 text-amber-400 rounded-xl">
               <Building2 className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-white">{hubs.length}</span>
-            <span className="text-xs text-slate-400">Depots</span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-white font-mono">{hubs.length}</span>
+            <span className="text-xs text-slate-400 font-mono">Active Hubs</span>
           </div>
-          <p className="mt-1 text-[11px] text-slate-500">Active dispatch & return origins</p>
+          <div className="w-full bg-slate-800/80 h-1.5 rounded-full overflow-hidden">
+            <div className="bg-amber-500 h-full rounded-full w-full" />
+          </div>
+          <p className="text-[11px] text-slate-500 font-mono">
+            Cross-docking & spatial dispatch origins
+          </p>
         </div>
       </div>
 
-      {/* Tabs and Search / Filtering Bar */}
-      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-b border-slate-800 pb-3">
+      {/* Tabs and Filtering Controls Bar */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-b border-white/[0.08] pb-4">
         {/* Tab Controls */}
-        <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+        <div className="flex items-center bg-[#0a0f1d] p-1 rounded-xl border border-white/[0.08]">
           <button
             onClick={() => {
               setActiveTab('vehicles');
@@ -597,7 +673,9 @@ export default function FleetWorkspacePage() {
               activeTab === 'vehicles' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Truck className="w-3.5 h-3.5" /> Vehicles ({vehicles.length})
+            <Truck className="w-3.5 h-3.5" />
+            <span>Vehicles</span>
+            <span className="px-1.5 py-0.2 rounded bg-black/30 text-[10px] font-mono">{vehicles.length}</span>
           </button>
           <button
             onClick={() => {
@@ -608,7 +686,9 @@ export default function FleetWorkspacePage() {
               activeTab === 'drivers' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Users className="w-3.5 h-3.5" /> Drivers ({drivers.length})
+            <Users className="w-3.5 h-3.5" />
+            <span>Drivers</span>
+            <span className="px-1.5 py-0.2 rounded bg-black/30 text-[10px] font-mono">{drivers.length}</span>
           </button>
           <button
             onClick={() => {
@@ -619,30 +699,40 @@ export default function FleetWorkspacePage() {
               activeTab === 'hubs' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Building2 className="w-3.5 h-3.5" /> Hubs & Depots ({hubs.length})
+            <Building2 className="w-3.5 h-3.5" />
+            <span>Hubs & Depots</span>
+            <span className="px-1.5 py-0.2 rounded bg-black/30 text-[10px] font-mono">{hubs.length}</span>
           </button>
         </div>
 
-        {/* Search & Status Filter */}
-        <div className="flex items-center gap-2 flex-1 max-w-md">
-          <div className="relative flex-1">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        {/* Search, Status & Hub Filters */}
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 flex-1 max-w-xl">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={`Search ${activeTab}...`}
-              className="w-full pl-9 pr-3 py-2 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500 transition"
+              placeholder={`Search ${activeTab} by name, code, plate...`}
+              className="w-full pl-9 pr-8 py-2 bg-[#090e18] border border-white/[0.08] rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500 transition"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs"
+              >
+                &times;
+              </button>
+            )}
           </div>
 
           {activeTab === 'vehicles' && (
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-blue-500"
+              className="px-3 py-2 bg-[#090e18] border border-white/[0.08] rounded-xl text-xs text-slate-300 focus:outline-none focus:border-blue-500"
             >
-              <option value="ALL">All Statuses</option>
+              <option value="ALL">All Vehicle Statuses</option>
               <option value="AVAILABLE">AVAILABLE</option>
               <option value="IN_TRANSIT">IN_TRANSIT</option>
               <option value="MAINTENANCE">MAINTENANCE</option>
@@ -654,74 +744,108 @@ export default function FleetWorkspacePage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-blue-500"
+              className="px-3 py-2 bg-[#090e18] border border-white/[0.08] rounded-xl text-xs text-slate-300 focus:outline-none focus:border-blue-500"
             >
-              <option value="ALL">All Statuses</option>
+              <option value="ALL">All Duty Statuses</option>
               <option value="ON_DUTY">ON_DUTY</option>
               <option value="ON_TRIP">ON_TRIP</option>
               <option value="RESTING">RESTING</option>
               <option value="OFF_DUTY">OFF_DUTY</option>
             </select>
           )}
+
+          {(activeTab === 'vehicles' || activeTab === 'drivers') && (
+            <select
+              value={hubFilter}
+              onChange={(e) => setHubFilter(e.target.value)}
+              className="px-3 py-2 bg-[#090e18] border border-white/[0.08] rounded-xl text-xs text-slate-300 focus:outline-none focus:border-blue-500"
+            >
+              <option value="ALL">All Assigned Hubs</option>
+              {hubs.map((h) => (
+                <option key={h.id} value={h.id.toString()}>
+                  {h.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
-      {/* Main Asset Data Tables */}
-      <div className="bg-slate-900/50 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+      {/* Enterprise Tabular Data Grid */}
+      <div className="bg-[#0e1626]/90 border border-white/[0.08] rounded-2xl overflow-hidden shadow-2xl">
         {/* VEHICLES TAB */}
         {activeTab === 'vehicles' && (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-[#0f172a]/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800 font-bold">
+              <thead className="bg-[#090f1d] text-slate-400 uppercase text-[10px] tracking-wider border-b border-white/[0.07] font-mono font-bold">
                 <tr>
-                  <th className="px-6 py-3.5">Vehicle Unit</th>
-                  <th className="px-4 py-3.5">Classification</th>
-                  <th className="px-4 py-3.5">Max Payload (kg)</th>
-                  <th className="px-4 py-3.5">Volume (m³)</th>
-                  <th className="px-4 py-3.5">Efficiency</th>
-                  <th className="px-4 py-3.5">Assigned Depot</th>
-                  <th className="px-4 py-3.5">Status</th>
-                  {canManageAssets && <th className="px-4 py-3.5 text-right">Actions</th>}
+                  <th className="px-6 py-4">Vehicle Unit</th>
+                  <th className="px-4 py-4">Classification</th>
+                  <th className="px-4 py-4">Max Payload</th>
+                  <th className="px-4 py-4">Volume Limit</th>
+                  <th className="px-4 py-4">Fuel Economy</th>
+                  <th className="px-4 py-4">Assigned Depot</th>
+                  <th className="px-4 py-4">Telematics Status</th>
+                  {canManageAssets && <th className="px-4 py-4 text-right">Actions</th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-white/[0.05]">
                 {filteredVehicles.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-6 py-8 text-center text-slate-500 text-xs">
-                      No vehicles found matching search criteria.
+                    <td colSpan={8} className="px-6 py-12 text-center text-slate-500 text-xs">
+                      <div className="max-w-sm mx-auto space-y-2">
+                        <Truck className="w-8 h-8 text-slate-600 mx-auto" />
+                        <p className="font-semibold text-slate-400">No vehicles match current filters</p>
+                        <p className="text-[11px] text-slate-500">
+                          Try adjusting your search term, clearing status filters, or enrolling a new vehicle.
+                        </p>
+                      </div>
                     </td>
                   </tr>
                 ) : (
                   filteredVehicles.map((vehicle) => (
                     <tr key={vehicle.id} className="hover:bg-slate-800/40 transition">
                       <td className="px-6 py-4">
-                        <div className="font-bold text-white flex items-center gap-2">
-                          <Truck className="w-4 h-4 text-blue-400" />
-                          <span>{vehicle.name}</span>
+                        <div className="font-bold text-white flex items-center gap-2.5">
+                          <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400">
+                            <Truck className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <p className="text-white font-sans">{vehicle.name}</p>
+                            <p className="text-[11px] text-blue-400 font-mono font-semibold">{vehicle.plate_number}</p>
+                          </div>
                         </div>
-                        <div className="text-[11px] text-slate-400 font-mono mt-0.5">{vehicle.plate_number}</div>
                       </td>
                       <td className="px-4 py-4">
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                        <span className="px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold bg-slate-800 text-slate-300 border border-slate-700/80">
                           {vehicle.vehicle_type}
                         </span>
                       </td>
-                      <td className="px-4 py-4 font-mono text-slate-200">
+                      <td className="px-4 py-4 font-mono text-slate-200 tabular-nums">
                         {vehicle.max_payload_kg.toLocaleString()} kg
                       </td>
-                      <td className="px-4 py-4 font-mono text-slate-200">{vehicle.max_volume_m3} m³</td>
-                      <td className="px-4 py-4 font-mono text-emerald-400">{vehicle.fuel_efficiency_kpl} km/L</td>
-                      <td className="px-4 py-4 text-slate-300">{getHubName(vehicle.assigned_hub_id)}</td>
+                      <td className="px-4 py-4 font-mono text-slate-200 tabular-nums">
+                        {vehicle.max_volume_m3} m³
+                      </td>
+                      <td className="px-4 py-4 font-mono text-emerald-400 tabular-nums font-semibold">
+                        {vehicle.fuel_efficiency_kpl} km/L
+                      </td>
+                      <td className="px-4 py-4 text-slate-300">
+                        <div className="flex items-center gap-1.5">
+                          <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                          <span>{getHubName(vehicle.assigned_hub_id)}</span>
+                        </div>
+                      </td>
                       <td className="px-4 py-4">
                         <span
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1.5 ${
+                          className={`px-3 py-1 rounded-full text-[10px] font-mono font-bold inline-flex items-center gap-1.5 ${
                             vehicle.current_status === 'AVAILABLE'
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
                               : vehicle.current_status === 'IN_TRANSIT'
-                              ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                              ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
                               : vehicle.current_status === 'MAINTENANCE'
-                              ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                              : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                              ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                              : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
                           }`}
                         >
                           <span className="w-1.5 h-1.5 rounded-full bg-current" />
@@ -763,60 +887,73 @@ export default function FleetWorkspacePage() {
         {activeTab === 'drivers' && (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-[#0f172a]/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800 font-bold">
+              <thead className="bg-[#090f1d] text-slate-400 uppercase text-[10px] tracking-wider border-b border-white/[0.07] font-mono font-bold">
                 <tr>
-                  <th className="px-6 py-3.5">Driver Profile</th>
-                  <th className="px-4 py-3.5">License Class</th>
-                  <th className="px-4 py-3.5">License Number</th>
-                  <th className="px-4 py-3.5">Contact</th>
-                  <th className="px-4 py-3.5">Max Shift Hours</th>
-                  <th className="px-4 py-3.5">Assigned Depot</th>
-                  <th className="px-4 py-3.5">Duty Status</th>
-                  {canManageAssets && <th className="px-4 py-3.5 text-right">Actions</th>}
+                  <th className="px-6 py-4">Driver Profile</th>
+                  <th className="px-4 py-4">License Class</th>
+                  <th className="px-4 py-4">License Number</th>
+                  <th className="px-4 py-4">Contact Phone</th>
+                  <th className="px-4 py-4">DOT Shift Limit</th>
+                  <th className="px-4 py-4">Assigned Depot</th>
+                  <th className="px-4 py-4">Duty Status</th>
+                  {canManageAssets && <th className="px-4 py-4 text-right">Actions</th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-white/[0.05]">
                 {filteredDrivers.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-6 py-8 text-center text-slate-500 text-xs">
-                      No drivers found matching criteria.
+                    <td colSpan={8} className="px-6 py-12 text-center text-slate-500 text-xs">
+                      <div className="max-w-sm mx-auto space-y-2">
+                        <Users className="w-8 h-8 text-slate-600 mx-auto" />
+                        <p className="font-semibold text-slate-400">No certified drivers match search</p>
+                        <p className="text-[11px] text-slate-500">Register a new driver or reset the filter.</p>
+                      </div>
                     </td>
                   </tr>
                 ) : (
                   filteredDrivers.map((driver) => (
                     <tr key={driver.id} className="hover:bg-slate-800/40 transition">
                       <td className="px-6 py-4">
-                        <div className="font-bold text-white flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-bold text-blue-400">
+                        <div className="font-bold text-white flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-blue-400">
                             {driver.full_name.charAt(0)}
                           </div>
-                          <span>{driver.full_name}</span>
+                          <span className="font-sans">{driver.full_name}</span>
                         </div>
                       </td>
                       <td className="px-4 py-4">
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                        <span className="px-2.5 py-1 rounded-md text-[10px] font-mono font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
                           {driver.license_type}
                         </span>
                       </td>
-                      <td className="px-4 py-4 font-mono text-slate-300">{driver.license_number}</td>
-                      <td className="px-4 py-4 font-mono text-slate-300 flex items-center gap-1.5 mt-2">
-                        <Phone className="w-3 h-3 text-emerald-400" />
-                        <span>{driver.phone_number}</span>
+                      <td className="px-4 py-4 font-mono text-slate-300 font-semibold">{driver.license_number}</td>
+                      <td className="px-4 py-4 font-mono text-slate-300">
+                        <div className="flex items-center gap-1.5">
+                          <Phone className="w-3 h-3 text-emerald-400" />
+                          <span>{driver.phone_number}</span>
+                        </div>
                       </td>
-                      <td className="px-4 py-4 font-mono text-slate-300 flex items-center gap-1 mt-2">
-                        <Clock className="w-3 h-3 text-amber-400" />
-                        <span>{driver.max_driving_hours_per_day} hrs/day</span>
+                      <td className="px-4 py-4 font-mono text-slate-300">
+                        <div className="flex items-center gap-1.5">
+                          <Clock className="w-3 h-3 text-amber-400" />
+                          <span className="tabular-nums">{driver.max_driving_hours_per_day} hrs/day</span>
+                        </div>
                       </td>
-                      <td className="px-4 py-4 text-slate-300">{getHubName(driver.assigned_hub_id)}</td>
+                      <td className="px-4 py-4 text-slate-300">
+                        <div className="flex items-center gap-1.5">
+                          <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                          <span>{getHubName(driver.assigned_hub_id)}</span>
+                        </div>
+                      </td>
                       <td className="px-4 py-4">
                         <span
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1.5 ${
+                          className={`px-3 py-1 rounded-full text-[10px] font-mono font-bold inline-flex items-center gap-1.5 ${
                             driver.status === 'ON_DUTY'
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
                               : driver.status === 'ON_TRIP'
-                              ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                              ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
                               : driver.status === 'RESTING'
-                              ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                              ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
                               : 'bg-slate-800 text-slate-400 border border-slate-700'
                           }`}
                         >
@@ -859,54 +996,63 @@ export default function FleetWorkspacePage() {
         {activeTab === 'hubs' && (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-[#0f172a]/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800 font-bold">
+              <thead className="bg-[#090f1d] text-slate-400 uppercase text-[10px] tracking-wider border-b border-white/[0.07] font-mono font-bold">
                 <tr>
-                  <th className="px-6 py-3.5">Hub Facility</th>
-                  <th className="px-4 py-3.5">Hub Code</th>
-                  <th className="px-4 py-3.5">Physical Address</th>
-                  <th className="px-4 py-3.5">Geocoordinates</th>
-                  <th className="px-4 py-3.5">Operating Hours</th>
-                  <th className="px-4 py-3.5">Dispatch Phone</th>
-                  {canManageAssets && <th className="px-4 py-3.5 text-right">Actions</th>}
+                  <th className="px-6 py-4">Hub Facility</th>
+                  <th className="px-4 py-4">Facility Code</th>
+                  <th className="px-4 py-4">Physical Address</th>
+                  <th className="px-4 py-4">Geocoordinates</th>
+                  <th className="px-4 py-4">Operating Hours</th>
+                  <th className="px-4 py-4">Dispatch Phone</th>
+                  {canManageAssets && <th className="px-4 py-4 text-right">Actions</th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-white/[0.05]">
                 {filteredHubs.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-8 text-center text-slate-500 text-xs">
-                      No distribution hubs found.
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500 text-xs">
+                      <div className="max-w-sm mx-auto space-y-2">
+                        <Building2 className="w-8 h-8 text-slate-600 mx-auto" />
+                        <p className="font-semibold text-slate-400">No distribution depots found</p>
+                      </div>
                     </td>
                   </tr>
                 ) : (
                   filteredHubs.map((hub) => (
                     <tr key={hub.id} className="hover:bg-slate-800/40 transition">
                       <td className="px-6 py-4">
-                        <div className="font-bold text-white flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-blue-400" />
-                          <span>{hub.name}</span>
+                        <div className="font-bold text-white flex items-center gap-2.5">
+                          <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400">
+                            <Building2 className="w-4 h-4" />
+                          </div>
+                          <span className="font-sans">{hub.name}</span>
                         </div>
                       </td>
                       <td className="px-4 py-4">
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-800 text-blue-300 border border-slate-700">
+                        <span className="px-2.5 py-1 rounded-md text-[10px] font-mono font-bold bg-slate-800 text-blue-400 border border-slate-700">
                           {hub.code}
                         </span>
                       </td>
                       <td className="px-4 py-4 text-slate-300 max-w-xs truncate">{hub.address}</td>
                       <td className="px-4 py-4 font-mono text-[11px] text-slate-400">
                         <div className="flex items-center gap-1">
-                          <MapPin className="w-3 h-3 text-blue-400" />
-                          <span>
-                            {hub.latitude.toFixed(4)}, {hub.longitude.toFixed(4)}
+                          <MapPin className="w-3.5 h-3.5 text-blue-400" />
+                          <span className="tabular-nums font-semibold text-slate-300">
+                            {hub.latitude.toFixed(4)}° N, {hub.longitude.toFixed(4)}° E
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-4 text-slate-300 flex items-center gap-1.5 mt-2">
-                        <Clock className="w-3 h-3 text-amber-400" />
-                        <span>{hub.operating_hours}</span>
+                      <td className="px-4 py-4 text-slate-300">
+                        <div className="flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-amber-400" />
+                          <span className="font-mono text-slate-300">{hub.operating_hours}</span>
+                        </div>
                       </td>
-                      <td className="px-4 py-4 font-mono text-slate-300 flex items-center gap-1.5 mt-2">
-                        <Phone className="w-3 h-3 text-emerald-400" />
-                        <span>{hub.contact_phone}</span>
+                      <td className="px-4 py-4 font-mono text-slate-300">
+                        <div className="flex items-center gap-1.5">
+                          <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>{hub.contact_phone}</span>
+                        </div>
                       </td>
                       {canManageAssets && (
                         <td className="px-4 py-4 text-right">

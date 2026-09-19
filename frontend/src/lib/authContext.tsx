@@ -1,9 +1,19 @@
 'use client';
 
+/**
+ * authContext.tsx - React Auth Provider Context for Global User & Token State
+ * 
+ * Manages client-side authentication lifecycle:
+ * 1. Restores JWT token from localStorage on initial page load and verifies active session via /auth/me.
+ * 2. Exposes login(), register(), logout(), and 1-click quickSwitchDemo() functions across all components.
+ * 3. Provides `useAuth()` custom React hook for accessing current user details and role permissions.
+ */
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole, AuthTokens } from './types';
 import { apiClient } from './api';
 
+// Interface defining the global Authentication Context structure
 interface AuthContextType {
   user: User | null;
   token: string | null;
@@ -15,6 +25,7 @@ interface AuthContextType {
   switchRole: (role: UserRole) => Promise<void>;
 }
 
+// Create React Context instance
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -22,6 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // On initial mount: restore stored JWT token and validate session with backend /auth/me
   useEffect(() => {
     const savedToken = localStorage.getItem('fleet_token');
     if (savedToken) {
@@ -31,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(userData);
         })
         .catch(() => {
-          // Token expired or invalid
+          // Cleans up state if token is expired or invalid
           localStorage.removeItem('fleet_token');
           setToken(null);
           setUser(null);
@@ -44,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Login handler: authenticates credentials with /auth/login and stores returned JWT token
   const login = async (email: string, password: string) => {
     const data = await apiClient<AuthTokens>('/auth/login', {
       method: 'POST',
@@ -55,6 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(data.user);
   };
 
+  // Registration handler: provisions new operator account and logs user in
   const register = async (email: string, password: string, fullName: string, role: UserRole = 'DISPATCHER') => {
     const data = await apiClient<AuthTokens>('/auth/register', {
       method: 'POST',
@@ -71,18 +85,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(data.user);
   };
 
+  // Sign out handler: purges token from localStorage and resets context state
   const logout = () => {
     localStorage.removeItem('fleet_token');
     setToken(null);
     setUser(null);
   };
 
+  // 1-Click Demo Persona Switcher: Auto-seeds accounts and logs in as designated role
   const quickSwitchDemo = async (role: UserRole) => {
-    // Automatically seed accounts if not present
     try {
       await apiClient('/auth/seed-demo-users', { method: 'POST' });
     } catch {
-      // Seed already exists or offline
+      // Demo users already present or seeded
     }
 
     const emailMap: Record<UserRole, string> = {
@@ -113,6 +128,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Custom React Hook for accessing AuthContext in frontend components.
+ * 
+ * Example:
+ *   const { user, logout, quickSwitchDemo } = useAuth();
+ */
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
