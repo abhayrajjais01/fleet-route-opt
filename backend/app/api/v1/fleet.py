@@ -1,4 +1,14 @@
-"""RESTful API endpoints for Fleet Assets Management (US-002 Track A)."""
+"""
+fleet.py - RESTful API Endpoints for Fleet Assets Management (US-002)
+
+This module implements the API handlers for managing distribution hubs, delivery vehicles, and certified drivers.
+Endpoints:
+- GET /fleet/overview: Real-time aggregate KPI metrics (total vehicles, payload capacity, active drivers, hubs).
+- GET/POST/PUT/DELETE /fleet/hubs: Full CRUD operations for distribution hubs.
+- GET/POST/PUT/DELETE /fleet/vehicles: Full CRUD operations for fleet vehicles with filtering by type, status, hub.
+- GET/POST/PUT/DELETE /fleet/drivers: Full CRUD operations for certified drivers with duty status & shift limit handling.
+"""
+
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -29,9 +39,15 @@ from app.schemas.fleet import (
 router = APIRouter()
 
 
-# ==================== FLEET OVERVIEW ==================== #
+# ==================== FLEET OVERVIEW AGGREGATION ==================== #
 @router.get("/overview", response_model=FleetOverviewResponse, summary="Get high-level fleet metrics")
 def get_fleet_overview(db: Session = Depends(get_db)):
+    """
+    Computes aggregate real-time fleet statistics from database tables:
+    - Counts of available, in-transit, and maintenance vehicles
+    - Counts of on-duty drivers and active hubs
+    - Sum of total payload weight capacity (kg) across all operational units
+    """
     total_vehicles = db.query(func.count(Vehicle.id)).scalar() or 0
     available_vehicles = (
         db.query(func.count(Vehicle.id))
@@ -75,13 +91,14 @@ def get_fleet_overview(db: Session = Depends(get_db)):
     }
 
 
-# ==================== HUBS CRUD ==================== #
+# ==================== HUBS CRUD ENDPOINTS ==================== #
 @router.get("/hubs", response_model=List[HubResponse], summary="List all hubs")
 def list_hubs(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
+    """Lists distribution hubs with pagination support (skip & limit)."""
     return db.query(Hub).offset(skip).limit(limit).all()
 
 
@@ -90,6 +107,7 @@ def create_hub(
     hub_in: HubCreate,
     db: Session = Depends(get_db),
 ):
+    """Registers a new distribution hub facility. Checks for uniqueness of hub code."""
     existing = db.query(Hub).filter(Hub.code == hub_in.code).first()
     if existing:
         raise HTTPException(
@@ -105,6 +123,7 @@ def create_hub(
 
 @router.get("/hubs/{hub_id}", response_model=HubResponse, summary="Get hub by ID")
 def get_hub(hub_id: int, db: Session = Depends(get_db)):
+    """Fetches details for a specific hub by ID."""
     hub = db.query(Hub).filter(Hub.id == hub_id).first()
     if not hub:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hub not found")
@@ -117,6 +136,7 @@ def update_hub(
     hub_update: HubUpdate,
     db: Session = Depends(get_db),
 ):
+    """Updates an existing hub facility by ID."""
     hub = db.query(Hub).filter(Hub.id == hub_id).first()
     if not hub:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hub not found")
@@ -135,6 +155,7 @@ def delete_hub(
     hub_id: int,
     db: Session = Depends(get_db),
 ):
+    """Deletes a hub facility by ID."""
     hub = db.query(Hub).filter(Hub.id == hub_id).first()
     if not hub:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hub not found")
@@ -143,7 +164,7 @@ def delete_hub(
     return None
 
 
-# ==================== VEHICLES CRUD ==================== #
+# ==================== VEHICLES CRUD ENDPOINTS ==================== #
 @router.get("/vehicles", response_model=List[VehicleResponse], summary="List vehicles with filters")
 def list_vehicles(
     status_filter: Optional[VehicleStatus] = Query(None, alias="status"),
@@ -153,6 +174,7 @@ def list_vehicles(
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
+    """Lists fleet vehicles with optional filtering by current_status, vehicle_type, or assigned_hub_id."""
     query = db.query(Vehicle)
     if status_filter:
         query = query.filter(Vehicle.current_status == status_filter)
@@ -168,6 +190,7 @@ def create_vehicle(
     vehicle_in: VehicleCreate,
     db: Session = Depends(get_db),
 ):
+    """Registers a new vehicle unit in the fleet. Verifies hub existence and license plate uniqueness."""
     hub = db.query(Hub).filter(Hub.id == vehicle_in.assigned_hub_id).first()
     if not hub:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assigned Hub does not exist")
@@ -188,6 +211,7 @@ def create_vehicle(
 
 @router.get("/vehicles/{vehicle_id}", response_model=VehicleResponse, summary="Get vehicle by ID")
 def get_vehicle(vehicle_id: int, db: Session = Depends(get_db)):
+    """Fetches details for a specific vehicle by ID."""
     vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
     if not vehicle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
@@ -200,6 +224,7 @@ def update_vehicle(
     vehicle_update: VehicleUpdate,
     db: Session = Depends(get_db),
 ):
+    """Updates payload, volume, fuel efficiency, or hub allocation of a vehicle."""
     vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
     if not vehicle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
@@ -223,6 +248,7 @@ def delete_vehicle(
     vehicle_id: int,
     db: Session = Depends(get_db),
 ):
+    """Decommissions and removes a vehicle unit from active roster."""
     vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
     if not vehicle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
@@ -231,7 +257,7 @@ def delete_vehicle(
     return None
 
 
-# ==================== DRIVERS CRUD ==================== #
+# ==================== DRIVERS CRUD ENDPOINTS ==================== #
 @router.get("/drivers", response_model=List[DriverResponse], summary="List drivers with filters")
 def list_drivers(
     status_filter: Optional[DriverStatus] = Query(None, alias="status"),
@@ -240,6 +266,7 @@ def list_drivers(
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
+    """Lists certified drivers with optional status and hub filtering."""
     query = db.query(Driver)
     if status_filter:
         query = query.filter(Driver.status == status_filter)
@@ -253,6 +280,7 @@ def create_driver(
     driver_in: DriverCreate,
     db: Session = Depends(get_db),
 ):
+    """Registers a certified commercial driver. Checks license uniqueness and hub presence."""
     hub = db.query(Hub).filter(Hub.id == driver_in.assigned_hub_id).first()
     if not hub:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assigned Hub does not exist")
@@ -273,6 +301,7 @@ def create_driver(
 
 @router.get("/drivers/{driver_id}", response_model=DriverResponse, summary="Get driver by ID")
 def get_driver(driver_id: int, db: Session = Depends(get_db)):
+    """Fetches profile for a specific driver by ID."""
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     if not driver:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
@@ -285,6 +314,7 @@ def update_driver(
     driver_update: DriverUpdate,
     db: Session = Depends(get_db),
 ):
+    """Updates driver shift hours, phone number, duty status, or assigned hub."""
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     if not driver:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
@@ -308,6 +338,7 @@ def delete_driver(
     driver_id: int,
     db: Session = Depends(get_db),
 ):
+    """Removes a driver profile from active roster."""
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     if not driver:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
