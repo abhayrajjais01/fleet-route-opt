@@ -7,6 +7,8 @@
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-38B2AC.svg?logo=tailwind-css&logoColor=white)](https://tailwindcss.com)
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0-D71F00.svg)](https://www.sqlalchemy.org)
 [![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-FF6F00.svg)](https://langchain-ai.github.io/langgraph/)
+[![Render](https://img.shields.io/badge/Backend-Render-46E3B7.svg?logo=render&logoColor=white)](https://fleet-route-opt.onrender.com)
+[![Vercel](https://img.shields.io/badge/Frontend-Vercel-000000.svg?logo=vercel&logoColor=white)](https://fleet-route-opt.vercel.app)
 
 An enterprise-grade AI solution for Fleet Route Optimization that addresses critical operational efficiency, multi-stop routing complexity (Vehicle Routing Problem with Time Windows — VRPTW), and dynamic dispatch automation in the Logistics and Supply Chain sector.
 
@@ -30,34 +32,38 @@ The platform fuses **deterministic graph optimization algorithms (DSA)** with **
 | **Week 3** | **RAG Knowledge Base & Shipment Engine** | Vector Store Engine & RAG Ingestion (US-006) | Shipment Models & Audit System UI (US-002 & US-008) | `READY` |
 | **Week 4** | **Batch Ingestion & RAG Inspector** | RAG Compliance Inspector Search UI | Batch Order Uploader & Month 1 Polish | `PLANNED` |
 
-- **Automated Backend Tests**: `python -m pytest backend/tests -v` → **12 / 12 PASSED (100%)**
+- **Automated Backend Test Suite**: `python -m pytest tests/test_auth_rbac.py tests/test_fleet_crud.py tests/test_health.py -v` → **12 / 12 PASSED (100%)**
 - **Frontend Production Build**: `npm run build` → **6 / 6 Static Routes Compiled (100%)**
+- **Live Deployments**:
+  - Backend API: [https://fleet-route-opt.onrender.com](https://fleet-route-opt.onrender.com)
+  - Frontend Web App: [https://fleet-route-opt.vercel.app](https://fleet-route-opt.vercel.app)
 
-## Architectural Highlights
+---
+
+## Architectural Highlights & Telemetry UI
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                      AI FLEET ROUTE OPTIMIZER ARCHITECTURE                  │
 └─────────────────────────────────────────────────────────────────────────────┘
 
- [Frontend: Next.js 14 / TypeScript / Tailwind CSS / Leaflet]
-  ├── Dispatcher Command Center UI (Live Map, Split Manifest, Resequencing)
+ [Frontend: Next.js 14 / TypeScript / Tailwind CSS / Telemetry Design System]
+  ├── Executive Command Center Console (Samsara/Onfleet Style Telemetry Ribbon)
+  ├── Dual-Pane Auth Gateway (SOC-2 Trust Signals, 1-Click SVG Persona Switches)
+  ├── Fleet Asset Workspace UI (Tabbed Grids, Monospace Plates, CSV Exporter)
   ├── AI Copilot Sliding Drawer (Multi-Turn Chat, Execution Traces, Action Cards)
-  ├── Mobile-Responsive Driver View (Stop-by-Stop Cards, One-Tap Status)
-  ├── Executive Analytics Dashboard (OTIF Rate, Fuel Burn, Ton-Km Cost)
   └── Compliance Knowledge Inspector (SOP Search, Hazmat Citations)
                                  │
                                  ▼ (REST API / JWT Auth)
  [Backend: FastAPI / Python 3.14 / SQLAlchemy 2.0]
-  ├── Core Infrastructure: Config, Security (Bcrypt/JWT), Unified Logger
+  ├── Core Infrastructure: Config, Security (PBKDF2/JWT), Unified Logger
   ├── Multi-Mode DB Layer: SQLite (Zero-Config Local) & PostgreSQL (Production)
   │
   ├── Track A Engines (Manthan Nimodiya):
   │   ├── RAG Knowledge Base & Vector Store (Cosine Similarity Store & SOP Ingestion)
   │   ├── Zero-Hallucination Guardrails & Confidence Scoring Engine
   │   ├── VRPTW Solver (Clarke-Wright Savings + 2-opt Heuristic < 5s for 50 stops)
-  │   ├── Spatial Engine (Haversine Matrix & Road Detour Correction)
-  │   └── LangGraph Optimization Agent (LLM Tool-Calling Disruption Solver)
+  │   └── Spatial Engine (Haversine Matrix & Road Detour Correction)
   │
   └── Track B Engines (Abhayraj Jaiswal):
       ├── LangGraph Multi-Agent Engine (StateGraph, Router Agent, Policy Agent)
@@ -72,12 +78,12 @@ The platform fuses **deterministic graph optimization algorithms (DSA)** with **
 
 | Feature | PRD Priority | Description |
 | :--- | :---: | :--- |
-| **Role-Based Auth & RBAC (US-001)** | `MUST` | Secure password hashing (Bcrypt/PBKDF2) and signed JWT tokens for `Admin`, `Fleet Manager`, `Dispatcher`, and `Driver`. |
-| **Fleet Asset Management (US-002)** | `MUST` | Full CRUD operations for Vehicles (payload, volume, fuel), Drivers (shifts, licenses), Hubs/Depots, and Shipments. |
+| **Role-Based Auth & RBAC (US-001)** | `MUST` | Secure password hashing (PBKDF2-HMAC-SHA256) and signed JWT tokens for `Admin`, `Fleet Manager`, `Dispatcher`, and `Driver`. |
+| **Fleet Asset Management (US-002)** | `MUST` | Full CRUD operations for Vehicles (payload, volume, fuel), Drivers (shifts, licenses), Hubs/Depots, and Overview metrics. |
 | **Deterministic VRPTW Solver (US-003)** | `MUST` | DSA-based multi-vehicle routing solver with capacity, time windows `[open, close]`, and driver shift constraints (&lt;5s benchmark for 50 stops). |
 | **Interactive Map & Workspace (US-004)** | `MUST` | Leaflet map with OpenStreetMap tiles, color-coded vehicle polylines, sequenced stop pins, and drag-and-drop stop reordering with instant ETA re-computation. |
 | **Multi-Agent AI Copilot (US-005)** | `MUST` | LangGraph multi-agent system (Router Agent, Optimization Agent, Policy Agent) formulating structured confirmation proposals before mutating route state. |
-| **RAG Compliance Engine (US-006)** | `MUST` | Grounded in Lewis et al. (2020) and WikiQA principles. Vectorized logistics SOPs (Hazmat ADR/DOT, driver rest mandates) with source citations and confidence scores. |
+| **RAG Compliance Engine (US-006)** | `MUST` | Grounded in Lewis et al. (2020) principles. Vectorized logistics SOPs (Hazmat ADR/DOT, driver rest mandates) with source citations and confidence scores. |
 | **Operational KPI Dashboard (US-007)** | `SHOULD` | Executive dashboard tracking On-Time In-Full (OTIF) rate, average transit duration, fuel burn index, and cost per ton-kilometer with CSV/PDF exports. |
 | **Dynamic Telemetry & FSM (US-008)** | `MUST` | Real-time driver action updates (`ARRIVED`, `COMPLETED`, `FAILED`, `DELAYED`), dynamic downstream ETA updates, and immutable audit logs. |
 
@@ -96,6 +102,7 @@ To maximize engineering growth and maintain parallel momentum without merge conf
 | **Algorithms** | Cosine Vector Similarity, Clarke-Wright Savings, 2-opt | Intent Classifier, FSM Lifecycle Transitions, Metric Calculators |
 
 For complete weekly details, refer to [team_work_split.md](team_work_split.md) and [conflict_free_architecture_guide.md](conflict_free_architecture_guide.md).
+For Viva preparation & complete codebase explanation, refer to [project_architecture_and_viva_guide.md](project_architecture_and_viva_guide.md).
 
 ---
 
@@ -105,34 +112,34 @@ For complete weekly details, refer to [team_work_split.md](team_work_split.md) a
 fleet-route-opt/
 ├── backend/
 │   ├── app/
-│   │   ├── core/               # Shared: Config, Database engine, Security, Logging
-│   │   ├── models/             # ORM models (fleet.py, route.py vs. user.py, audit.py)
-│   │   ├── schemas/            # Pydantic data schemas for validation
+│   │   ├── core/               # Shared: Config, Database engine, Security (PBKDF2/JWT), Logging
+│   │   ├── models/             # ORM models (fleet.py, user.py, base.py)
+│   │   ├── schemas/            # Pydantic data schemas for request validation
 │   │   ├── services/
 │   │   │   ├── optimizer/      # Track A: VRPTW Solver, Haversine Matrix, Clustering
 │   │   │   ├── copilot/        # Track B: LangGraph StateGraph, Router, Policy Agents
-│   │   │   └── rag/            # Track B: Vector Store, SOPs, Knowledge Base
-│   │   ├── api/v1/             # REST API routes (fleet, routes, auth, copilot, etc.)
+│   │   │   └── rag/            # Track A: Vector Store, SOPs, Knowledge Base
+│   │   ├── api/v1/             # REST API routes (fleet, auth, health, router)
 │   │   └── main.py             # FastAPI entrypoint, lifespan, CORS, and root endpoints
-│   ├── tests/                  # Pytest test suites (test_health.py, solver, rag, fsm)
+│   ├── tests/                  # Pytest test suites (test_auth_rbac.py, test_fleet_crud.py, test_health.py)
 │   └── requirements.txt        # Python backend dependencies
 │
 ├── frontend/
 │   ├── src/
-│   │   ├── app/                # Next.js App Router (dashboard, routes, tracking, copilot, etc.)
-│   │   ├── components/         # LeafletMap, CopilotDrawer, Navbar, Sidebar, KpiCards
+│   │   ├── app/                # Next.js App Router (page.tsx, fleet/page.tsx, login/page.tsx)
+│   │   ├── components/         # Navbar, Sidebar, VehicleModal, DriverModal, HubModal, QueryProvider
 │   │   └── lib/
 │   │       ├── types.ts        # Master TypeScript Data Contracts (Shared)
-│   │       └── api.ts          # Centralized API client with JWT bearer handling
+│   │       ├── api.ts          # Centralized API client with JWT bearer handling & fleet methods
+│   │       └── authContext.tsx # React Context for global auth state & demo persona switches
 │   ├── package.json            # Node.js dependencies
-│   ├── tailwind.config.js      # Tactical command center palette (#0b0f19)
+│   ├── tailwind.config.js      # Enterprise telemetry palette (#070b12, #0b0f19, #101726)
 │   └── tsconfig.json           # TypeScript configuration
 │
-├── _PRD.pdf                    # Official Product Requirements Document
+├── project_architecture_and_viva_guide.md # Viva study guide & complete code breakdown
 ├── conflict_free_architecture_guide.md  # Parallel development engineering protocol
 ├── milestones_tracker.md       # Live 16-week progress tracker
 ├── team_work_split.md          # Two-person engineering allocation breakdown
-├── weekly_work_log.md          # Plain English weekly project journal
 └── README.md                   # Main documentation (this file)
 ```
 
@@ -141,7 +148,7 @@ fleet-route-opt/
 ## Getting Started
 
 ### Prerequisites
-- **Python**: `3.11+` (Fully compatible with Python `3.14`)
+- **Python**: `3.11+` (Compatible with Python `3.14`)
 - **Node.js**: `v18.0+` (Tested on `v20` / `v22` / `v25`)
 - **Git**: `2.30+`
 
@@ -153,9 +160,9 @@ fleet-route-opt/
 # Navigate to backend directory
 cd backend
 
-# Create and activate virtual environment (optional but recommended)
+# Create and activate virtual environment
 python -m venv venv
-# On Windows:
+# On Windows (PowerShell):
 .\venv\Scripts\activate
 # On Linux/macOS:
 source venv/bin/activate
@@ -163,11 +170,11 @@ source venv/bin/activate
 # Install dependencies
 python -m pip install -r requirements.txt
 
-# Run automated tests
-python -m pytest tests/ -v
+# Run automated backend unit tests
+python -m pytest tests/test_auth_rbac.py tests/test_fleet_crud.py tests/test_health.py -v
 
 # Start the development server
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 - **Interactive API Documentation (Swagger)**: [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -190,6 +197,8 @@ npm run dev
 ```
 
 - **Command Center Dashboard**: [http://localhost:3000](http://localhost:3000)
+- **Operator Auth Gateway**: [http://localhost:3000/login](http://localhost:3000/login)
+- **Fleet Asset Workspace**: [http://localhost:3000/fleet](http://localhost:3000/fleet)
 
 ---
 
@@ -227,7 +236,7 @@ gitGraph
 3. **End-of-Week Integration Sync**:
    - Open Pull Request into `dev`.
    - Peer review and approve.
-   - Run automated tests (`pytest` and `npm test`).
+   - Run automated tests (`python -m pytest` and `npm run build`).
    - Merge into `dev`.
 
 ---
