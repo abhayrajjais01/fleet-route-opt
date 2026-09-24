@@ -1,9 +1,10 @@
 """
-test_rag.py - RAG Corpus Parsing, Chunking & Embedding Tests (US-006, Track A: Manthan Nimodiya)
+test_rag.py - RAG Knowledge Base & Vector Store Tests (US-006, Track A: Manthan Nimodiya)
 
 Covers:
 - Corpus parsing & section-aware chunking (every chunk carries a citable doc id + § section)
 - Text normalisation (domain synonyms, stemming) and TF-IDF embedding properties
+- Vector store cosine ranking, top-k, category filters and empty-query handling
 """
 
 import numpy as np
@@ -15,6 +16,8 @@ from app.services.rag.embeddings import (
     parse_sop_markdown,
     tokenize,
 )
+from app.services.rag.knowledge_base import CATEGORY_LABELS, get_knowledge_base
+from app.services.rag.vector_store import InMemoryVectorStore, cosine_similarity
 
 SAMPLE_DOC = """---
 doc_id: SOP-TEST-001
@@ -56,6 +59,15 @@ def test_long_sections_are_split_into_overlapping_windows():
     assert first_section[0].text.split(". ")[-1].rstrip(".") in first_section[1].text
 
 
+def test_corpus_loads_every_category_with_citable_chunks():
+    kb = get_knowledge_base()
+    assert len(kb.documents) >= 8
+    assert {d.category for d in kb.documents} == set(CATEGORY_LABELS)
+    ids = [c.chunk_id for c in kb.chunks]
+    assert len(ids) == len(set(ids)), "chunk ids must be unique to be usable as citations"
+    for chunk in kb.chunks:
+        assert chunk.section.startswith("§") and chunk.text and chunk.doc_title
+
 
 # ==================== NORMALISATION & EMBEDDINGS ==================== #
 def test_tokenize_maps_domain_synonyms_and_stems():
@@ -71,3 +83,55 @@ def test_tfidf_embeddings_are_unit_length_and_ignore_unknown_terms():
     vectors = embedder.embed(["hazmat placard", "completely unrelated words"])
     assert np.isclose(np.linalg.norm(vectors[0]), 1.0)
     assert not vectors[1].any(), "out-of-vocabulary queries must embed to the zero vector"
+
+
+def test_cosine_similarity_reference_values():
+    a = np.array([1.0, 0.0])
+    assert cosine_similarity(a, a) == pytest.approx(1.0)
+    assert cosine_similarity(a, np.array([0.0, 2.0])) == pytest.approx(0.0)
+    assert cosine_similarity(a, np.zeros(2)) == 0.0
+
+
+# ==================== VECTOR STORE ==================== #
+@pytest.fixture
+def small_store():
+    chunks = chunk_document(parse_sop_markdown(SAMPLE_DOC))
+    from app.services.rag.vector_store import embedding_text
+
+    embedder = TfidfEmbedder().fit([embedding_text(c) for c in chunks])
+    store = InMemoryVectorStore(embedder)
+    store.add(chunks)
+    return store
+
+
+def test_vector_store_ranks_by_descending_similarity(small_store):
+    hits = small_store.search("reefer temperature logging", top_k=2)
+    assert hits[0].chunk.chunk_id == "SOP-TEST-001#2"
+    assert all(hits[i].score >= hits[i + 1].score for i in range(len(hits) - 1))
+
+
+def test_vector_store_respects_top_k_and_empty_queries(small_store):
+    assert len(small_store.search("hazmat reefer", top_k=1)) == 1
+    assert small_store.search("zebra giraffe", top_k=5) == []
+    assert small_store.search("hazmat", top_k=0) == []
+
+
+def test_category_filter_restricts_results():
+    kb = get_knowledge_base()
+    hits = kb.search("cargo handling at the stop", top_k=10, categories=["COLD_CHAIN"])
+    assert hits and all(h.chunk.category == "COLD_CHAIN" for h in hits)
+
+
+@pytest.mark.parametrize(
+    "query, expected_category",
+    [
+        ("HAZMAT transport requirements", "HAZMAT"),
+        ("driver rest break after continuous driving", "DRIVER_REST"),
+        ("vaccine temperature excursion", "COLD_CHAIN"),
+        ("vehicle overloaded beyond payload", "VEHICLE_SAFETY"),
+        ("truck broke down on the highway", "OPERATIONS"),
+    ],
+)
+def test_top_result_comes_from_expected_category(query, expected_category):
+    hits = get_knowledge_base().search(query, top_k=1)
+    assert hits[0].chunk.category == expected_category
