@@ -9,6 +9,8 @@ from app.core.database import SessionLocal, engine, Base
 import app.models
 from app.models.user import User, UserRole
 from app.models.fleet import Hub, Vehicle, Driver, VehicleType, VehicleStatus, LicenseType, DriverStatus
+from app.models.shipment import Shipment, ShipmentStatus, ShipmentPriority
+from app.models.audit import AuditLog, AuditAction
 from app.core.security import hash_password
 
 
@@ -25,6 +27,7 @@ def seed():
             ("dispatcher@fleetopt.io", "password123", "Primary Dispatch Operator", UserRole.DISPATCHER),
             ("driver@fleetopt.io", "password123", "Field Delivery Driver", UserRole.DRIVER),
         ]
+        created_users = []
         for email, pwd, name, role in users:
             existing = db.query(User).filter(User.email == email).first()
             if not existing:
@@ -36,7 +39,11 @@ def seed():
                     is_active=True,
                 )
                 db.add(u)
+                db.flush()
+                created_users.append(u)
                 print(f"  + User created: {email} ({role.value})")
+            else:
+                created_users.append(existing)
         db.commit()
 
         # 2. Seed Hubs
@@ -189,11 +196,137 @@ def seed():
                 print(f"  + Driver created: {d.full_name} ({d.status.value})")
         db.commit()
 
-        print("\n✅ Seed data populated successfully!")
+        # 5. Seed Shipments (Track B: Week 3)
+        shipments_data = [
+            {
+                "tracking_number": "SHP-001-MUM",
+                "customer_name": "Reliance Industries Ltd",
+                "destination_address": "Plot C-22, G Block, BKC, Bandra East, Mumbai 400051",
+                "latitude": 19.0657,
+                "longitude": 72.8687,
+                "weight_kg": 450.0,
+                "volume_m3": 3.2,
+                "time_window_start": "09:00",
+                "time_window_end": "12:00",
+                "priority": ShipmentPriority.HIGH,
+                "status": ShipmentStatus.IN_TRANSIT,
+                "hub_id": hub1.id,
+                "assigned_vehicle_id": created_vehs[0].id,
+            },
+            {
+                "tracking_number": "SHP-002-MUM",
+                "customer_name": "Tata Consultancy Services",
+                "destination_address": "Hiranandani Business Park, Powai, Mumbai 400076",
+                "latitude": 19.1176,
+                "longitude": 72.9060,
+                "weight_kg": 180.0,
+                "volume_m3": 1.5,
+                "time_window_start": "10:00",
+                "time_window_end": "14:00",
+                "priority": ShipmentPriority.STANDARD,
+                "status": ShipmentStatus.ASSIGNED,
+                "hub_id": hub1.id,
+                "assigned_vehicle_id": created_vehs[0].id,
+            },
+            {
+                "tracking_number": "SHP-003-NV",
+                "customer_name": "Flipkart Supply Chain Centre",
+                "destination_address": "Sector 11, CBD Belapur, Navi Mumbai 400614",
+                "latitude": 19.0144,
+                "longitude": 73.0380,
+                "weight_kg": 920.0,
+                "volume_m3": 7.8,
+                "time_window_start": "08:00",
+                "time_window_end": "11:00",
+                "priority": ShipmentPriority.EXPRESS,
+                "status": ShipmentStatus.UNASSIGNED,
+                "hub_id": hub1.id,
+                "assigned_vehicle_id": None,
+            },
+            {
+                "tracking_number": "SHP-004-BLR",
+                "customer_name": "Infosys Corporate Campus",
+                "destination_address": "Electronics City Phase 1, Bengaluru 560100",
+                "latitude": 12.8452,
+                "longitude": 77.6602,
+                "weight_kg": 640.0,
+                "volume_m3": 5.1,
+                "time_window_start": "11:00",
+                "time_window_end": "15:00",
+                "priority": ShipmentPriority.STANDARD,
+                "status": ShipmentStatus.DELIVERED,
+                "hub_id": hub2.id,
+                "assigned_vehicle_id": created_vehs[2].id,
+            },
+            {
+                "tracking_number": "SHP-005-DEL",
+                "customer_name": "Amazon Fulfillment Centre DEL4",
+                "destination_address": "Okhla Phase II Industrial Area, New Delhi 110020",
+                "latitude": 28.5320,
+                "longitude": 77.2710,
+                "weight_kg": 120.0,
+                "volume_m3": 0.8,
+                "time_window_start": "09:30",
+                "time_window_end": "11:00",
+                "priority": ShipmentPriority.EXPRESS,
+                "status": ShipmentStatus.IN_TRANSIT,
+                "hub_id": hub3.id,
+                "assigned_vehicle_id": created_vehs[3].id,
+            },
+        ]
+        created_shipments = []
+        for s_data in shipments_data:
+            existing = db.query(Shipment).filter(Shipment.tracking_number == s_data["tracking_number"]).first()
+            if not existing:
+                s = Shipment(**s_data)
+                db.add(s)
+                db.flush()
+                created_shipments.append(s)
+                print(f"  + Shipment created: {s.tracking_number} ({s.customer_name})")
+            else:
+                created_shipments.append(existing)
+        db.commit()
+
+        # 6. Seed Audit Logs (Track B: Week 3)
+        audit_data = [
+            {
+                "actor_id": created_users[2].id,
+                "actor_name": created_users[2].full_name,
+                "actor_role": created_users[2].role.value,
+                "action_type": AuditAction.ASSET_CREATED,
+                "entity_type": "Shipment",
+                "entity_id": created_shipments[0].id if created_shipments else 1,
+                "details": "Consignment SHP-001-MUM registered with high priority for Reliance Industries",
+                "after_state": '{"tracking_number": "SHP-001-MUM", "priority": "HIGH", "status": "IN_TRANSIT"}',
+            },
+            {
+                "actor_id": created_users[0].id,
+                "actor_name": created_users[0].full_name,
+                "actor_role": created_users[0].role.value,
+                "action_type": AuditAction.STATUS_CHANGE,
+                "entity_type": "Shipment",
+                "entity_id": created_shipments[0].id if created_shipments else 1,
+                "details": "Shipment status shifted from ASSIGNED to IN_TRANSIT by Chief Dispatch Officer",
+                "before_state": '{"status": "ASSIGNED"}',
+                "after_state": '{"status": "IN_TRANSIT"}',
+            },
+        ]
+        for a_data in audit_data:
+            existing = db.query(AuditLog).filter(
+                AuditLog.entity_id == a_data["entity_id"],
+                AuditLog.action_type == a_data["action_type"]
+            ).first()
+            if not existing:
+                a = AuditLog(**a_data)
+                db.add(a)
+                print(f"  + Audit entry created: {a.action_type.value} on {a.entity_type}:{a.entity_id}")
+        db.commit()
+
+        print("\n[SUCCESS] Seed data populated successfully!")
 
     except Exception as e:
         db.rollback()
-        print(f"❌ Error seeding database: {e}")
+        print(f"[ERROR] Error seeding database: {e}")
         raise e
     finally:
         db.close()

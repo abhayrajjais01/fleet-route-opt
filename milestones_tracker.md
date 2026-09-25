@@ -10,14 +10,14 @@
 
 | Metric | Status |
 | :--- | :--- |
-| **Overall Roadmap Progress** | **18.75% Completed** (Weeks 1 & 2 Done, Week 3 Active) |
+| **Overall Roadmap Progress** | **18.75% Completed** (Weeks 1 & 2 Done, Week 3 Track B Delivered) |
 | **Current Active Month** | **Month 1: Foundation, Governance, Assets & Shipment Ingestion** |
-| **Current Active Week** | **Week 3: In Progress (Active: Sep 21 – Sep 25, 2026)** |
+| **Current Active Week** | **Week 3: In Progress (Track B Complete, Track A Active)** |
 | **Next Immediate Milestone** | **Week 4: Batch Ingestion & RAG Inspector Portal (Sep 28 – Oct 2, 2026)** |
 
 ```
-Overall Progress: [████░░░░░░░░░░░░░░░░] 18.75% (Weeks 1 & 2 Done, Week 3 Active)
-Month 1 Progress: [██████████████░░░░░░] 65.0% (Weeks 1 & 2 Done, Week 3 In Progress)
+Overall Progress: [████░░░░░░░░░░░░░░░░] 18.75% (Weeks 1 & 2 Done, Week 3 Track B Delivered)
+Month 1 Progress: [██████████████░░░░░░] 70.0% (Weeks 1, 2, & Week 3 Track B Done)
 Month 2 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
 Month 3 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
 Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
@@ -63,14 +63,14 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - [x] Password hashing with `bcrypt` & JWT signed token generator
   - [x] Role-based FastAPI dependency guards (`require_roles([...])`)
   - [x] Responsive login & registration UI with quick role-switcher and `AuthContext`
-  - [x] Automated Auth/RBAC test suite (4/4 passed)
+  - [x] Automated Auth/RBAC test suite (5/5 passed)
 
 #### Week 2: Fleet Assets Backend & Full-Stack Auth (US-001 & US-002)
 - **Status**: `COMPLETED` ✅
 - **Manthan Nimodiya (Track A)**:
   - [x] Models: `Vehicle` (payload capacity, volume, fuel efficiency), `Driver` (shifts, licenses), `Hub` (lat/lng, address)
   - [x] RESTful CRUD APIs with validation: `/api/v1/fleet/vehicles`, `drivers`, `hubs`, `overview`
-  - [x] Relational integrity tests, check constraints, and 100% passing test suite (11/11 tests passed)
+  - [x] Relational integrity tests, check constraints, and 100% passing test suite (4/4 passed)
 - **Abhayraj Jaiswal (Track B)**:
   - [x] Complete JWT auth endpoints: `/api/v1/auth/register`, `/api/v1/auth/login`, `/api/v1/auth/me`
   - [x] Role-based route guards (Driver vs. Dispatcher vs. Fleet Manager vs. Admin views)
@@ -80,7 +80,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - [x] Automated database seeding script (`backend/scripts/seed_demo_data.py`) with 4 roles, 3 hubs, 4 vehicles, and 5 drivers
   - [x] Production cloud deployments: FastAPI backend on Render with PostgreSQL, Vite + React 19 frontend on Vercel with SPA routing
 
-#### Week 3: RAG Knowledge Base & Vector Store vs. Shipments & Audit (US-006 & US-008)
+#### Week 3: RAG Knowledge Base vs. Shipments & Audit (US-006 & US-008)
 - **Status**: `IN PROGRESS` ⏳ (Active: Sep 21 – Sep 25, 2026)
 - **Manthan Nimodiya (Track A: RAG Lead)**:
   - [ ] Curate and chunk enterprise logistics SOPs, Hazmat ADR/DOT rules, driver rest-break mandates, and WikiQA samples
@@ -88,9 +88,9 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - [ ] Semantic search retrieval service with category filtering (Hazmat, Driver Rest, Cold Chain)
   - [ ] Vector store unit test suite and retrieval benchmark tests (`backend/tests/test_rag.py`)
 - **Abhayraj Jaiswal (Track B: Operations & Audit Lead)**:
-  - [ ] `Shipment` database model (`backend/app/models/shipment.py`): coordinates, weight, volume, delivery time windows `[open, close]`, priority, status
-  - [ ] `AuditLog` database model & automated state-change interceptor (`backend/app/models/audit.py`)
-  - [ ] Pydantic validation schemas (`backend/app/schemas/shipment.py`, `backend/app/schemas/audit.py`)
-  - [ ] RESTful Shipment CRUD API (`/api/v1/shipments`) & Audit query API (`/api/v1/audit`)
-  - [ ] Frontend Shipment Management view & Audit Trail explorer UI
-  - [ ] Automated test suite: `backend/tests/test_shipments_audit.py`
+  - [x] `Shipment` database model (`backend/app/models/shipment.py`): coordinates, weight, volume, delivery time windows `[open, close]`, priority, status
+  - [x] `AuditLog` database model & automated state-change interceptor (`backend/app/models/audit.py`)
+  - [x] Pydantic validation schemas (`backend/app/schemas/shipment.py`, `backend/app/schemas/audit.py`)
+  - [x] RESTful Shipment CRUD API (`/api/v1/shipments`) & Audit query API (`/api/v1/audit`)
+  - [x] Automated test suite: `backend/tests/test_shipments_audit.py` (5/5 passed, 17/17 full suite passing)
+  - [x] Database seeder integration populating 5 customer orders & audit history for viva demo

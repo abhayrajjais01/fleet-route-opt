@@ -34,7 +34,7 @@ This document serves as our ongoing project journal. It tracks everything we bui
 
 ### Week 1: Scaffolding, Security & Application Shell (Sep 1 – Sep 5, 2026)
 - **Status**: `COMPLETED` ✅
-- **Focus Area**: Modular FastAPI Architecture, SQLAlchemy 2.0 Dual Engine, Bcrypt/JWT Security & Next.js 14 Dark Tactical UI Shell.
+- **Focus Area**: Modular FastAPI Architecture, SQLAlchemy 2.0 Dual Engine, Bcrypt/JWT Security & Tactical UI Shell.
 
 #### Detailed Accomplishments:
 1. **FastAPI & Dual Database Layer (Track A: Manthan Nimodiya)**:
@@ -64,7 +64,7 @@ This document serves as our ongoing project journal. It tracks everything we bui
 1. **Fleet Asset Models & Schema Design (Track A: Manthan Nimodiya)**:
    - Implemented `Hub` model for distribution depots with geocoordinates (latitude/longitude check constraints) and operating hours.
    - Implemented `Vehicle` model with payload capacity, cargo volume, fuel efficiency (km/l), and status enums (`AVAILABLE`, `IN_TRANSIT`, `MAINTENANCE`, `DECOMMISSIONED`).
-   - Implemented `Driver` model with commercial license validation, max driving hours constraints ($\le 14$ hrs/day), and duty status.
+   - Implemented `Driver` model with commercial license validation, max driving hours constraints (<= 14 hrs/day), and duty status.
    - Created Pydantic v2 schemas (`HubCreate`, `VehicleCreate`, `DriverCreate`, `FleetOverviewResponse`) with strict data validation.
 2. **RESTful Fleet CRUD Endpoints (Track A: Manthan Nimodiya)**:
    - Built comprehensive endpoints for `/api/v1/fleet/hubs`, `/api/v1/fleet/vehicles`, and `/api/v1/fleet/drivers`.
@@ -82,34 +82,34 @@ This document serves as our ongoing project journal. It tracks everything we bui
      - Deployed live frontend on **Vercel** with Vite 8 + React 19 and SPA rewrites (`vercel.json`).
 5. **Integration Testing**:
    - Built and executed `backend/tests/test_fleet_crud.py`.
-   - Verified 11/11 tests passing cleanly across Auth, RBAC, Hub CRUD, Vehicle validation, and Fleet overview aggregations.
+   - Verified 4/4 tests passing cleanly across Auth, RBAC, Hub CRUD, Vehicle validation, and Fleet overview aggregations.
 
 ---
 
 ### Week 3: RAG Knowledge Base vs. Shipments & Audit (Sep 21 – Sep 25, 2026) — IN PROGRESS
-- **Status**: `IN PROGRESS` ⏳
+- **Status**: `IN PROGRESS` ⏳ (Track B Delivered, Track A In Progress)
 - **Focus Area**: RAG Vector Store & Cosine Similarity vs. Shipment Data Models, REST Endpoints & Immutable Audit Logging (US-002, US-006, US-008).
 
-#### Track Breakdown & Architecture Alignment:
-1. **Track A (Manthan Nimodiya - RAG Lead)**:
-   - Constructing the Vector Store indexing engine (`backend/app/services/rag/vector_store.py`) with cosine similarity search.
-   - Curating and embedding logistics regulations, Hazmat ADR/DOT rules, and driver rest-break mandates into vector embeddings.
-   - Implementing vector search service with category filtering (Hazmat, Driver Rest, Cold Chain).
-   - Building automated vector store retrieval unit tests and benchmarking (`backend/tests/test_rag.py`).
-2. **Track B (Abhayraj Jaiswal - Operations & Audit Lead)**:
-   - **Shipment Domain Architecture**:
-     - Creating `Shipment` ORM model (`backend/app/models/shipment.py`) with delivery time windows `[time_window_start, time_window_end]`, cargo weight (kg), volume ($m^3$), priority (`LOW`, `STANDARD`, `HIGH`, `EXPRESS`), status (`UNASSIGNED`, `CLUSTERED`, `ASSIGNED`, `IN_TRANSIT`, `DELIVERED`, `FAILED`), and assigned hub foreign key.
-     - Creating Pydantic validation schemas (`backend/app/schemas/shipment.py`).
-     - Building RESTful CRUD APIs: `/api/v1/shipments` with status and hub filtering.
-   - **Immutable Audit Logging System**:
-     - Creating `AuditLog` ORM model (`backend/app/models/audit.py`) capturing actor ID, action type (`CREATE`, `UPDATE`, `STATUS_CHANGE`, `DISPATCH`, `COPILOT_OVERRIDE`), target entity, before/after JSON payloads, and UTC timestamps.
-     - Building audit query endpoints: `/api/v1/audit` with time-range and entity filters.
-     - Creating state-change interceptor service for automatic auditing.
-   - **Frontend Workspace Integration**:
-     - Shipment order table with priority indicators and delivery window badges.
-     - Audit trail explorer table with actor badges and payload diff inspection.
-   - **Testing**:
-     - Building `backend/tests/test_shipments_audit.py` to verify shipment constraints, audit log immutability, and API responses.
+#### Accomplishments Delivered (Track B: Abhayraj Jaiswal):
+1. **Shipment Domain Architecture (`backend/app/models/shipment.py`)**:
+   - Built `Shipment` ORM model supporting delivery time windows `[time_window_start, time_window_end]`, cargo weight (kg), volume (m3), priority rankings (`LOW`, `STANDARD`, `HIGH`, `EXPRESS`), status lifecycle (`UNASSIGNED`, `CLUSTERED`, `ASSIGNED`, `IN_TRANSIT`, `DELIVERED`, `FAILED`), and origin hub foreign key.
+   - Enforced SQL constraints for geocoordinate validation and positive cargo values.
+2. **Pydantic v2 Schemas (`backend/app/schemas/shipment.py`)**:
+   - Enforced client-server contracts ensuring time window closing cannot precede opening time.
+3. **Immutable Audit Logging System (`backend/app/models/audit.py`, `backend/app/services/audit_service.py`)**:
+   - Built `AuditLog` ORM model and automated event helper recording actor name, role, action type (`ASSET_CREATED`, `STATUS_CHANGE`, `ROUTE_MODIFIED`, `COPILOT_OVERRIDE`, `DISPATCH_APPROVED`), and serialized before/after JSON states.
+4. **RESTful APIs (`backend/app/api/v1/shipments.py` & `backend/app/api/v1/audit.py`)**:
+   - Exposed `GET`, `POST`, `PATCH /status`, and `DELETE` endpoints for Shipments with RBAC protection.
+   - Exposed `GET /api/v1/audit` for paginated compliance history inspection.
+5. **Database Seeder & Test Suite**:
+   - Updated `backend/scripts/seed_demo_data.py` to seed 5 realistic customer orders and audit logs.
+   - Built `backend/tests/test_shipments_audit.py` with 5 automated test cases.
+   - **Full test suite passing: 17/17 (100%)**.
+
+#### Track A Focus (Manthan Nimodiya - Active):
+- Constructing Vector Store indexing engine (`backend/app/services/rag/vector_store.py`) with cosine similarity search.
+- Curating logistics SOPs, Hazmat ADR/DOT rules, and driver rest mandates.
+- Automated vector store retrieval unit tests and benchmarking (`backend/tests/test_rag.py`).
 
 ---
 
