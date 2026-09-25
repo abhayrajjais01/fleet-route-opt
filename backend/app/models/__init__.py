@@ -10,6 +10,15 @@ from app.models.fleet import (
     LicenseType,
     DriverStatus,
 )
+from app.models.shipment import (
+    Shipment,
+    ShipmentPriority,
+    ShipmentStatus,
+)
+from app.models.audit import (
+    AuditLog,
+    AuditAction,
+)
 
 __all__ = [
     "Base",
@@ -23,4 +32,9 @@ __all__ = [
     "VehicleStatus",
     "LicenseType",
     "DriverStatus",
+    "Shipment",
+    "ShipmentPriority",
+    "ShipmentStatus",
+    "AuditLog",
+    "AuditAction",
 ]
