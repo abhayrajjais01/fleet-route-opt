@@ -98,39 +98,21 @@ fleet-route-opt/
 │       ├── test_vrptw_solver.py         # [Manthan] Solver hard constraints & speed
 │       ├── test_rag.py                  # [Manthan] Vector retrieval & citations
 │       ├── test_auth_rbac.py            # [Abhayraj] JWT token issuance & route guards
+│       ├── test_shipments_audit.py      # [Abhayraj] Shipment models & audit trail
 │       ├── test_fsm.py                  # [Abhayraj] State transitions & driver actions
 │       └── test_copilot.py              # [Abhayraj] Multi-agent routing & proposals
 │
 ├── frontend/
 │   ├── src/
-│   │   ├── app/                         <-- NEXT.JS APP ROUTER PAGES
-│   │   │   ├── layout.tsx               # [Shared] Root layout, QueryClient, AuthProvider
-│   │   │   ├── page.tsx                 # [Shared] Landing & portal redirect
-│   │   │   ├── routes/page.tsx          # [Manthan] Route Manifest & Waypoint Resequencing
-│   │   │   ├── compliance/page.tsx      # [Manthan] RAG SOP Knowledge & Regulation Inspector
-│   │   │   ├── login/page.tsx           # [Abhayraj] Auth portal & quick role-switcher
-│   │   │   ├── fleet/page.tsx           # [Abhayraj] Asset Directory & CRUD Modals
-│   │   │   ├── shipments/page.tsx       # [Abhayraj] Order Management & Batch Uploader
-│   │   │   ├── tracking/page.tsx        # [Abhayraj] Driver Mobile View & Live Simulator
-│   │   │   ├── copilot/page.tsx         # [Abhayraj] Fullscreen Copilot & Execution Traces
-│   │   │   └── analytics/page.tsx       # [Abhayraj] Executive KPI Dashboard & Export
-│   │   │
-│   │   ├── components/                  <-- ISOLATED REUSABLE COMPONENTS
-│   │   │   ├── map/                     # [Manthan] LeafletMap, RoutePolyline, StopPin
-│   │   │   ├── routes/                  # [Manthan] StopSequenceList, LoadBar, ViabilityBadge
-│   │   │   ├── compliance/              # [Manthan] CitationBadge, PolicyExcerptPopover
-│   │   │   ├── tracking/                # [Abhayraj] DriverCard, ActionButton, StatusTimeline
-│   │   │   ├── copilot/                 # [Abhayraj] CopilotDrawer, ProposalCard, TraceView
-│   │   │   ├── analytics/               # [Abhayraj] KpiCard, OtifChart, FuelBurnChart
-│   │   │   ├── fleet/                   # [Abhayraj] AssetTable, VehicleModal, DriverModal
-│   │   │   └── layout/                  # [Shared] Sidebar, TopNavbar, UserBadge
-│   │   │
-│   │   └── lib/                         <-- SHARED CONTRACTS & UTILITIES
-│   │       ├── types.ts                 # [Shared Contract] Complete TypeScript interfaces
-│   │       ├── api.ts                   # [Shared] Axios/Fetch client with JWT interceptor
-│   │       └── authContext.tsx          # [Abhayraj] Auth state management
+│   │   ├── App.tsx                      # [Unified / Active Canvas Shell]
+│   │   ├── main.tsx                     # React 19 entrypoint
+│   │   ├── index.css                    # Tailwind CSS v4 design tokens
+│   │   └── lib/
+│   │       ├── types.ts                 # Shared TypeScript data contracts
+│   │       ├── api.ts                   # Fetch/Axios API client
+│   │       └── authContext.tsx          # Auth state management
 │   │
-│   └── docker-compose.yml               # [Shared] Multi-container configuration
+│   └── vercel.json                      # Vercel Vite build & SPA rewrite config
 ```
 
 ---
@@ -142,11 +124,12 @@ fleet-route-opt/
    - Manthan's RAG Vector Engine outputs `PolicyCitationResponse` matching frontend `PolicyCitation`.
    - Manthan's VRPTW Solver outputs `RouteStopResponse` matching frontend `RouteStop`.
    - Abhayraj's Copilot Agent calls Manthan's solver via structured JSON tool contracts.
+   - Abhayraj's Shipment API outputs `ShipmentResponse` matching frontend `Shipment`.
 
 ---
 
-## 4. Summary Checklist for Month 1, Week 3 Transition
+## 4. Summary Checklist for Month 1, Week 3 Active Phase
 
-- [x] Weeks 1 & 2 completed and verified (FastAPI, SQLite/Postgres dual engine, Fleet Models & CRUD APIs).
-- [ ] **Track A (Manthan)**: Build `services/rag/vector_store.py`, embedding pipeline, and vector store test suite (`tests/test_rag.py`).
-- [ ] **Track B (Abhayraj)**: Build `models/shipment.py`, `models/audit.py`, and audit log explorer UI.
+- [x] Weeks 1 & 2 completed, verified, and deployed live (FastAPI, SQLite/Postgres dual engine, Fleet Models & CRUD APIs, Vercel/Render hosting).
+- [ ] **Track A (Manthan)**: Build `backend/app/services/rag/vector_store.py`, embeddings pipeline, and `backend/tests/test_rag.py`.
+- [ ] **Track B (Abhayraj)**: Build `backend/app/models/shipment.py`, `backend/app/models/audit.py`, schemas, `/api/v1/shipments`, `/api/v1/audit`, and `backend/tests/test_shipments_audit.py`.
