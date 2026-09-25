@@ -10,14 +10,14 @@
 
 | Metric | Status |
 | :--- | :--- |
-| **Overall Roadmap Progress** | **18.75% Completed** (Weeks 1 & 2 Done, Week 3 Track B Delivered) |
+| **Overall Roadmap Progress** | **18.75% Completed** (Weeks 1–3 Done) |
 | **Current Active Month** | **Month 1: Foundation, Governance, Assets & Shipment Ingestion** |
-| **Current Active Week** | **Week 3: In Progress (Track B Complete, Track A Active)** |
+| **Current Active Week** | **Week 3: Completed (Track A & Track B Delivered)** |
 | **Next Immediate Milestone** | **Week 4: Batch Ingestion & RAG Inspector Portal (Sep 28 – Oct 2, 2026)** |
 
 ```
-Overall Progress: [████░░░░░░░░░░░░░░░░] 18.75% (Weeks 1 & 2 Done, Week 3 Track B Delivered)
-Month 1 Progress: [██████████████░░░░░░] 70.0% (Weeks 1, 2, & Week 3 Track B Done)
+Overall Progress: [████░░░░░░░░░░░░░░░░] 18.75% (Weeks 1–3 Done)
+Month 1 Progress: [███████████████░░░░░] 75.0% (Weeks 1–3 Done)
 Month 2 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
 Month 3 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
 Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
@@ -31,7 +31,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 | :--- | :--- | :--- | :--- | :--- | :---: |
 | **Month 1** | **Week 1** | Foundations & Shell | Backend Engine & DB Setup | Security, RBAC & Auth UI Shell | `COMPLETED` ✅ |
 | | **Week 2** | Assets & Authentication | Fleet Asset Backend Models & APIs | Full-Stack RBAC Auth & Route Guards | `COMPLETED` ✅ |
-| | **Week 3** | RAG Store & Shipments | RAG Knowledge Base & Vector Store | Shipment Ingestion & Audit Logging | `IN PROGRESS` ⏳ |
+| | **Week 3** | RAG Store & Shipments | RAG Knowledge Base & Vector Store | Shipment Ingestion & Audit Logging | `COMPLETED` ✅ |
 | | **Week 4** | Compliance UI & Ingestion | RAG Compliance Inspector Search UI | Batch Order Uploader & Regression Tests| `PLANNED` |
 | **Month 2** | **Week 5** | Spatial Map & LangGraph | Haversine Matrix & Leaflet Map Shell| LangGraph StateGraph & Router Agent| `PLANNED` |
 | | **Week 6** | VRPTW Solver & FSM | Deterministic VRPTW Solver Core | In-Transit FSM & Telemetry Tracking| `PLANNED` |
@@ -81,12 +81,12 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - [x] Production cloud deployments: FastAPI backend on Render with PostgreSQL, Vite + React 19 frontend on Vercel with SPA routing
 
 #### Week 3: RAG Knowledge Base vs. Shipments & Audit (US-006 & US-008)
-- **Status**: `IN PROGRESS` ⏳ (Active: Sep 21 – Sep 25, 2026)
+- **Status**: `COMPLETED` ✅ (Sep 21 – Sep 25, 2026)
 - **Manthan Nimodiya (Track A: RAG Lead)**:
-  - [ ] Curate and chunk enterprise logistics SOPs, Hazmat ADR/DOT rules, driver rest-break mandates, and WikiQA samples
-  - [ ] Vector embedding index with cosine similarity search (`backend/app/services/rag/vector_store.py`)
-  - [ ] Semantic search retrieval service with category filtering (Hazmat, Driver Rest, Cold Chain)
-  - [ ] Vector store unit test suite and retrieval benchmark tests (`backend/tests/test_rag.py`)
+  - [x] Curate and chunk enterprise logistics SOPs, Hazmat ADR/DOT rules, driver rest-break mandates, and WikiQA-style samples (8 SOPs, 5 categories, 41 section-level chunks in `backend/app/services/rag/corpus/`)
+  - [x] Vector embedding index with cosine similarity search (`backend/app/services/rag/vector_store.py`, TF-IDF embedder in `embeddings.py`)
+  - [x] Semantic search retrieval service with category filtering (Hazmat, Driver Rest, Cold Chain, Vehicle Safety, Operations) exposed at `/api/v1/rag/*`
+  - [x] Vector store unit test suite and retrieval benchmark tests (`backend/tests/test_rag.py`: 22 tests; Recall@3 = 1.0, MRR = 0.98, p95 latency < 1 ms; 39/39 full suite passing)
 - **Abhayraj Jaiswal (Track B: Operations & Audit Lead)**:
   - [x] `Shipment` database model (`backend/app/models/shipment.py`): coordinates, weight, volume, delivery time windows `[open, close]`, priority, status
   - [x] `AuditLog` database model & automated state-change interceptor (`backend/app/models/audit.py`)

@@ -174,9 +174,11 @@ Manthan owns the **Backend Scaffolding, Fleet Database Layer, VRPTW Mathematical
 #### 4. Interactive Workflow Canvas & Node Graph (`Week 2/3`)
 - Built `frontend/src/App.tsx` featuring an interactive node canvas visualizer, live backend probing, and role-based permissions switcher.
 
-#### 5. RAG Vector Knowledge Base (Active / In Progress for `Week 3`)
-- Constructing vector store indexing engine (`backend/app/services/rag/vector_store.py`) with cosine similarity search.
-- Ingesting enterprise logistics regulations, Hazmat ADR/DOT rules, and driver rest break mandates into vector embeddings.
+#### 5. RAG Vector Knowledge Base (`Week 3`)
+- **Curated corpus (`backend/app/services/rag/corpus/`)**: 8 versioned SOPs across Hazmat, Driver Rest, Cold Chain, Vehicle Safety and Operations, citing 49 CFR, ADR, CMVR, the Motor Transport Workers Act 1961, EU 561/2006 and FMCSA.
+- **Pipeline**: section-aware chunking (41 citable chunks) → TF-IDF unigram + bigram embeddings → in-memory cosine-similarity vector store with category filters.
+- **API**: `/api/v1/rag/search`, `/categories`, `/documents`, `/documents/{id}`, `/stats`, `/benchmark`.
+- **WikiQA-style benchmark**: Recall@3 1.00, MRR 0.98, p95 latency < 1 ms; off-topic questions score 0 (basis for the Week 7 guardrail threshold). `backend/tests/test_rag.py`: 22 tests.
 
 ---
 
