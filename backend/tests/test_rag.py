@@ -1,10 +1,12 @@
 """
-test_rag.py - RAG Knowledge Base & Vector Store Tests (US-006, Track A: Manthan Nimodiya)
+test_rag.py - RAG Knowledge Base, Vector Store & Retrieval Benchmark Tests (US-006, Track A: Manthan Nimodiya)
 
 Covers:
 - Corpus parsing & section-aware chunking (every chunk carries a citable doc id + § section)
 - Text normalisation (domain synonyms, stemming) and TF-IDF embedding properties
 - Vector store cosine ranking, top-k, category filters and empty-query handling
+- WikiQA-style retrieval benchmark: Recall@3, MRR, latency and unanswerable-question separation
+- REST API: /rag/search, /rag/categories, /rag/documents, /rag/stats, /rag/benchmark
 """
 
 import numpy as np
@@ -16,6 +18,7 @@ from app.services.rag.embeddings import (
     parse_sop_markdown,
     tokenize,
 )
+from app.services.rag.evaluation import evaluate
 from app.services.rag.knowledge_base import CATEGORY_LABELS, get_knowledge_base
 from app.services.rag.vector_store import InMemoryVectorStore, cosine_similarity
 
@@ -135,3 +138,72 @@ def test_category_filter_restricts_results():
 def test_top_result_comes_from_expected_category(query, expected_category):
     hits = get_knowledge_base().search(query, top_k=1)
     assert hits[0].chunk.category == expected_category
+
+
+# ==================== RETRIEVAL BENCHMARK (WikiQA-style) ==================== #
+def test_retrieval_benchmark_meets_quality_and_latency_targets():
+    report = evaluate()
+    assert report.answerable >= 25 and report.unanswerable >= 3
+    assert report.recall_at_3 >= 0.9, report.misses
+    assert report.mrr >= 0.8
+    assert report.p95_latency_ms < 100, "vector search must stay under the 100 ms PRD target"
+
+
+def test_unanswerable_questions_score_below_every_answerable_question():
+    """The gap between these two numbers is where the Week 7 zero-hallucination threshold will sit."""
+    report = evaluate()
+    assert report.max_unanswerable_top_score < report.min_answerable_top_score
+
+
+# ==================== REST API ==================== #
+def test_search_endpoint_returns_ranked_citations(client):
+    response = client.post("/api/v1/rag/search", json={"query": "placard weight threshold for hazmat", "top_k": 3})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["results"][0]["chunk_id"] == "SOP-HZ-001#3"
+    assert data["results"][0]["section"] == "§3"
+    assert data["top_score"] == data["results"][0]["score"]
+    assert data["total_chunks_indexed"] > 0
+    scores = [r["score"] for r in data["results"]]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_search_endpoint_category_filter_and_validation(client):
+    response = client.post("/api/v1/rag/search", json={"query": "temperature", "categories": ["cold_chain"]})
+    assert response.status_code == 200
+    assert {r["category"] for r in response.json()["results"]} == {"COLD_CHAIN"}
+
+    assert client.post("/api/v1/rag/search", json={"query": "  "}).status_code == 422
+    assert client.post("/api/v1/rag/search", json={"query": "hazmat", "categories": ["PIZZA"]}).status_code == 422
+    assert client.post("/api/v1/rag/search", json={"query": "hazmat", "top_k": 50}).status_code == 422
+
+
+def test_search_endpoint_returns_no_results_for_off_topic_query(client):
+    response = client.post("/api/v1/rag/search", json={"query": "best chocolate cake recipe"})
+    assert response.status_code == 200
+    assert response.json()["results"] == []
+    assert response.json()["top_score"] == 0.0
+
+
+def test_categories_and_documents_endpoints(client):
+    categories = client.get("/api/v1/rag/categories").json()
+    assert {c["code"] for c in categories} == set(CATEGORY_LABELS)
+    assert all(c["document_count"] >= 1 for c in categories)
+
+    hazmat_docs = client.get("/api/v1/rag/documents", params={"category": "hazmat"}).json()
+    assert hazmat_docs and all(d["category"] == "HAZMAT" for d in hazmat_docs)
+
+    doc = client.get("/api/v1/rag/documents/sop-dr-001").json()
+    assert doc["doc_id"] == "SOP-DR-001"
+    assert len(doc["sections"]) == doc["section_count"] >= 1
+
+    assert client.get("/api/v1/rag/documents/SOP-NOPE-999").status_code == 404
+
+
+def test_stats_and_benchmark_endpoints(client):
+    stats = client.get("/api/v1/rag/stats").json()
+    assert stats["documents"] >= 8 and stats["chunks"] >= stats["documents"]
+    assert stats["vocabulary_size"] > 0
+
+    bench = client.get("/api/v1/rag/benchmark").json()
+    assert bench["recall_at_3"] >= 0.9
