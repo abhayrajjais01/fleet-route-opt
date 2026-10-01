@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { checkApiHealth } from './lib/api'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type UserRole = 'ADMIN' | 'FLEET_MANAGER' | 'DISPATCHER' | 'DRIVER'
@@ -61,17 +62,6 @@ const INIT_AUDIT: AuditEntry[] = [
   { id: 3, timestamp: '2026-09-22 12:17:55', actor_name: 'Manthan Nimodiya', action_type: 'STATUS_CHANGE', entity_type: 'SHIPMENT', entity_id: 4, details: 'SHP-004-PNQ status → DELIVERED' },
   { id: 4, timestamp: '2026-09-22 11:58:40', actor_name: 'Copilot AI', action_type: 'COPILOT_OVERRIDE', entity_type: 'ROUTE', entity_id: 17, details: 'AI suggested reroute due to NH-48 congestion' },
 ]
-
-// ─── API CLIENT HELPER (FastAPI at http://localhost:8000) ─────────────────────
-const API_BASE = 'http://localhost:8000'
-async function checkApiHealth(): Promise<boolean> {
-  try {
-    const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(1500) })
-    return res.ok
-  } catch {
-    return false
-  }
-}
 
 // ─── WORKFLOW GENERATOR ───────────────────────────────────────────────────────
 const NODE_W = 152, NODE_H = 68
