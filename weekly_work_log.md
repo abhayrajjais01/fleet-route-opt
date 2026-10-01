@@ -10,7 +10,7 @@ This document serves as our ongoing project journal. It tracks everything we bui
   - [Week 1: Scaffolding, Security & Application Shell (Completed)](#week-1-scaffolding-security--application-shell)
   - [Week 2: Fleet Assets & Full-Stack RBAC Auth (Completed)](#week-2-fleet-assets--full-stack-rbac-auth)
   - [Week 3: RAG Knowledge Base vs. Shipments & Audit (Completed)](#week-3-rag-knowledge-base-vs-shipments--audit)
-  - [Week 4: RAG Compliance Inspector UI vs. Batch Ingestion (Upcoming)](#week-4-rag-compliance-inspector-ui-vs-batch-ingestion)
+  - [Week 4: RAG Compliance Inspector UI vs. Batch Ingestion (In Progress)](#week-4-rag-compliance-inspector-ui-vs-batch-ingestion)
 - [Month 2: Optimization & Map vs. LangGraph Router & FSM (Weeks 5–8)](#month-2-optimization--map-vs-langgraph-router--fsm)
 - [Month 3: AI Copilot Disruption Solver vs. Driver Mobile & Analytics (Weeks 9–12)](#month-3-ai-copilot-disruption-solver-vs-driver-mobile--analytics)
 - [Month 4: Analytics, Hardening, Containerization & Release (Weeks 13–16)](#month-4-analytics-hardening-containerization--release)
@@ -125,9 +125,22 @@ This document serves as our ongoing project journal. It tracks everything we bui
 
 ---
 
-### Week 4: RAG Compliance Inspector UI vs. Batch Ingestion (Upcoming)
-- **Track A (Manthan Nimodiya)**: Compliance Inspector search UI with citation badges and live RAG querying.
-- **Track B (Abhayraj Jaiswal)**: CSV/JSON Batch shipment uploader API & modal, visual cluster previews, Month 1 regression test suite.
+### Week 4: RAG Compliance Inspector UI vs. Batch Ingestion (Sep 28 – Oct 2, 2026)
+- **Status**: `IN PROGRESS` ⏳ (Track A Delivered, Track B In Progress)
+
+#### Accomplishments Delivered (Track A: Manthan Nimodiya):
+1. **Compliance & SOP Inspector (`frontend/src/components/compliance/ComplianceInspector.tsx`)**:
+   - Replaced the hardcoded mock with live semantic search against `/api/v1/rag/search`.
+   - Multi-select category filters with document counts; example query shortcuts.
+   - Citation cards: best-match highlight, doc id + `§` section, version/effective date, similarity confidence meter (High / Medium / Weak bands calibrated on the benchmark), query terms highlighted in the excerpt.
+   - SOP Library sidebar and full-document viewer that scrolls to and highlights the cited section.
+   - Zero-hallucination UX: results are verbatim SOP text only; an empty result shows "No policy found in the verified knowledge base".
+2. **Typed API Client (`frontend/src/lib/api.ts`, `frontend/src/lib/ragApi.ts`)**: TypeScript contracts mirroring `backend/app/schemas/rag.py`; `VITE_API_URL` override for the Render deployment.
+3. **Bug Fix**: The header backend probe was calling `/health` instead of `/api/v1/health`, so the UI always showed "Local Fast Mode". It now correctly shows "API :8000 Online".
+4. **Verification**: Typecheck and production build clean; manually verified search, filters, document viewer, empty state and offline banner against the running backend.
+
+#### Track B Focus (Abhayraj Jaiswal - Active):
+- CSV/JSON Batch shipment uploader API & modal, visual cluster previews, Month 1 regression test suite.
 
 ---
 

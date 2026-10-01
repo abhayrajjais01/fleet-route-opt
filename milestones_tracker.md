@@ -10,14 +10,14 @@
 
 | Metric | Status |
 | :--- | :--- |
-| **Overall Roadmap Progress** | **18.75% Completed** (Weeks 1–3 Done) |
+| **Overall Roadmap Progress** | **21.9% Completed** (Weeks 1–3 Done, Week 4 Track A Delivered) |
 | **Current Active Month** | **Month 1: Foundation, Governance, Assets & Shipment Ingestion** |
-| **Current Active Week** | **Week 3: Completed (Track A & Track B Delivered)** |
-| **Next Immediate Milestone** | **Week 4: Batch Ingestion & RAG Inspector Portal (Sep 28 – Oct 2, 2026)** |
+| **Current Active Week** | **Week 4: In Progress (Track A Complete, Track B Active)** |
+| **Next Immediate Milestone** | **Week 5: Haversine Matrix & Leaflet Map vs. LangGraph Router Agent (Oct 5 – Oct 9, 2026)** |
 
 ```
-Overall Progress: [████░░░░░░░░░░░░░░░░] 18.75% (Weeks 1–3 Done)
-Month 1 Progress: [███████████████░░░░░] 75.0% (Weeks 1–3 Done)
+Overall Progress: [████░░░░░░░░░░░░░░░░] 21.9% (Weeks 1–3 Done, Week 4 Track A Delivered)
+Month 1 Progress: [█████████████████░░░] 87.5% (Weeks 1–3 Done, Week 4 Track A Done)
 Month 2 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
 Month 3 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
 Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
@@ -32,7 +32,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 | **Month 1** | **Week 1** | Foundations & Shell | Backend Engine & DB Setup | Security, RBAC & Auth UI Shell | `COMPLETED` ✅ |
 | | **Week 2** | Assets & Authentication | Fleet Asset Backend Models & APIs | Full-Stack RBAC Auth & Route Guards | `COMPLETED` ✅ |
 | | **Week 3** | RAG Store & Shipments | RAG Knowledge Base & Vector Store | Shipment Ingestion & Audit Logging | `COMPLETED` ✅ |
-| | **Week 4** | Compliance UI & Ingestion | RAG Compliance Inspector Search UI | Batch Order Uploader & Regression Tests| `PLANNED` |
+| | **Week 4** | Compliance UI & Ingestion | RAG Compliance Inspector Search UI | Batch Order Uploader & Regression Tests| `IN PROGRESS` ⏳ |
 | **Month 2** | **Week 5** | Spatial Map & LangGraph | Haversine Matrix & Leaflet Map Shell| LangGraph StateGraph & Router Agent| `PLANNED` |
 | | **Week 6** | VRPTW Solver & FSM | Deterministic VRPTW Solver Core | In-Transit FSM & Telemetry Tracking| `PLANNED` |
 | | **Week 7** | Map Polylines & Guardrails | Route Visualizer & Split Manifest | RAG Similarity Guardrails & Scores | `PLANNED` |
@@ -94,3 +94,17 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - [x] RESTful Shipment CRUD API (`/api/v1/shipments`) & Audit query API (`/api/v1/audit`)
   - [x] Automated test suite: `backend/tests/test_shipments_audit.py` (5/5 passed, 17/17 full suite passing)
   - [x] Database seeder integration populating 5 customer orders & audit history for viva demo
+
+#### Week 4: RAG Compliance Inspector UI vs. Batch Ingestion (US-006)
+- **Status**: `IN PROGRESS` ⏳ (Active: Sep 28 – Oct 2, 2026; Track A Delivered)
+- **Manthan Nimodiya (Track A)**:
+  - [x] Compliance & SOP Inspector page (`frontend/src/components/compliance/ComplianceInspector.tsx`) wired to the live `/api/v1/rag` API
+  - [x] Real-time semantic query search bar with example queries and highlighted matching terms
+  - [x] Multi-select category filters (Hazmat, Driver Rest, Cold Chain, Vehicle Safety, Operations)
+  - [x] Source citation cards with doc id, § section, version and similarity confidence meter; SOP library and full-document viewer that jumps to the cited section
+  - [x] "No policy found in the verified knowledge base" empty state and backend-offline banner
+- **Abhayraj Jaiswal (Track B)**:
+  - [ ] Batch shipment ingestion API supporting CSV and JSON format parsing
+  - [ ] Drag-and-drop batch upload modal with coordinate validation
+  - [ ] Visual delivery cluster preview on UI
+  - [ ] End-to-end Month 1 regression test suite

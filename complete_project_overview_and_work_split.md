@@ -180,6 +180,10 @@ Manthan owns the **Backend Scaffolding, Fleet Database Layer, VRPTW Mathematical
 - **API**: `/api/v1/rag/search`, `/categories`, `/documents`, `/documents/{id}`, `/stats`, `/benchmark`.
 - **WikiQA-style benchmark**: Recall@3 1.00, MRR 0.98, p95 latency < 1 ms; off-topic questions score 0 (basis for the Week 7 guardrail threshold). `backend/tests/test_rag.py`: 22 tests.
 
+#### 6. RAG Compliance Inspector UI (`Week 4`)
+- `frontend/src/components/compliance/ComplianceInspector.tsx`: live semantic search, category filters, citation cards with confidence meters and highlighted terms, SOP library and document viewer that jumps to the cited section.
+- Fixed the header backend health probe (`/api/v1/health`) and added a `VITE_API_URL` override for deployed builds.
+
 ---
 
 ## 5. What Comes Next in the Roadmap?

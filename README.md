@@ -38,7 +38,7 @@ For complete weekly details and evaluation guides:
 | **Week 1** | **Foundations, Security & App Shell** | FastAPI Core, DB Engine, Health Probes | RBAC Auth, JWT Security, Command Center UI Shell | `COMPLETED` ✅ |
 | **Week 2** | **Fleet Asset Management (US-002)** | Fleet CRUD APIs, DB Models, Constraints | Interactive Fleet Workspace UI, Modals, Telemetry Cards | `COMPLETED` ✅ |
 | **Week 3** | **RAG Knowledge Base & Shipment Engine** | Vector Store Engine & RAG Ingestion (US-006) | Shipment Models, APIs & Immutable Audit Log (US-002 & US-008) | `COMPLETED` ✅ |
-| **Week 4** | **Batch Ingestion & RAG Inspector** | RAG Compliance Inspector Search UI | Batch Order Uploader & Month 1 Regression Tests | `PLANNED` |
+| **Week 4** | **Batch Ingestion & RAG Inspector** | RAG Compliance Inspector Search UI | Batch Order Uploader & Month 1 Regression Tests | `IN PROGRESS` ⏳ *(Track A Done)* |
 
 - **Automated Backend Test Suite**: `python -m pytest` → **39 / 39 PASSED (100%)**
 - **RAG Retrieval Benchmark**: `python -m app.services.rag.evaluation` → **Recall@3 1.00 · MRR 0.98 · p95 < 1 ms** (WikiQA-style eval set)
