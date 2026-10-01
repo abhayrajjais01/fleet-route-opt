@@ -2,13 +2,16 @@
 // Semantic search over the verified SOP knowledge base. Every answer shown here is a verbatim
 // excerpt returned by the backend vector store, with its source document, § section and similarity
 // score — nothing is generated, so nothing can be hallucinated.
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { API_BASE } from '../../lib/api'
 import {
   ragApi,
   type KnowledgeBaseStats,
   type PolicyCategory,
   type PolicyCategoryInfo,
   type PolicyCitation,
+  type PolicyDocument,
+  type PolicyDocumentSummary,
   type PolicySearchResponse,
 } from '../../lib/ragApi'
 
@@ -79,7 +82,7 @@ function ScoreMeter({ score }: { score: number }) {
   )
 }
 
-function CitationCard({ c, query, rank }: { c: PolicyCitation; query: string; rank: number }) {
+function CitationCard({ c, query, rank, onOpen }: { c: PolicyCitation; query: string; rank: number; onOpen: () => void }) {
   const best = rank === 1
   return (
     <div className={`rounded-xl p-4 border transition-colors ${best ? 'border-violet-300 bg-violet-50/60' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
@@ -91,7 +94,50 @@ function CitationCard({ c, query, rank }: { c: PolicyCitation; query: string; ra
         <div className="ml-auto"><ScoreMeter score={c.score} /></div>
       </div>
       <p className="text-sm text-slate-700 leading-relaxed">“{highlight(c.excerpt, query)}”</p>
-      <p className="text-[10px] text-slate-400 font-mono mt-3 pt-2 border-t border-slate-100">{c.doc_title} · v{c.version} · effective {c.effective_date}</p>
+      <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
+        <p className="text-[10px] text-slate-400 font-mono">{c.doc_title} · v{c.version} · effective {c.effective_date}</p>
+        <button onClick={onOpen} className="text-xs text-blue-600 hover:text-blue-700 font-semibold">Open source document →</button>
+      </div>
+    </div>
+  )
+}
+
+function DocumentViewer({ docId, focusSection, onClose }: { docId: string; focusSection: string | null; onClose: () => void }) {
+  const [doc, setDoc] = useState<PolicyDocument | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const focusRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    ragApi.document(docId).then(setDoc).catch(e => setError(e.message))
+  }, [docId])
+  useEffect(() => {
+    focusRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }, [doc])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-slate-200">
+          <div>
+            <p className="font-mono text-[10px] text-slate-400">{docId}{doc && ` · v${doc.version} · effective ${doc.effective_date}`}</p>
+            <p className="font-bold text-slate-800">{doc?.title ?? 'Loading…'}</p>
+            {doc && <p className="text-[11px] text-slate-500 mt-1"><span className="font-semibold">References:</span> {doc.references}</p>}
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+        </div>
+        <div className="p-5 overflow-y-auto space-y-3">
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          {doc?.sections.map(s => {
+            const focused = s.section === focusSection
+            return (
+              <div key={s.section} ref={focused ? focusRef : undefined} className={`rounded-xl p-3 border ${focused ? 'border-violet-300 bg-violet-50' : 'border-slate-100'}`}>
+                <p className="text-xs font-bold text-slate-700 mb-1"><span className="font-mono text-violet-600">{s.section}</span> {s.heading}{focused && <span className="ml-2 text-[10px] font-semibold text-violet-600">← cited passage</span>}</p>
+                <p className="text-sm text-slate-600 leading-relaxed">{s.text}</p>
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
@@ -102,22 +148,29 @@ export default function ComplianceInspector() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<PolicySearchResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [offline, setOffline] = useState(false)
   const [categories, setCategories] = useState<PolicyCategoryInfo[]>([])
+  const [documents, setDocuments] = useState<PolicyDocumentSummary[]>([])
   const [stats, setStats] = useState<KnowledgeBaseStats | null>(null)
+  const [viewer, setViewer] = useState<{ docId: string; section: string | null } | null>(null)
 
-  useEffect(() => {
-    Promise.all([ragApi.categories(), ragApi.stats()])
-      .then(([c, s]) => { setCategories(c); setStats(s) })
-      .catch(() => {})
-  }, [])
+  function loadLibrary() {
+    Promise.all([ragApi.categories(), ragApi.documents(), ragApi.stats()])
+      .then(([c, d, s]) => { setCategories(c); setDocuments(d); setStats(s); setOffline(false) })
+      .catch(() => setOffline(true))
+  }
+  useEffect(loadLibrary, [])
 
   async function search(q = query) {
     if (!q.trim() || loading) return
     setQuery(q); setLoading(true); setError(null)
     try {
       setResult(await ragApi.search(q.trim(), selected))
+      setOffline(false)
     } catch (e) {
-      setError((e as Error).message)
+      // fetch() rejects with a TypeError on network failure ("Failed to fetch" / "Load failed"), i.e. backend down
+      if (e instanceof TypeError) setOffline(true)
+      else setError((e as Error).message)
       setResult(null)
     } finally {
       setLoading(false)
@@ -129,10 +182,12 @@ export default function ComplianceInspector() {
   }
 
   const labelOf = (code: PolicyCategory) => categories.find(c => c.code === code)?.label
+  const visibleDocs = selected.length ? documents.filter(d => selected.includes(d.category)) : documents
 
   return (
-    <div className="h-full overflow-hidden">
-      <div className="h-full p-5 space-y-4 overflow-y-auto">
+    <div className="flex h-full overflow-hidden">
+      {/* ── Search & results ── */}
+      <div className="flex-1 min-w-0 p-5 space-y-4 overflow-y-auto">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-base font-bold text-slate-800">Compliance & SOP Inspector</p>
@@ -144,6 +199,13 @@ export default function ComplianceInspector() {
             </span>
           )}
         </div>
+
+        {offline && (
+          <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 text-xs text-amber-800 flex items-center justify-between gap-3">
+            <span>Knowledge base API unreachable at <span className="font-mono">{API_BASE}</span>. Start the backend: <span className="font-mono">cd backend &amp;&amp; uvicorn app.main:app --reload</span></span>
+            <button onClick={loadLibrary} className="font-semibold text-amber-900 underline whitespace-nowrap">Retry</button>
+          </div>
+        )}
 
         <div className="flex gap-2">
           <input
@@ -199,13 +261,34 @@ export default function ComplianceInspector() {
               </div>
             ) : (
               result.results.map((c, i) => (
-                <CitationCard key={c.chunk_id} c={c} query={result.query} rank={i + 1} />
+                <CitationCard key={c.chunk_id} c={c} query={result.query} rank={i + 1} onOpen={() => setViewer({ docId: c.doc_id, section: c.section })} />
               ))
             )}
           </div>
         )}
       </div>
 
+      {/* ── SOP library ── */}
+      <aside className="hidden lg:flex w-80 flex-shrink-0 flex-col border-l border-slate-200 bg-white">
+        <div className="px-4 py-3 border-b border-slate-200">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">SOP Library</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">{visibleDocs.length} verified document{visibleDocs.length === 1 ? '' : 's'}</p>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {visibleDocs.map(d => (
+            <button key={d.doc_id} onClick={() => setViewer({ docId: d.doc_id, section: null })} className="w-full text-left p-3 border border-slate-200 rounded-xl hover:border-violet-300 hover:bg-violet-50/40 transition-colors">
+              <p className="text-sm font-medium text-slate-800 leading-snug">{d.title}</p>
+              <div className="flex items-center gap-2 mt-1.5">
+                <span className="font-mono text-[10px] text-slate-400">{d.doc_id} · v{d.version} · {d.section_count} §</span>
+                <span className="ml-auto"><CategoryBadge code={d.category} /></span>
+              </div>
+            </button>
+          ))}
+          {!visibleDocs.length && !offline && <p className="text-xs text-slate-400 p-2">Loading library…</p>}
+        </div>
+      </aside>
+
+      {viewer && <DocumentViewer docId={viewer.docId} focusSection={viewer.section} onClose={() => setViewer(null)} />}
     </div>
   )
 }
