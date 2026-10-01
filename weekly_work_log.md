@@ -9,7 +9,7 @@ This document serves as our ongoing project journal. It tracks everything we bui
 - [Month 1: Foundation, Governance, Assets & Shipment Ingestion](#month-1-foundation-governance-assets--shipment-ingestion)
   - [Week 1: Scaffolding, Security & Application Shell (Completed)](#week-1-scaffolding-security--application-shell)
   - [Week 2: Fleet Assets & Full-Stack RBAC Auth (Completed)](#week-2-fleet-assets--full-stack-rbac-auth)
-  - [Week 3: RAG Knowledge Base vs. Shipments & Audit (In Progress)](#week-3-rag-knowledge-base-vs-shipments--audit)
+  - [Week 3: RAG Knowledge Base vs. Shipments & Audit (Completed)](#week-3-rag-knowledge-base-vs-shipments--audit)
   - [Week 4: RAG Compliance Inspector UI vs. Batch Ingestion (Upcoming)](#week-4-rag-compliance-inspector-ui-vs-batch-ingestion)
 - [Month 2: Optimization & Map vs. LangGraph Router & FSM (Weeks 5–8)](#month-2-optimization--map-vs-langgraph-router--fsm)
 - [Month 3: AI Copilot Disruption Solver vs. Driver Mobile & Analytics (Weeks 9–12)](#month-3-ai-copilot-disruption-solver-vs-driver-mobile--analytics)
@@ -86,8 +86,8 @@ This document serves as our ongoing project journal. It tracks everything we bui
 
 ---
 
-### Week 3: RAG Knowledge Base vs. Shipments & Audit (Sep 21 – Sep 25, 2026) — IN PROGRESS
-- **Status**: `IN PROGRESS` ⏳ (Track B Delivered, Track A In Progress)
+### Week 3: RAG Knowledge Base vs. Shipments & Audit (Sep 21 – Sep 25, 2026)
+- **Status**: `COMPLETED` ✅ (Track A & Track B Delivered)
 - **Focus Area**: RAG Vector Store & Cosine Similarity vs. Shipment Data Models, REST Endpoints & Immutable Audit Logging (US-002, US-006, US-008).
 
 #### Accomplishments Delivered (Track B: Abhayraj Jaiswal):
@@ -106,10 +106,22 @@ This document serves as our ongoing project journal. It tracks everything we bui
    - Built `backend/tests/test_shipments_audit.py` with 5 automated test cases.
    - **Full test suite passing: 17/17 (100%)**.
 
-#### Track A Focus (Manthan Nimodiya - Active):
-- Constructing Vector Store indexing engine (`backend/app/services/rag/vector_store.py`) with cosine similarity search.
-- Curating logistics SOPs, Hazmat ADR/DOT rules, and driver rest mandates.
-- Automated vector store retrieval unit tests and benchmarking (`backend/tests/test_rag.py`).
+#### Accomplishments Delivered (Track A: Manthan Nimodiya):
+1. **Curated SOP Knowledge Base (`backend/app/services/rag/corpus/`)**:
+   - 8 versioned SOP documents across 5 categories: Hazmat transport & incident response (49 CFR, ADR, CMVR Rules 9 & 129–137), driver hours of service (Motor Transport Workers Act 1961, EU 561/2006, FMCSA) & fatigue management, cold chain, vehicle load safety, and dispatch exception handling & SLAs.
+   - Each document is markdown with front-matter (id, version, effective date, legal references) and numbered `§` sections, so every retrieved passage has an exact citation.
+2. **Chunking & Embedding Pipeline (`embeddings.py`)**:
+   - Section-aware chunking (one chunk per `§`, long sections split into overlapping sentence windows) → 41 chunks.
+   - Text normalisation with logistics synonyms ("dangerous goods" → hazmat, "reefer", "OTIF"), stopwords and light stemming.
+   - TF-IDF unigram + bigram embedder, L2-normalised. Runs offline with no API keys or GPU; the `Embedder` interface lets a neural model replace it later.
+3. **Vector Store (`vector_store.py`) & Knowledge Base (`knowledge_base.py`)**:
+   - In-memory NumPy index: cosine similarity is a single matrix-vector product; top-k, min-score and category / document filters.
+   - Built once per process (~9 ms) and shared by the API and, later, the Policy Agent.
+4. **REST API (`backend/app/api/v1/rag.py`)**: `POST /rag/search`, `GET /rag/categories`, `/rag/documents`, `/rag/documents/{id}`, `/rag/stats`, `/rag/benchmark`.
+5. **WikiQA-Style Retrieval Benchmark (`eval_set.json`, `evaluation.py`)**:
+   - 30 answerable questions with gold passages + 3 unanswerable questions (mirroring WikiQA's no-answer questions).
+   - Results: **Recall@1 0.97, Recall@3 1.00, MRR 0.98, p95 latency < 1 ms**. Every off-topic question scores 0 while every answerable one scores ≥ 0.16, which gives Track B's Week 7 guardrail threshold its evidence.
+6. **Testing**: `backend/tests/test_rag.py` with 22 tests (parsing, chunking, embeddings, ranking, filters, benchmark targets, API). **Full suite: 39/39 passing.**
 
 ---
 

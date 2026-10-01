@@ -1,1 +1,1 @@
-# Track B (Abhayraj Jaiswal): RAG Vector Store & Compliance Engine
+# Track A (Manthan Nimodiya): RAG Vector Store, Embedding Pipeline & SOP Knowledge Base

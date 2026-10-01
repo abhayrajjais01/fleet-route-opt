@@ -64,6 +64,29 @@ const INIT_AUDIT: AuditEntry[] = [
 
 // ─── API CLIENT HELPER (FastAPI at http://localhost:8000) ─────────────────────
 const API_BASE = 'http://localhost:8000'
+
+const DEMO_CREDENTIALS: Record<UserRole, { email: string; pass: string }> = {
+  ADMIN: { email: 'admin@fleetopt.io', pass: 'password123' },
+  FLEET_MANAGER: { email: 'manager@fleetopt.io', pass: 'password123' },
+  DISPATCHER: { email: 'dispatch@fleetopt.io', pass: 'password123' },
+  DRIVER: { email: 'driver@fleetopt.io', pass: 'password123' },
+}
+
+async function fetchAuthToken(role: UserRole = 'ADMIN'): Promise<string | null> {
+  try {
+    const creds = DEMO_CREDENTIALS[role] || DEMO_CREDENTIALS.ADMIN
+    const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: creds.email, password: creds.pass }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.access_token || null
+  } catch {
+    return null
+  }
+}
 async function checkApiHealth(): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(1500) })
@@ -1047,10 +1070,11 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
 }
 
 // ─── SHIPMENTS SECTION ────────────────────────────────────────────────────────
-function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWorkflow }: {
+function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWorkflow, activeRole }: {
   shipments: Shipment[]; setShipments: (s: Shipment[]) => void
   hubs: Hub[]; addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
   onTriggerWorkflow: (s: Shipment) => void
+  activeRole?: UserRole
 }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
@@ -1089,7 +1113,28 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
     addAudit({ actor_name: 'Admin', action_type: 'STATUS_CHANGE', entity_type: 'SHIPMENT', entity_id: s.id, details: `${s.tracking_number}: ${s.status} → ${next[s.status]}` })
   }
 
-  function downloadCsvTemplate() {
+  const [batchFile, setBatchFile] = useState<File | null>(null)
+  const [isSubmittingBatch, setIsSubmittingBatch] = useState(false)
+
+  async function downloadCsvTemplate() {
+    try {
+      const token = await fetchAuthToken(activeRole || 'ADMIN')
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
+      const res = await fetch(`${API_BASE}/api/v1/shipments/batch/template`, { headers })
+      if (res.ok) {
+        const text = await res.text()
+        const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'shipments_batch_template.csv'
+        a.click()
+        URL.revokeObjectURL(url)
+        return
+      }
+    } catch {
+      // Fallback to client template if server unreachable
+    }
     const csvContent = "tracking_number,customer_name,destination_address,latitude,longitude,weight_kg,volume_m3,time_window_start,time_window_end,priority,hub_id\n" +
       "SHP-CSV-001,Reliance Retail Hub,Bandra Kurla Complex Mumbai,19.0657,72.8687,250.0,2.1,09:00,13:00,HIGH,1\n" +
       "SHP-CSV-002,Tata Digital Logistics,Hiranandani Business Park Powai Mumbai,19.1176,72.9060,110.5,0.9,10:00,15:00,STANDARD,1\n" +
@@ -1106,6 +1151,7 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
   }
 
   function handleBatchFile(file: File) {
+    setBatchFile(file)
     setBatchErrors([])
     setBatchSuccessMsg('')
     const reader = new FileReader()
@@ -1139,6 +1185,8 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
           const tracking = rowObj.tracking_number || `SHP-BATCH-${i}`
           const customer = rowObj.customer_name || `Customer ${i}`
           const addr = rowObj.destination_address || 'Central Depot Delivery Area'
+          const lat = parseFloat(rowObj.latitude) || 19.0760
+          const lng = parseFloat(rowObj.longitude) || 72.8777
           const weight = parseFloat(rowObj.weight_kg) || 100
           const volume = parseFloat(rowObj.volume_m3) || 1.0
           const hubId = parseInt(rowObj.hub_id) || 1
@@ -1148,6 +1196,8 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
             tracking_number: tracking,
             customer_name: customer,
             destination_address: addr,
+            latitude: lat,
+            longitude: lng,
             weight_kg: weight,
             volume_m3: volume,
             time_window_start: rowObj.time_window_start || '09:00',
@@ -1163,22 +1213,110 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
     reader.readAsText(file)
   }
 
-  function commitBatch() {
+  async function commitBatch() {
     if (batchPreview.length === 0) return
-    setShipments([...shipments, ...batchPreview])
+    setIsSubmittingBatch(true)
+    setBatchErrors([])
+    setBatchSuccessMsg('')
+
+    let importedList: Shipment[] = []
+    let apiErrorList: string[] = []
+    let isServerPersisted = false
+
+    try {
+      const token = await fetchAuthToken(activeRole || 'ADMIN')
+      const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
+
+      if (batchFile && batchFile.name.endsWith('.csv')) {
+        // Send multipart CSV upload to API endpoint
+        const formData = new FormData()
+        formData.append('file', batchFile)
+        const res = await fetch(`${API_BASE}/api/v1/shipments/batch/upload`, {
+          method: 'POST',
+          headers: authHeaders,
+          body: formData,
+        })
+        if (res.ok) {
+          isServerPersisted = true
+          const data = await res.json()
+          if (data.created_shipments && data.created_shipments.length > 0) {
+            importedList = data.created_shipments
+          }
+          if (data.errors && data.errors.length > 0) {
+            apiErrorList = data.errors.map((e: any) => `Row ${e.row}${e.tracking_number ? ` (${e.tracking_number})` : ''}: ${e.reason}`)
+          }
+        }
+      } else {
+        // Send JSON batch to API endpoint
+        const payload = {
+          shipments: batchPreview.map(item => ({
+            tracking_number: item.tracking_number,
+            customer_name: item.customer_name,
+            destination_address: item.destination_address,
+            latitude: item.latitude ?? 19.0760,
+            longitude: item.longitude ?? 72.8777,
+            weight_kg: item.weight_kg,
+            volume_m3: item.volume_m3,
+            time_window_start: item.time_window_start,
+            time_window_end: item.time_window_end,
+            priority: item.priority,
+            hub_id: item.hub_id || 1,
+          })),
+        }
+        const res = await fetch(`${API_BASE}/api/v1/shipments/batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify(payload),
+        })
+        if (res.ok) {
+          isServerPersisted = true
+          const data = await res.json()
+          if (data.created_shipments && data.created_shipments.length > 0) {
+            importedList = data.created_shipments
+          }
+          if (data.errors && data.errors.length > 0) {
+            apiErrorList = data.errors.map((e: any) => `Row ${e.row}${e.tracking_number ? ` (${e.tracking_number})` : ''}: ${e.reason}`)
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Backend batch endpoint unreachable, falling back to local client state:', e)
+    }
+
+    if (apiErrorList.length > 0 && importedList.length === 0) {
+      setBatchErrors(apiErrorList)
+      setIsSubmittingBatch(false)
+      return
+    }
+
+    const finalAdditions = importedList.length > 0 ? importedList : batchPreview
+    setShipments([...shipments, ...finalAdditions])
+    if (apiErrorList.length > 0) {
+      setBatchErrors(apiErrorList)
+    }
+
     addAudit({
-      actor_name: 'Admin',
+      actor_name: activeRole || 'Admin',
       action_type: 'ASSET_CREATED',
       entity_type: 'SHIPMENT_BATCH',
       entity_id: Date.now(),
-      details: `Batch imported ${batchPreview.length} customer shipments into active fleet roster`,
+      details: `Batch imported ${finalAdditions.length} orders (${isServerPersisted ? 'Server DB Persisted & Audited' : 'Client Mode'})`,
     })
-    setBatchSuccessMsg(`Successfully imported ${batchPreview.length} shipments!`)
-    setTimeout(() => {
-      setBatchModal(false)
-      setBatchPreview([])
-      setBatchSuccessMsg('')
-    }, 1000)
+
+    setBatchSuccessMsg(`Successfully committed ${finalAdditions.length} shipments${isServerPersisted ? ' to Database' : ''}!${apiErrorList.length > 0 ? ` (${apiErrorList.length} rows had errors)` : ''}`)
+
+    if (apiErrorList.length === 0) {
+      setTimeout(() => {
+        setBatchModal(false)
+        setBatchPreview([])
+        setBatchFile(null)
+        setBatchSuccessMsg('')
+        setBatchErrors([])
+        setIsSubmittingBatch(false)
+      }, 1200)
+    } else {
+      setIsSubmittingBatch(false)
+    }
   }
 
   return (
@@ -1314,8 +1452,9 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
 
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={() => setBatchModal(false)} className="px-4 py-2 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 font-medium">Cancel</button>
-              <button onClick={commitBatch} disabled={batchPreview.length === 0} className={`px-4 py-2 text-xs text-white rounded-lg font-bold transition shadow-sm ${batchPreview.length > 0 ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-slate-300 cursor-not-allowed'}`}>
-                Ingest & Commit to Fleet ({batchPreview.length})
+              <button onClick={commitBatch} disabled={batchPreview.length === 0 || isSubmittingBatch} className={`flex items-center gap-1.5 px-4 py-2 text-xs text-white rounded-lg font-bold transition shadow-sm ${batchPreview.length > 0 && !isSubmittingBatch ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-slate-300 cursor-not-allowed'}`}>
+                {isSubmittingBatch && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                {isSubmittingBatch ? 'Submitting to API…' : `Ingest & Commit to Fleet (${batchPreview.length})`}
               </button>
             </div>
           </div>
@@ -1746,7 +1885,7 @@ export default function App() {
         {/* Main content */}
         <main className="flex-1 min-w-0 overflow-hidden bg-slate-50/30">
           {section === 'dashboard' && <CopilotDashboard vehicles={vehicles} drivers={drivers} shipments={shipments} hubs={hubs} audit={audit} setSection={setSection} />}
-          {section === 'shipments' && <ShipmentsSection shipments={shipments} setShipments={setShipments} hubs={hubs} addAudit={addAudit} onTriggerWorkflow={triggerWorkflow} />}
+          {section === 'shipments' && <ShipmentsSection shipments={shipments} setShipments={setShipments} hubs={hubs} addAudit={addAudit} onTriggerWorkflow={triggerWorkflow} activeRole={activeRole} />}
           {section === 'workflow' && workflowShipment
             ? <WorkflowSection shipment={workflowShipment} vehicles={vehicles} drivers={drivers} hubs={hubs} addAudit={addAudit} onDone={() => setSection('shipments')} />
             : section === 'workflow' && (

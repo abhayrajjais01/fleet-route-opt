@@ -59,7 +59,7 @@ The **Enterprise AI Fleet Route Optimizer** bridges this gap by combining **two 
 
 ## 3. Complete Summary of All Work Done Till Now (Weeks 1 to 4 — Month 1 100% COMPLETE)
 
-Across the first 4 weeks (Month 1), the team established a rock-solid foundation, deployed the application live to the cloud, seeded demo data, built shipment ingestion & compliance systems, and achieved **100% passing automated regression tests (24/24 passed)**.
+Across the first 4 weeks (Month 1), the team established a rock-solid foundation, deployed the application live to the cloud, seeded demo data, built shipment ingestion & compliance systems, and achieved **100% passing automated regression tests (49/49 passed)**.
 
 ### Platform Milestones Achieved:
 1. **Core Backend & Dual Engine**:
@@ -156,7 +156,7 @@ Abhayraj owns the **Security Architecture, Governance & Audit Trail, Shipment In
 - **Downloadable CSV Template (`backend/app/api/v1/shipments.py`)**: RFC 4180 standard sample generator (`GET /api/v1/shipments/batch/template`) with realistic multi-city delivery data.
 - **Batch REST Endpoints**: `POST /api/v1/shipments/batch/upload` and `POST /api/v1/shipments/batch` guarded by role authorizations.
 - **Frontend Batch Modal & Cluster Preview (`frontend/src/App.tsx`)**: Drag-and-drop file uploader with live client-side parsing, dynamic metrics (payload weight, volume, express count), and 1-click template download.
-- **Month 1 Full Regression Test Suite (`backend/tests/test_batch_ingestion.py`)**: 7 comprehensive tests covering CSV parsing, JSON ingestion, partial failure diagnostics, duplicate detection, and security guards. **Total suite: 24/24 tests passed (100%)**.
+- **Month 1 Full Regression Test Suite (`backend/tests/test_batch_ingestion.py`)**: 7 comprehensive tests covering CSV parsing, JSON ingestion, partial failure diagnostics, duplicate detection, and security guards. **Total suite: 49/49 tests passed (100%)**.
 
 ---
 
@@ -187,9 +187,11 @@ Manthan owns the **Backend Scaffolding, Fleet Database Layer, VRPTW Mathematical
 - Built `frontend/src/App.tsx` featuring an interactive node canvas visualizer, live backend probing, and role-based permissions switcher.
 
 #### 5. RAG Vector Knowledge Base & Compliance Inspector (`Week 3/4`)
-- Vector store indexing engine (`backend/app/services/rag/vector_store.py`) with cosine similarity search.
-- Ingestion of enterprise logistics regulations, Hazmat ADR/DOT rules, and driver rest break mandates into vector embeddings.
-- RAG Compliance Inspector portal search interface with real-time semantic query bar, source citations, and confidence scores.
+- **Curated corpus (`backend/app/services/rag/corpus/`)**: 8 versioned SOPs across Hazmat, Driver Rest, Cold Chain, Vehicle Safety and Operations, citing 49 CFR, ADR, CMVR, the Motor Transport Workers Act 1961, EU 561/2006 and FMCSA.
+- **Pipeline**: section-aware chunking (41 citable chunks) → TF-IDF unigram + bigram embeddings → in-memory cosine-similarity vector store with category filters.
+- **API Endpoints**: `/api/v1/rag/search`, `/categories`, `/documents`, `/documents/{id}`, `/stats`, `/benchmark`.
+- **WikiQA-style benchmark**: Recall@3 1.00, MRR 0.98, p95 latency < 1 ms; off-topic questions score 0 (basis for the Week 7 guardrail threshold). `backend/tests/test_rag.py`: 22 tests.
+- **RAG Compliance Inspector UI**: Dedicated compliance search interface with real-time semantic query bar, source citations, and confidence scores.
 
 ---
 

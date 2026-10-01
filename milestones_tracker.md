@@ -81,11 +81,12 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - [x] Production cloud deployments: FastAPI backend on Render with PostgreSQL, Vite + React 19 frontend on Vercel with SPA routing
 
 #### Week 3: RAG Knowledge Base vs. Shipments & Audit (US-006 & US-008)
-- **Status**: `COMPLETED` ✅
-- **Manthan Nimodiya (Track A)**:
-  - [x] Curate and chunk enterprise logistics SOPs, Hazmat ADR/DOT rules, driver rest-break mandates
-  - [x] Vector embedding architecture specification & test baseline
-- **Abhayraj Jaiswal (Track B)**:
+- **Status**: `COMPLETED` ✅ (Sep 21 – Sep 25, 2026)
+- **Manthan Nimodiya (Track A: RAG Lead)**:
+  - [x] Curate and chunk enterprise logistics SOPs, Hazmat ADR/DOT rules, driver rest-break mandates, and WikiQA-style samples (8 SOPs, 5 categories, 41 section-level chunks in `backend/app/services/rag/corpus/`)
+  - [x] Semantic search retrieval service with category filtering (Hazmat, Driver Rest, Cold Chain, Vehicle Safety, Operations) exposed at `/api/v1/rag/*`
+  - [x] Vector store unit test suite and retrieval benchmark tests (`backend/tests/test_rag.py`: 22 tests; Recall@3 = 1.0, MRR = 0.98, p95 latency < 1 ms; 39/39 full suite passing)
+- **Abhayraj Jaiswal (Track B: Operations & Audit Lead)**:
   - [x] `Shipment` database model (`backend/app/models/shipment.py`): coordinates, weight, volume, delivery time windows `[open, close]`, priority, status
   - [x] `AuditLog` database model & automated state-change interceptor (`backend/app/models/audit.py`, `audit_service.py`)
   - [x] Pydantic validation schemas (`backend/app/schemas/shipment.py`, `backend/app/schemas/audit.py`)
@@ -93,14 +94,14 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - [x] Automated test suite: `backend/tests/test_shipments_audit.py` (5/5 passed)
 
 #### Week 4: RAG Compliance Inspector Portal vs. Batch Ingestion (US-002, US-006, US-008)
-- **Status**: `COMPLETED` ✅
+- **Status**: `COMPLETED` ✅ (Sep 28 – Oct 2, 2026)
 - **Manthan Nimodiya (Track A)**:
   - [x] Dedicated Compliance & SOP search UI page with real-time semantic query bar
   - [x] Source document citation cards with confidence scores
 - **Abhayraj Jaiswal (Track B)**:
   - [x] High-throughput Batch Order Ingestion API (`POST /api/v1/shipments/batch/upload` & `POST /api/v1/shipments/batch`)
   - [x] RFC 4180 standard CSV template generator endpoint (`GET /api/v1/shipments/batch/template`)
-  - [x] CSV and JSON parser with row-level diagnostics, coordinate checks, and bulk insertion
+  - [x] Multi-format CSV and JSON parser with row-level diagnostics, coordinate checks, finite number validation, and bulk insertion
   - [x] Automatic batch audit trail recording
-  - [x] Frontend Drag-and-Drop Batch Upload modal with Delivery Cluster Preview and template downloader
-  - [x] Month 1 Full Regression Test Suite (`backend/tests/test_batch_ingestion.py` — 7/7 passed, **24/24 Full Suite Passing**)
+  - [x] Frontend Drag-and-Drop Batch Upload modal with live Delivery Cluster Preview, template downloader, and API integration
+  - [x] Month 1 Full Regression Test Suite (`backend/tests/test_batch_ingestion.py` — 10/10 passed, **49/49 Full Suite Passing**)

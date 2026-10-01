@@ -7,9 +7,11 @@ geographic bounds checking, relational hub verification, and automated audit log
 
 import csv
 import io
+import math
 import re
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any, Union
 from sqlalchemy.orm import Session
+from pydantic import ValidationError
 
 from app.models.shipment import Shipment, ShipmentStatus, ShipmentPriority
 from app.models.fleet import Hub
@@ -35,7 +37,8 @@ CSV_REQUIRED_COLUMNS = {
     "hub_id",
 }
 
-TIME_REGEX = re.compile(r"^\d{2}:\d{2}$")
+# Strict 24-hr clock validation: HH (00..23) and MM (00..59)
+TIME_REGEX = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 
 def generate_csv_template() -> str:
@@ -142,38 +145,38 @@ def parse_and_validate_csv(
             errors.append(BatchIngestionRowError(row=row_index, tracking_number=tracking, reason="destination_address must have at least 5 characters."))
             continue
 
-        # Latitude & Longitude validation
+        # Latitude & Longitude validation (finite range)
         try:
             lat = float(row.get("latitude", ""))
-            if lat < -90.0 or lat > 90.0:
-                raise ValueError("Out of range")
+            if not math.isfinite(lat) or lat < -90.0 or lat > 90.0:
+                raise ValueError("Out of range or non-finite")
         except Exception:
-            errors.append(BatchIngestionRowError(row=row_index, tracking_number=tracking, reason=f"Invalid latitude '{row.get('latitude')}'; must be a float between -90.0 and 90.0."))
+            errors.append(BatchIngestionRowError(row=row_index, tracking_number=tracking, reason=f"Invalid latitude '{row.get('latitude')}'; must be a finite float between -90.0 and 90.0."))
             continue
 
         try:
             lng = float(row.get("longitude", ""))
-            if lng < -180.0 or lng > 180.0:
-                raise ValueError("Out of range")
+            if not math.isfinite(lng) or lng < -180.0 or lng > 180.0:
+                raise ValueError("Out of range or non-finite")
         except Exception:
-            errors.append(BatchIngestionRowError(row=row_index, tracking_number=tracking, reason=f"Invalid longitude '{row.get('longitude')}'; must be a float between -180.0 and 180.0."))
+            errors.append(BatchIngestionRowError(row=row_index, tracking_number=tracking, reason=f"Invalid longitude '{row.get('longitude')}'; must be a finite float between -180.0 and 180.0."))
             continue
 
-        # Weight & Volume validation
+        # Weight & Volume validation (strictly positive and finite)
         try:
             weight = float(row.get("weight_kg", ""))
-            if weight <= 0:
-                raise ValueError("Non-positive")
+            if not math.isfinite(weight) or weight <= 0:
+                raise ValueError("Non-positive or non-finite")
         except Exception:
-            errors.append(BatchIngestionRowError(row=row_index, tracking_number=tracking, reason=f"Invalid weight_kg '{row.get('weight_kg')}'; must be > 0."))
+            errors.append(BatchIngestionRowError(row=row_index, tracking_number=tracking, reason=f"Invalid weight_kg '{row.get('weight_kg')}'; must be a finite float > 0."))
             continue
 
         try:
             volume = float(row.get("volume_m3", ""))
-            if volume <= 0:
-                raise ValueError("Non-positive")
+            if not math.isfinite(volume) or volume <= 0:
+                raise ValueError("Non-positive or non-finite")
         except Exception:
-            errors.append(BatchIngestionRowError(row=row_index, tracking_number=tracking, reason=f"Invalid volume_m3 '{row.get('volume_m3')}'; must be > 0."))
+            errors.append(BatchIngestionRowError(row=row_index, tracking_number=tracking, reason=f"Invalid volume_m3 '{row.get('volume_m3')}'; must be a finite float > 0."))
             continue
 
         # Hub ID validation
@@ -186,11 +189,11 @@ def parse_and_validate_csv(
             errors.append(BatchIngestionRowError(row=row_index, tracking_number=tracking, reason=f"Invalid hub_id '{row.get('hub_id')}'; must be an integer."))
             continue
 
-        # Time Windows validation
+        # Time Windows validation (strict 24-hr clock format)
         t_start = row.get("time_window_start", "09:00").strip() or "09:00"
         t_end = row.get("time_window_end", "17:00").strip() or "17:00"
         if not TIME_REGEX.match(t_start) or not TIME_REGEX.match(t_end):
-            errors.append(BatchIngestionRowError(row=row_index, tracking_number=tracking, reason="Time windows must match HH:MM 24-hr format (e.g. 09:00)."))
+            errors.append(BatchIngestionRowError(row=row_index, tracking_number=tracking, reason="Time windows must match HH:MM 24-hr format (00:00 to 23:59)."))
             continue
         if t_end < t_start:
             errors.append(BatchIngestionRowError(row=row_index, tracking_number=tracking, reason=f"time_window_end ({t_end}) cannot be earlier than time_window_start ({t_start})."))
@@ -260,12 +263,13 @@ def parse_and_validate_csv(
 
 
 def parse_and_validate_json(
-    shipments: List[ShipmentCreate],
+    shipments: List[Union[ShipmentCreate, Dict[str, Any]]],
     db: Session,
     actor: Optional[User] = None,
 ) -> BatchShipmentIngestionResponse:
     """
-    Validates and bulk-inserts shipments from a list of ShipmentCreate schemas.
+    Validates and bulk-inserts shipments from a list of ShipmentCreate schemas or raw dicts.
+    Performs per-record validation with partial failure diagnostics.
     """
     existing_tracking = set(r[0] for r in db.query(Shipment.tracking_number).all())
     valid_hub_ids = set(r[0] for r in db.query(Hub.id).all())
@@ -274,7 +278,39 @@ def parse_and_validate_json(
     to_insert: List[Shipment] = []
     errors: List[BatchIngestionRowError] = []
 
-    for idx, sc in enumerate(shipments, start=1):
+    for idx, raw_record in enumerate(shipments, start=1):
+        if isinstance(raw_record, ShipmentCreate):
+            sc = raw_record
+        elif isinstance(raw_record, dict):
+            try:
+                sc = ShipmentCreate.model_validate(raw_record)
+            except ValidationError as ve:
+                err_msgs = [f"{e['loc'][-1]}: {e['msg']}" for e in ve.errors()]
+                errors.append(BatchIngestionRowError(
+                    row=idx,
+                    tracking_number=str(raw_record.get("tracking_number")) if "tracking_number" in raw_record else None,
+                    reason=f"Validation error: {'; '.join(err_msgs)}",
+                ))
+                continue
+            except Exception as ex:
+                errors.append(BatchIngestionRowError(
+                    row=idx,
+                    tracking_number=str(raw_record.get("tracking_number")) if isinstance(raw_record, dict) and "tracking_number" in raw_record else None,
+                    reason=f"Record parse failure: {str(ex)}",
+                ))
+                continue
+        else:
+            errors.append(BatchIngestionRowError(row=idx, reason="Invalid record format; expected JSON object."))
+            continue
+
+        # Check finite float values
+        if not math.isfinite(sc.latitude) or not math.isfinite(sc.longitude):
+            errors.append(BatchIngestionRowError(row=idx, tracking_number=sc.tracking_number, reason="Coordinates must be finite numbers."))
+            continue
+        if not math.isfinite(sc.weight_kg) or not math.isfinite(sc.volume_m3):
+            errors.append(BatchIngestionRowError(row=idx, tracking_number=sc.tracking_number, reason="Weight and volume must be finite numbers."))
+            continue
+
         tracking = sc.tracking_number.strip()
         if tracking in existing_tracking or tracking in batch_tracking_seen:
             errors.append(BatchIngestionRowError(row=idx, tracking_number=tracking, reason=f"Duplicate tracking_number '{tracking}'."))

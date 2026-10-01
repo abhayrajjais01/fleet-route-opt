@@ -254,3 +254,90 @@ SHP-DUP-01,Client B,Powai Mumbai,19.1176,72.9060,100.0,1.0,1
     assert data["successful_count"] == 1
     assert data["failed_count"] == 1
     assert "Duplicate tracking_number" in data["errors"][0]["reason"]
+
+def test_batch_upload_non_finite_rejected(client, db_session):
+    """Codex Review P2: Reject NaN, Infinity, and non-finite floats."""
+    token = get_token("dispatcher_batch@fleet.io", "DISPATCHER")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    csv_data = """tracking_number,customer_name,destination_address,latitude,longitude,weight_kg,volume_m3,hub_id
+SHP-NAN-01,Client NaN,BKC Mumbai,19.0657,72.8687,NaN,1.0,1
+SHP-INF-02,Client Inf,Powai Mumbai,19.1176,72.9060,100.0,Infinity,1
+SHP-OK-03,Client OK,Belapur Mumbai,19.0144,73.0380,100.0,1.0,1
+"""
+    files = {"file": ("non_finite.csv", io.BytesIO(csv_data.encode("utf-8")), "text/csv")}
+    res = client.post("/api/v1/shipments/batch/upload", files=files, headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["successful_count"] == 1
+    assert data["failed_count"] == 2
+    assert len(data["errors"]) == 2
+    reasons = [e["reason"] for e in data["errors"]]
+    assert any("weight_kg" in r for r in reasons)
+    assert any("volume_m3" in r for r in reasons)
+
+
+def test_batch_upload_invalid_clock_window(client, db_session):
+    """Codex Review P2: Validate actual 24-hr clock hours and minutes (00:00 to 23:59)."""
+    token = get_token("dispatcher_batch@fleet.io", "DISPATCHER")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    csv_data = """tracking_number,customer_name,destination_address,latitude,longitude,weight_kg,volume_m3,time_window_start,time_window_end,hub_id
+SHP-CLK-01,Client Clock,BKC Mumbai,19.0657,72.8687,100.0,1.0,25:00,26:00,1
+SHP-CLK-02,Client Clock 2,Powai Mumbai,19.1176,72.9060,100.0,1.0,10:65,11:00,1
+SHP-CLK-03,Client Valid,Belapur Mumbai,19.0144,73.0380,100.0,1.0,09:00,12:00,1
+"""
+    files = {"file": ("clock.csv", io.BytesIO(csv_data.encode("utf-8")), "text/csv")}
+    res = client.post("/api/v1/shipments/batch/upload", files=files, headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["successful_count"] == 1
+    assert data["failed_count"] == 2
+    assert len(data["errors"]) == 2
+    assert all("HH:MM 24-hr format" in e["reason"] for e in data["errors"])
+
+
+def test_batch_json_partial_errors_diagnostics(client, db_session):
+    """Codex Review P2: JSON batch must return row-level diagnostics rather than 422 on invalid items."""
+    token = get_token("admin_batch@fleet.io", "ADMIN")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    payload = {
+        "shipments": [
+            {
+                "tracking_number": "SHP-JSON-GOOD",
+                "customer_name": "Valid Org",
+                "destination_address": "Goregaon East Mumbai",
+                "latitude": 19.1663,
+                "longitude": 72.8526,
+                "weight_kg": 80.0,
+                "volume_m3": 0.6,
+                "time_window_start": "09:00",
+                "time_window_end": "12:00",
+                "priority": "HIGH",
+                "hub_id": 1,
+            },
+            {
+                "tracking_number": "SHP-JSON-BAD-LAT",
+                "customer_name": "Invalid Org",
+                "destination_address": "Andheri West Mumbai",
+                "latitude": 999.0,  # Invalid latitude
+                "longitude": 72.8277,
+                "weight_kg": 120.0,
+                "volume_m3": 1.0,
+                "time_window_start": "11:00",
+                "time_window_end": "16:00",
+                "priority": "STANDARD",
+                "hub_id": 1,
+            },
+        ]
+    }
+    res = client.post("/api/v1/shipments/batch", json=payload, headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total_processed"] == 2
+    assert data["successful_count"] == 1
+    assert data["failed_count"] == 1
+    assert len(data["errors"]) == 1
+    assert data["errors"][0]["row"] == 2
+    assert "latitude" in data["errors"][0]["reason"].lower() or "validation error" in data["errors"][0]["reason"].lower()
