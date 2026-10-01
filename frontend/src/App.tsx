@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { checkApiHealth } from './lib/api'
+import ComplianceInspector from './components/compliance/ComplianceInspector'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type UserRole = 'ADMIN' | 'FLEET_MANAGER' | 'DISPATCHER' | 'DRIVER'
@@ -1150,52 +1151,6 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
   )
 }
 
-// ─── COMPLIANCE ───────────────────────────────────────────────────────────────
-function ComplianceSection() {
-  const [query, setQuery] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ answer: string; confidence: number; citations: { doc: string; section: string; excerpt: string; score: number }[] } | null>(null)
-  const sops = [
-    { id: 'SOP-001', title: 'Hazardous Materials Transport Policy', category: 'Safety' },
-    { id: 'SOP-002', title: 'Driver Hours of Service Regulations', category: 'Compliance' },
-    { id: 'SOP-003', title: 'Vehicle Maintenance Schedule', category: 'Operations' },
-    { id: 'SOP-004', title: 'Shipment Insurance & Liability', category: 'Legal' },
-    { id: 'SOP-005', title: 'Route Deviation & Exception Handling', category: 'Operations' },
-  ]
-  const responses: Record<string, typeof result> = {
-    hazmat: { answer: 'HAZMAT loads >1000kg require Class A CDL and vehicle certification. Driver must carry Form 7B and emergency response guide. Fire extinguisher and spill kit mandatory.', confidence: 0.94, citations: [{ doc: 'SOP-001', section: '§3.2', excerpt: 'All HAZMAT loads exceeding 1000kg require Class A CDL and vehicle certification under MV Act §44.', score: 0.94 }, { doc: 'SOP-001', section: '§5.1', excerpt: 'Driver must carry Form 7B and emergency response guide during HAZMAT transport.', score: 0.88 }] },
-    hours: { answer: 'Maximum 10 driving hours/day, mandatory 30-min break after 5h. Weekly limit 60h. Violations trigger automatic suspension.', confidence: 0.97, citations: [{ doc: 'SOP-002', section: '§2.1', excerpt: 'No driver shall operate a vehicle for more than 10 hours per day.', score: 0.97 }] },
-    default: { answer: 'Policy found. Review relevant SOP documents for complete guidelines. Consult Fleet Manager for specific case applications.', confidence: 0.78, citations: [{ doc: 'SOP-003', section: '§1.0', excerpt: 'All fleet operations must comply with applicable transport regulations.', score: 0.78 }] },
-  }
-  function search() {
-    if (!query.trim()) return
-    setLoading(true); setResult(null)
-    setTimeout(() => {
-      const key = query.toLowerCase().includes('hazmat') || query.toLowerCase().includes('dangerous') ? 'hazmat' : query.toLowerCase().includes('hours') || query.toLowerCase().includes('driving') ? 'hours' : 'default'
-      setResult(responses[key]!)
-      setLoading(false)
-    }, 1200)
-  }
-  return (
-    <div className="p-5 space-y-5 overflow-y-auto h-full">
-      <div><p className="text-base font-bold text-slate-800">Compliance & SOP Knowledge Base</p><p className="text-xs text-slate-400 mt-0.5">RAG-powered regulatory search · zero-hallucination guardrails</p></div>
-      <div className="flex gap-2">
-        <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && search()} placeholder="Ask about HAZMAT, driver hours, vehicle standards…" className="flex-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-violet-400 transition" />
-        <button onClick={search} disabled={!query.trim() || loading} className="px-4 py-2.5 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-100 text-white text-sm font-semibold rounded-xl transition-colors">Search SOPs</button>
-      </div>
-      <div className="grid grid-cols-2 gap-3">{['HAZMAT transport requirements', 'Driver hours of service limits'].map(q => <button key={q} onClick={() => setQuery(q)} className="text-left p-3 border border-slate-200 rounded-xl text-xs text-slate-600 hover:border-violet-300 hover:text-violet-700 hover:bg-violet-50 transition-colors">🔍 {q}</button>)}</div>
-      {loading && <div className="flex items-center gap-3 text-sm text-slate-500"><span className="w-4 h-4 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin" />Searching vector store…</div>}
-      {result && (
-        <div className="space-y-4">
-          <div className="border border-violet-200 bg-violet-50 rounded-xl p-4"><div className="flex items-center gap-2 mb-2"><span className="text-xs font-bold text-violet-700">Answer</span><span className="text-[10px] font-mono px-2 py-0.5 bg-violet-100 text-violet-600 rounded-full">confidence {(result.confidence * 100).toFixed(0)}%</span><span className="text-[10px] text-emerald-600 font-semibold">✓ Grounded</span></div><p className="text-sm text-slate-800">{result.answer}</p></div>
-          <div>{result.citations.map((c, i) => <div key={i} className="border border-slate-200 rounded-xl p-3 mb-2"><div className="flex items-center gap-2 mb-1"><span className="font-mono text-xs font-bold text-slate-700">{c.doc}</span><span className="text-xs text-slate-400">{c.section}</span><span className="ml-auto text-[10px] font-mono text-slate-400">sim {(c.score * 100).toFixed(0)}%</span></div><p className="text-xs text-slate-600 italic">"{c.excerpt}"</p></div>)}</div>
-        </div>
-      )}
-      <div><p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">SOP Library</p>{sops.map(s => <div key={s.id} className="flex items-center justify-between p-3 border border-slate-200 rounded-xl mb-2 hover:border-slate-300 transition-colors"><div><p className="text-sm font-medium text-slate-800">{s.title}</p><p className="text-[10px] font-mono text-slate-400">{s.id} · {s.category}</p></div><button className="text-xs text-blue-600 font-medium">View →</button></div>)}</div>
-    </div>
-  )
-}
-
 // ─── AUDIT LOG ────────────────────────────────────────────────────────────────
 function AuditSection({ entries }: { entries: AuditEntry[] }) {
   const [filter, setFilter] = useState('ALL')
@@ -1563,7 +1518,7 @@ export default function App() {
             )}
           {section === 'fleet' && <FleetSection vehicles={vehicles} setVehicles={setVehicles} drivers={drivers} setDrivers={setDrivers} hubs={hubs} setHubs={setHubs} addAudit={addAudit} />}
           {section === 'tracking' && <TrackingSection vehicles={vehicles} drivers={drivers} activeRole={activeRole} />}
-          {section === 'compliance' && <ComplianceSection />}
+          {section === 'compliance' && <ComplianceInspector />}
           {section === 'audit' && <AuditSection entries={audit} />}
           {section === 'users' && <UsersSection users={users} setUsers={setUsers} />}
         </main>
