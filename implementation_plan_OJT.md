@@ -14,15 +14,31 @@ To ensure a true, equal **50-50 division** across both **GenAI / LLM Engineering
 
 - **Track B Lead: Abhayraj Jaiswal — *Multi-Agent Orchestration, Governance & Operations***
   - **GenAI & Multi-Agent Focus**: LangGraph `StateGraph` Architecture, Router Agent (Intent Classifier), Policy & Compliance Agent, AI Copilot Sliding Drawer UI with execution traces, Structured Action Proposals with Diff View.
-  - **Full-Stack & Platform Focus**: RBAC Security & JWT Authentication, In-Transit FSM Lifecycle (`UNASSIGNED` → `COMPLETED`), Mobile Driver View & Actions, Executive KPI Analytics Dashboard, Immutable Audit Logging.
+  - **Full-Stack & Platform Focus**: RBAC Security & JWT Authentication, In-Transit FSM Lifecycle (`UNASSIGNED` → `COMPLETED`), Mobile Driver View & Actions, Executive KPI Analytics Dashboard, Batch Order Ingestion Pipeline (CSV/JSON), Immutable Audit Logging.
+
+---
+
+## Overall Roadmap Status
+
+```
+Overall Progress: [█████░░░░░░░░░░░░░░░] 25.0% (Month 1 Completed: 4 / 16 Weeks Done)
+Month 1 Progress: [████████████████████] 100.0% (Weeks 1, 2, 3, and 4 COMPLETED)
+Month 2 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0% (Starting Next)
+Month 3 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
+Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
+```
+
+- **Current Active Milestone**: Ready to begin **Month 2, Week 5: Spatial Graph & LangGraph Router (Oct 5 – Oct 9, 2026)**.
+- **Regression Suite**: **49 / 49 tests passing cleanly (100%)**.
 
 ---
 
 ## 4-Month (16-Week) Parallel 50-50 Implementation Roadmap
 
-### Month 1: Foundation, Governance, Assets & Shipment Ingestion
+### Month 1: Foundation, Governance, Assets & Shipment Ingestion (100% COMPLETE)
 
 #### Week 1: Scaffolding, Security & Application Shell
+- **Status**: `COMPLETED` ✅
 - **Manthan Nimodiya (Track A)**:
   - FastAPI modular directory structure configuration and structured logging.
   - SQLAlchemy 2.0 ORM with PostgreSQL support and SQLite zero-config fallback.
@@ -36,10 +52,11 @@ To ensure a true, equal **50-50 division** across both **GenAI / LLM Engineering
 - **Weekly Integration Sync**: Connect frontend to FastAPI backend, login as each role, and verify protected routes. *(Completed)*
 
 #### Week 2: Fleet Assets Backend & Full-Stack Auth (US-001 & US-002)
+- **Status**: `COMPLETED` ✅
 - **Manthan Nimodiya (Track A)**:
   - Database models: `Vehicle` (payload capacity, volume, fuel efficiency), `Driver` (shifts, licenses), `Hub`/`Depot` (geocoordinates, address).
   - RESTful CRUD APIs with Pydantic validation: `/api/v1/fleet/vehicles`, `drivers`, `hubs`, `overview`.
-  - Relational integrity tests and database check constraints (11/11 tests passed).
+  - Relational integrity tests and database check constraints (4/4 tests passed).
 - **Abhayraj Jaiswal (Track B)**:
   - Complete JWT auth endpoints: `/api/v1/auth/register`, `/api/v1/auth/login`, `/api/v1/auth/me`.
   - Role-based route guards (Driver vs. Dispatcher vs. Admin views).
@@ -49,38 +66,43 @@ To ensure a true, equal **50-50 division** across both **GenAI / LLM Engineering
 - **Weekly Integration Sync**: Manage fleet assets (create, read, update, delete) from the authenticated frontend. *(Completed)*
 
 #### Week 3: RAG Knowledge Base & Vector Store Engine vs. Shipments & Audit (US-006 & US-008)
-- **Status**: `IN PROGRESS` ⏳ (Active: Sep 21 – Sep 25, 2026)
+- **Status**: `COMPLETED` ✅
 - **Manthan Nimodiya (Track A: RAG Lead)**:
-  - Curate and chunk enterprise logistics SOPs, Hazmat ADR/DOT rules, driver rest-break mandates, and WikiQA samples.
-  - Vector embedding index with cosine similarity search in `backend/app/services/rag/vector_store.py`.
-  - Semantic search retrieval service with category filtering (Hazmat, Driver Rest, Cold Chain).
-  - Vector store unit test suite and retrieval benchmark tests (`backend/tests/test_rag.py`).
+  - Curated logistics SOP corpus (`backend/app/services/rag/corpus/`): 8 SOP documents across Hazmat transport, Driver Hours of Service, Cold Chain, and Vehicle Safety (41 chunks).
+  - TF-IDF unigram + bigram embedding pipeline and in-memory cosine-similarity vector store (`backend/app/services/rag/vector_store.py`).
+  - Semantic retrieval API: `/api/v1/rag/search`, `/categories`, `/documents`, `/documents/{id}`, `/stats`, `/benchmark`.
+  - 33-question evaluation benchmark set achieving Recall@3 = 1.00, MRR = 0.98, p95 latency < 1 ms.
+  - Vector store test suite: `backend/tests/test_rag.py` (22/22 passed).
 - **Abhayraj Jaiswal (Track B: Operations & Audit Lead)**:
   - `Shipment` database model: coordinates, weight, volume, delivery time windows `[open, close]`, priority, status (`backend/app/models/shipment.py`).
   - `AuditLog` database model and automated state-change interceptor (`backend/app/models/audit.py`).
   - Immutable audit trail query and export endpoints (`/api/v1/audit`).
   - RESTful Shipment CRUD API (`/api/v1/shipments`).
   - Audit trail viewer UI page with date, actor, and event type filters.
-  - Automated test suite: `backend/tests/test_shipments_audit.py`.
-- **Weekly Integration Sync**: Ingest sample shipments, query the vector knowledge base for transport policies, and inspect audit log records.
+  - Automated test suite: `backend/tests/test_shipments_audit.py` (5/5 passed).
+- **Weekly Integration Sync**: Ingest sample shipments, query the vector knowledge base for transport policies, and inspect audit log records. *(Completed)*
 
-#### Week 4: RAG Compliance Inspector & Batch Order Ingestion
+#### Week 4: RAG Compliance Inspector & Batch Order Ingestion (US-002, US-006, US-008)
+- **Status**: `COMPLETED` ✅
 - **Manthan Nimodiya (Track A)**:
-  - Dedicated Compliance & SOP search UI page.
-  - Real-time semantic query search bar with source document citation preview cards.
-  - Category filters and confidence score indicators.
+  - Dedicated Compliance & SOP search UI page with real-time semantic query bar.
+  - Source document citation preview cards with confidence scores and groundness verification.
 - **Abhayraj Jaiswal (Track B)**:
-  - Batch shipment ingestion API supporting CSV and JSON format parsing.
-  - Drag-and-drop batch upload modal with coordinate validation.
-  - Visual delivery cluster preview on UI.
-  - End-to-end Month 1 regression test suite across backend and frontend.
-- **Weekly Integration Sync**: Upload a 50-order CSV batch and perform live compliance queries against the vectorized knowledge base.
+  - High-throughput Batch Shipment Ingestion API (`POST /api/v1/shipments/batch/upload` & `POST /api/v1/shipments/batch`).
+  - Multi-format parser supporting CSV uploads and JSON array payloads with per-row validation diagnostics.
+  - Finite number validation (`math.isfinite()`) preventing `NaN`/`Infinity` database corruption.
+  - Strict 24-hour clock window validation (`00:00` to `23:59`).
+  - RFC 4180 standard CSV template generator (`GET /api/v1/shipments/batch/template`).
+  - Frontend drag-and-drop batch upload modal with live Delivery Cluster Preview (total weight, volume, express count) and direct API integration.
+  - Automated test suite: `backend/tests/test_batch_ingestion.py` (10/10 passed).
+  - **Full Month 1 Regression Test Suite: 49 / 49 tests passing cleanly (100%)**.
+- **Weekly Integration Sync**: Upload multi-order batches and execute live compliance queries against the vectorized knowledge base. *(Completed)*
 
 ---
 
 ### Month 2: Deterministic Optimization & Map vs. LangGraph Router & FSM
 
-#### Week 5: Spatial Graph & LangGraph Router (US-004 & US-005)
+#### Week 5: Spatial Graph & LangGraph Router (US-004 & US-005) — UPCOMING
 - **Manthan Nimodiya (Track A)**:
   - Haversine distance & travel duration engine with road detour correction factors.
   - Multi-point distance matrix generator with caching for arbitrary waypoint batches.
@@ -99,134 +121,137 @@ To ensure a true, equal **50-50 division** across both **GenAI / LLM Engineering
   - Enforce hard constraints: vehicle capacity (weight & volume), customer time windows `[open, close]`, driver shift limits.
   - Benchmark performance: solve up to 50 stops across 5 vehicles in under 5.0 seconds.
 - **Abhayraj Jaiswal (Track B)**:
-  - Finite State Machine lifecycle states (`UNASSIGNED` → `CLUSTERED` → `OPTIMIZING` → `ROUTE_PROPOSED` → `DISPATCHED` → `IN_TRANSIT` → `COMPLETED`).
-  - Driver action API (`ARRIVED`, `COMPLETED`, `FAILED`, `DELAYED`).
-  - Real-time trip status tracker with FSM visual progress bar.
-  - Live vehicle position simulator on map.
-- **Weekly Integration Sync**: Trigger VRPTW solver with 50 stops while verifying live trip FSM state transitions.
+  - Finite State Machine lifecycle states (`UNASSIGNED` → `CLUSTERED` → `OPTIMIZING` → `ROUTE_PROPOSED` → `DISPATCHED` → `IN_TRANSIT` → `DELIVERED` / `FAILED` / `REROUTED`).
+  - Driver action API: `/api/v1/trips/{id}/transition` (`ARRIVED`, `COMPLETED`, `FAILED`, `DELAYED`).
+  - Real-time trip status tracker component with FSM progress bar and animated state transitions.
+  - Vehicle telemetry simulator advancing truck position along simulated route coordinates.
+- **Weekly Integration Sync**: Ingest 50 shipments, run VRPTW solver, display route manifest, and simulate in-transit status updates via the FSM.
 
-#### Week 7: Route Visualizer & Zero-Hallucination Guardrails (US-004 & US-006)
+#### Week 7: Route Polylines & Zero-Hallucination Guardrails (US-004 & US-006)
 - **Manthan Nimodiya (Track A)**:
-  - Color-coded vehicle route polylines rendering on the Leaflet map canvas.
-  - Sequenced stop pins (1, 2, 3...) showing planned arrival ETAs and cargo details.
-  - Split-view dispatch workspace: interactive map on left, active route manifest table on right.
-  - Vehicle capacity percentage progress bars and delivery window countdown timers.
+  - Interactive Route Visualizer: Leaflet polyline rendering with distinct colors per vehicle route.
+  - Stop markers with sequence numbers (1, 2, 3...) and arrival ETA popups.
+  - Route manifest split-view: interactive map on left, collapsible vehicle route cards on right.
+  - Vehicle capacity progress bars (weight % and volume %) per route.
 - **Abhayraj Jaiswal (Track B)**:
-  - Zero-hallucination semantic similarity threshold guardrail in backend.
-  - Fallback response: `"Policy not found in verified knowledge base"`.
-  - Exact source citation attribution & confidence score API.
-  - Visual confidence badge component in UI.
-- **Weekly Integration Sync**: Inspect multi-vehicle route polylines on map while checking compliance status for cargo.
+  - Zero-hallucination guardrail: cosine similarity threshold check against RAG vector store.
+  - Out-of-domain query detection: return `"Policy not found in verified knowledge base"` when confidence < threshold.
+  - Confidence score calculation (0–100%) returned with every RAG response.
+  - Citation generator: attach source document title, section number, and exact text snippet to every answer.
+- **Weekly Integration Sync**: Visualize multi-vehicle routes on the map and test the AI Copilot with both valid policy questions and out-of-domain queries to verify guardrails.
 
-#### Week 8: Resequencing & Route Policy Check (US-004 & US-005)
+#### Week 8: Route Resequencing Workspace & Policy Agent (US-006 & US-007)
 - **Manthan Nimodiya (Track A)**:
-  - Drag-and-drop stop reordering in the route manifest table.
-  - Instant client-side & server-side ETA recalculation upon manual resequencing.
-  - Time-window violation warning badges.
-  - "Approve & Dispatch" workflow button transitioning route from `ROUTE_PROPOSED` to `DISPATCHED`.
+  - Drag-and-drop stop resequencing in the route manifest table.
+  - Dynamic route recalculation API: recalculates total distance, ETAs, and violations on manual reorder.
+  - Violation indicator badges: red for time window breach, yellow for vehicle overload.
+  - `"Reset to Optimal"` action button restoring the solver's mathematically optimal sequence.
 - **Abhayraj Jaiswal (Track B)**:
-  - **Policy & Compliance Agent**: Connects to Manthan's RAG vector store to validate proposed routes against driver max driving hours and Hazmat rules.
-  - Automated route compliance report modal in UI.
-  - Flagging non-compliant routes before dispatch approval.
-- **Weekly Integration Sync**: Reorder stops via drag-and-drop, verify dynamic ETA updates, run policy check, and finalize dispatch.
+  - **Policy & Compliance Agent**: LangGraph agent evaluating proposed routes against labor regulations and transport laws.
+  - Rule checks: driver maximum daily driving hours (10h limit, 30m break after 5h), Hazmat transport restrictions.
+  - Multi-agent LangGraph workflow: Dispatcher Query → Router Agent → Policy Agent → Output.
+  - Policy agent unit tests with simulated violation scenarios.
+- **Weekly Integration Sync**: Manually drag a stop to create a time window violation, verify that the Policy Agent flags the breach, and review the cited SOP regulation.
 
 ---
 
-### Month 3: AI Copilot Disruption Solver vs. Driver Mobile & Analytics
+### Month 3: Optimization Agent & Driver View vs. Copilot & Analytics
 
-#### Week 9: LangGraph Optimization Agent & Mobile Driver View (US-005 & US-008)
+#### Week 9: Optimization Agent & Driver Mobile View (US-005 & US-008)
 - **Manthan Nimodiya (Track A)**:
-  - **LangGraph Optimization Agent**: Interfaces with VRPTW solver via LLM tool-calling to calculate re-routing alternatives during disruptions.
-  - Translates natural language breakdown reports into solver re-routing calls.
-  - Unit test suite for optimization agent tool use.
+  - **Optimization Agent**: LangGraph agent that evaluates route changes when disruptions occur.
+  - Tool-calling integration: agent invokes the deterministic VRPTW solver as a tool.
+  - Disruption handler: vehicle breakdown (reassign remaining stops to other vehicles), traffic delay (resequence downstream stops).
+  - Generates structured disruption proposals with quantitative cost/time impact.
 - **Abhayraj Jaiswal (Track B)**:
-  - Mobile-responsive Driver View for assigned trips.
-  - Stop-by-stop navigation cards with contact metadata.
-  - Single-tap action buttons (`Arrived`, `Delivered`, `Report Delay`).
-  - Driver offline indicator & trip completion summary.
-- **Weekly Integration Sync**: Complete simulated delivery from Driver View, then trigger AI Optimization Agent to re-route remaining stops.
+  - Mobile Driver View: responsive view designed for smartphone / tablet form factor.
+  - Driver's assigned stop list for the day with turn-by-turn sequence and customer delivery windows.
+  - Action buttons: `"Arrived at Stop"`, `"Mark Delivered"`, `"Report Disruption"`.
+  - Offline mode: cache current trip data in localStorage for areas with poor cellular reception.
+- **Weekly Integration Sync**: Report a vehicle breakdown from the Driver View, verify that the Optimization Agent triggers the solver, and inspect the reassigned stops.
 
-#### Week 10: Downstream Recalculation & Copilot Drawer UI (US-005)
+#### Week 10: Dynamic Recalculation & AI Copilot Drawer (US-005 & US-007)
 - **Manthan Nimodiya (Track A)**:
-  - Dynamic downstream ETA recalculation engine upon stop delays.
-  - Recalculate remaining stops without resetting completed stops.
-  - Real-time ETA update notifications on dispatcher cockpit.
-  - Route deviation logging in audit trail.
+  - Downstream ETA recalculation engine: dynamically adjusts all subsequent stop ETAs when a delay is reported.
+  - SLA breach risk scoring: calculates probability of missing downstream customer windows based on current delay magnitude.
+  - Real-time route status update event emitted to the frontend.
 - **Abhayraj Jaiswal (Track B)**:
-  - AI Copilot sliding drawer UI.
-  - Step-by-step agent execution trace generator.
-  - Agent reasoning accordion component in Copilot drawer.
-  - Message history and suggested quick prompts.
-- **Weekly Integration Sync**: Report a delay on Stop 2, verify downstream ETAs shift, and observe Copilot trace reasoning.
+  - AI Copilot Sliding Drawer: collapsible chat panel accessible from any screen in the dispatch dashboard.
+  - Interactive chat interface with conversation history and suggested quick-prompt chips.
+  - Reasoning trace viewer: expandable accordion showing multi-agent execution steps (Router → Policy → Optimization).
+  - Streaming response display with latency indicator.
+- **Weekly Integration Sync**: Open AI Copilot drawer, type `"Vehicle V-101 is delayed by 45 minutes on Highway 4"`, and verify that downstream ETAs update while Copilot displays its reasoning trace.
 
-#### Week 11: RAG Route Explanations & Action Proposals (US-005)
+#### Week 11: Route Explainer & Action Proposals with Diff View (US-005 & US-006)
 - **Manthan Nimodiya (Track A)**:
-  - RAG-grounded natural language route explanation generator.
-  - Generates executive trip dispatch rationale referencing SOPs.
-  - Natural language turn-by-turn driver instructions.
+  - **Route Explainer Agent**: LangGraph agent generating plain-English explanations of why a particular route was chosen.
+  - Trade-off summarization: explains why a route is longer in distance to avoid a traffic bottleneck or satisfy a priority delivery window.
+  - Delivery manifest summary generator: auto-generates customer-facing delivery schedule summaries.
 - **Abhayraj Jaiswal (Track B)**:
-  - Structured proposal payload: `{ proposal_id, changes, affected_stops, time_saved, violations }`.
-  - Interactive proposal cards inside Copilot chat with visual diff highlighting affected stops.
-  - "Approve Re-route" / "Decline" confirmation buttons requiring explicit dispatcher confirmation.
-- **Weekly Integration Sync**: Simulate vehicle breakdown: Copilot proposes alternative re-route, dispatcher clicks "Approve", and map updates live.
+  - Structured Action Proposal Cards: rich UI cards inside the Copilot drawer displaying proposed re-routes.
+  - Route Diff Viewer: side-by-side comparison showing "Current Route" vs. "Proposed Route" with color-coded additions, removals, and sequence changes.
+  - Impact summary: delta in total kilometers, total driving time, and estimated delivery cost.
+  - One-click `"Accept Proposal"` and `"Reject Proposal"` action buttons.
+- **Weekly Integration Sync**: Request route optimization via Copilot, view the structured proposal card with visual diff, click "Accept", and verify that active routes update.
 
-#### Week 12: SLA Breach Alerts & Executive KPI Dashboard (US-007)
+#### Week 12: SLA Breach Warning & Executive KPI Dashboard (US-007 & US-008)
 - **Manthan Nimodiya (Track A)**:
-  - Real-time SLA breach detection when arrival timestamp exceeds committed delivery window.
-  - Exception alert toasts (`ROUTE_BLOCKED`, `SLA_BREACHED`).
-  - Failure recovery state transitions.
+  - Predictive SLA breach detection: flags deliveries at risk of missing customer time windows before the breach occurs.
+  - Automated alert generator: classifies risk severity (low, medium, critical).
+  - Recommended corrective actions: auto-generates suggestions (e.g., "Swap stop sequence between Vehicle 2 and Vehicle 3 to preserve SLA").
 - **Abhayraj Jaiswal (Track B)**:
-  - Executive KPI dashboard page in UI.
-  - High-impact metric KPI cards with trend indicators.
-  - Interactive responsive charts (OTIF delivery rate, fuel burn).
-  - Fleet capacity utilization gauges.
-- **Weekly Integration Sync**: Run historical dispatch simulations and inspect live KPI charts on the executive dashboard.
+  - Executive KPI Analytics Dashboard: high-level metrics cards (On-Time Delivery Rate %, Total Cost, Fleet Utilization %, Total Distance).
+  - Interactive charts: Daily delivery volume trends, SLA compliance by time of day, driver efficiency comparison.
+  - Filterable by date range, hub, and vehicle category.
+  - Real-time stat auto-refresh when trip events occur.
+- **Weekly Integration Sync**: Simulate multiple delivery delays, observe the SLA breach alert banner trigger, review corrective proposals, and verify KPI dashboard metric updates.
 
 ---
 
-### Month 4: Analytics, Hardening, Containerization & Release
+### Month 4: Cost Analysis, Reporting, DevOps & Final Presentation
 
-#### Week 13: Operational Metrics & Multi-Filtering (US-007)
+#### Week 13: Operational Cost Engine & Advanced Analytics (US-003 & US-008)
 - **Manthan Nimodiya (Track A)**:
-  - Operational metrics calculation engine: On-Time In-Full (OTIF) delivery rate.
-  - Average transit duration & route efficiency index.
-  - Fuel burn index formula & cost per ton-kilometer.
-  - Metric calculation unit tests.
+  - Fuel consumption & cost calculation based on vehicle-specific fuel efficiency (km/L) and route topography factors.
+  - Driver labor cost calculator based on driving hours and overtime rates.
+  - Carbon footprint estimation (kg CO2) per completed route.
+  - Cost comparison matrix: Baseline (unoptimized) vs. AI-Optimized cost savings.
 - **Abhayraj Jaiswal (Track B)**:
-  - Multi-dimensional analytics filter (date range, vehicle type, driver, regional hub).
-  - Summary statistics recalculation on filter changes.
-  - Audit trail correlation with KPI performance.
-- **Weekly Integration Sync**: Filter analytics by regional hub and export comprehensive reports.
+  - Advanced analytics filtering: multi-dimensional filters (date range, specific driver, vehicle type, priority class).
+  - Heatmap visualization: delivery density overlay on Leaflet map.
+  - CSV / Excel export functionality for all analytics views.
+  - Exportable executive summary report.
+- **Weekly Integration Sync**: Verify that fuel and labor cost calculations reflect vehicle assignments and that the executive report exports accurately.
 
-#### Week 14: Data Export & Pipeline Polish
+#### Week 14: PDF Manifest Generator & Security Hardening (US-008)
 - **Manthan Nimodiya (Track A)**:
-  - Automated CSV data export API for operational audits.
-  - Printable PDF executive trip summary generator.
-  - Export action buttons in analytics dashboard.
+  - Printable PDF Route Manifest generator with QR codes for driver delivery confirmation.
+  - Bill of Lading (BOL) document generator for commercial shipments.
+  - Turn-by-turn text directions export.
 - **Abhayraj Jaiswal (Track B)**:
-  - Copilot prompt engineering refinement and citation precision evaluation.
-  - End-to-end multi-agent conversation test suite.
-  - Security audit (JWT refresh, SQL injection, CORS).
-- **Weekly Integration Sync**: Run unified stress test across solver and multi-agent pipeline.
+  - API security audit: rate limiting, request throttling, CORS policy verification.
+  - Input sanitization on all user-facing inputs (chat, search, asset creation).
+  - Comprehensive audit trail report generator for compliance verification.
+- **Weekly Integration Sync**: Generate a PDF route manifest with printable stop list and verify end-to-end audit log coverage.
 
-#### Week 15: Performance Hardening & Stress Testing
+#### Week 15: Performance Benchmarks & Stress Testing
 - **Manthan Nimodiya (Track A)**:
-  - Solver performance tuning (<5s for 50 stops benchmark).
-  - Vector store indexing & embedding query latency optimization (<100ms).
-  - Database index tuning for fast spatial lookups.
+  - VRPTW solver scalability benchmark: 10, 25, 50, 100, 200 stops across 2 to 20 vehicles.
+  - RAG retrieval benchmark under concurrent load (10 to 100 concurrent requests).
+  - Performance profiling report with execution times and memory consumption graphs.
 - **Abhayraj Jaiswal (Track B)**:
-  - LangGraph multi-agent execution latency reduction.
-  - Multi-agent exception handling benchmark (<3s).
-  - Frontend rendering optimization (virtualized lists).
-- **Weekly Integration Sync**: Verify 50-stop VRPTW optimization under 5 seconds + vector retrieval under 100ms.
+  - Multi-agent workflow latency benchmark (end-to-end response time for Copilot queries).
+  - Frontend performance optimization (Lighthouse score > 90, bundle size analysis).
+  - Full end-to-end regression test suite covering all user stories (US-001 through US-008).
+- **Weekly Integration Sync**: Execute full regression test suite with 100% pass rate and confirm that all performance criteria (VRPTW < 5s, RAG < 3s) are satisfied.
 
-#### Week 16: Containerization & Production Release (Milestone 3)
+#### Week 16: Containerization, Production Runbook & Viva Delivery
 - **Manthan Nimodiya (Track A)**:
-  - Multi-stage backend `Dockerfile` for FastAPI.
-  - PostgreSQL container configuration, database migrations and seeds.
-  - Healthcheck and volume persistence configuration.
+  - Production Docker Compose configuration: Backend + PostgreSQL + Redis (cache).
+  - Environment configuration templates (`.env.example`) and secrets management documentation.
+  - Technical architecture documentation and algorithm viva defense slides.
 - **Abhayraj Jaiswal (Track B)**:
-  - Frontend `Dockerfile`.
-  - Multi-container `docker-compose.yml` orchestrating all services.
-  - Master `README.md` with architecture diagrams and live demo script.
-- **Weekly Integration Sync**: Run `docker compose up`, spin up the entire platform from a clean machine, and execute full end-to-end demonstration.
+  - Multi-stage Dockerfile for Vite/React frontend with Nginx reverse proxy.
+  - Comprehensive User Manual and API Reference documentation.
+  - End-to-end video demonstration walkthrough and final project presentation slides.
+- **Final Integration Sync**: Single-command startup (`docker compose up --build`), verify complete system functionality from clean state, and conduct dry run of project viva presentation.\n
