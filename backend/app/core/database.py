@@ -12,11 +12,23 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from app.core.config import settings
 from app.core.logging import logger
 
-# Normalize connection string scheme:
-# Convert legacy 'postgres://' (used by some cloud providers like Heroku/Render) to 'postgresql://' required by SQLAlchemy 2.0+
-db_url = settings.DATABASE_URL
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+def normalize_database_url(url: str) -> str:
+    """
+    Pins every PostgreSQL connection string to the psycopg2 driver installed via requirements.txt.
+
+    Cloud providers hand out different schemes for the same database:
+    - 'postgres://'            (Heroku / Render legacy)  -> rejected by SQLAlchemy 2.0+
+    - 'postgresql+psycopg://'  (Supabase / psycopg 3)    -> needs the 'psycopg' package, which is not installed
+    - 'postgresql://'          (standard)                -> psycopg2 by default
+    Rewriting all of them to 'postgresql+psycopg2://' stops a provider's URL format from crashing startup.
+    """
+    scheme, sep, rest = url.partition("://")
+    if sep and (scheme in ("postgres", "postgresql") or scheme.startswith("postgresql+")):
+        return f"postgresql+psycopg2://{rest}"
+    return url
+
+
+db_url = normalize_database_url(settings.DATABASE_URL)
 
 # Configure thread safety flags based on backend database engine:
 # SQLite requires check_same_thread=False when handling multi-threaded FastAPI request workers
