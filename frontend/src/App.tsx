@@ -1093,16 +1093,35 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
     return (statusFilter === 'ALL' || s.status === statusFilter) && (s.tracking_number.toLowerCase().includes(q) || s.customer_name.toLowerCase().includes(q))
   })
 
+  const [formError, setFormError] = useState('')
+
   function save() {
+    setFormError('')
+    const norm = form.tracking_number.trim().toUpperCase()
+    if (!norm) {
+      setFormError('Tracking number cannot be empty.')
+      return
+    }
+
     if (modal === 'add') {
-      const ns: Shipment = { ...form, id: Date.now() }
+      const isDuplicate = shipments.some(s => s.tracking_number.trim().toUpperCase() === norm)
+      if (isDuplicate) {
+        setFormError(`Tracking number "${form.tracking_number.trim()}" already exists in the fleet roster. Duplicate order IDs are not allowed.`)
+        return
+      }
+      const ns: Shipment = { ...form, tracking_number: form.tracking_number.trim(), id: Date.now() }
       setShipments([...shipments, ns])
-      addAudit({ actor_name: 'Admin', action_type: 'ASSET_CREATED', entity_type: 'SHIPMENT', entity_id: ns.id, details: `New shipment: ${ns.tracking_number} — AI workflow auto-triggered` })
+      addAudit({ actor_name: activeRole || 'Admin', action_type: 'ASSET_CREATED', entity_type: 'SHIPMENT', entity_id: ns.id, details: `New shipment: ${ns.tracking_number} — AI workflow auto-triggered` })
       setJustAdded(ns.id)
       setModal(null); setForm(blank)
       setTimeout(() => onTriggerWorkflow(ns), 400)
     } else if (modal === 'edit' && editTarget) {
-      setShipments(shipments.map(s => s.id === editTarget.id ? { ...s, ...form } : s))
+      const isDuplicate = shipments.some(s => s.id !== editTarget.id && s.tracking_number.trim().toUpperCase() === norm)
+      if (isDuplicate) {
+        setFormError(`Tracking number "${form.tracking_number.trim()}" is already assigned to another shipment.`)
+        return
+      }
+      setShipments(shipments.map(s => s.id === editTarget.id ? { ...s, ...form, tracking_number: form.tracking_number.trim() } : s))
       setModal(null); setForm(blank)
     }
   }
@@ -1158,11 +1177,39 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
     reader.onload = (e) => {
       const text = e.target?.result as string
       if (!text) return
+
+      const existingTrackingSet = new Set(shipments.map(s => s.tracking_number.trim().toUpperCase()))
+      const batchSeenSet = new Set<string>()
+      const detectedErrors: string[] = []
+
       if (file.name.endsWith('.json')) {
         try {
           const parsed = JSON.parse(text)
           if (Array.isArray(parsed)) {
-            setBatchPreview(parsed.map((x, i) => ({ ...blank, ...x, id: Date.now() + i })))
+            const parsedRows: Shipment[] = []
+            parsed.forEach((x, i) => {
+              const rowNum = i + 1
+              const tracking = (x.tracking_number || '').trim()
+              if (!tracking) {
+                detectedErrors.push(`Record #${rowNum}: Missing tracking_number.`)
+                return
+              }
+              const upper = tracking.toUpperCase()
+              if (batchSeenSet.has(upper)) {
+                detectedErrors.push(`Record #${rowNum}: Duplicate tracking_number "${tracking}" within JSON batch file.`)
+                return
+              }
+              if (existingTrackingSet.has(upper)) {
+                detectedErrors.push(`Record #${rowNum}: Order "${tracking}" already exists in the active fleet roster.`)
+                return
+              }
+              batchSeenSet.add(upper)
+              parsedRows.push({ ...blank, ...x, tracking_number: tracking, id: Date.now() + i })
+            })
+            setBatchPreview(parsedRows)
+            if (detectedErrors.length > 0) {
+              setBatchErrors(detectedErrors)
+            }
           } else {
             setBatchErrors(['JSON file must contain an array of shipment objects.'])
           }
@@ -1182,7 +1229,19 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
           if (cols.length < 5) continue
           const rowObj: any = {}
           headers.forEach((h, idx) => { rowObj[h] = cols[idx] ?? '' })
-          const tracking = rowObj.tracking_number || `SHP-BATCH-${i}`
+          const tracking = (rowObj.tracking_number || `SHP-BATCH-${i}`).trim()
+          const upper = tracking.toUpperCase()
+
+          if (batchSeenSet.has(upper)) {
+            detectedErrors.push(`Row ${i + 1}: Duplicate tracking_number "${tracking}" within CSV file.`)
+            continue
+          }
+          if (existingTrackingSet.has(upper)) {
+            detectedErrors.push(`Row ${i + 1}: Order "${tracking}" already exists in active fleet roster.`)
+            continue
+          }
+          batchSeenSet.add(upper)
+
           const customer = rowObj.customer_name || `Customer ${i}`
           const addr = rowObj.destination_address || 'Central Depot Delivery Area'
           const lat = parseFloat(rowObj.latitude) || 19.0760
@@ -1208,6 +1267,9 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
           })
         }
         setBatchPreview(parsedRows)
+        if (detectedErrors.length > 0) {
+          setBatchErrors(detectedErrors)
+        }
       }
     }
     reader.readAsText(file)
@@ -1219,6 +1281,18 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
     setBatchErrors([])
     setBatchSuccessMsg('')
 
+    // Extra safeguard: Filter out any items that already exist in active shipments
+    const currentTrackingSet = new Set(shipments.map(s => s.tracking_number.trim().toUpperCase()))
+    const uniqueBatch = batchPreview.filter(p => !currentTrackingSet.has(p.tracking_number.trim().toUpperCase()))
+
+    if (uniqueBatch.length === 0) {
+      setBatchErrors([
+        'All orders in this batch already exist in the active fleet roster. Ingestion stopped to prevent duplicate couriers.',
+      ])
+      setIsSubmittingBatch(false)
+      return
+    }
+
     let importedList: Shipment[] = []
     let apiErrorList: string[] = []
     let isServerPersisted = false
@@ -1227,60 +1301,39 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
       const token = await fetchAuthToken(activeRole || 'ADMIN')
       const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
 
-      if (batchFile && batchFile.name.endsWith('.csv')) {
-        // Send multipart CSV upload to API endpoint
-        const formData = new FormData()
-        formData.append('file', batchFile)
-        const res = await fetch(`${API_BASE}/api/v1/shipments/batch/upload`, {
-          method: 'POST',
-          headers: authHeaders,
-          body: formData,
-        })
-        if (res.ok) {
-          isServerPersisted = true
-          const data = await res.json()
-          if (data.created_shipments && data.created_shipments.length > 0) {
-            importedList = data.created_shipments
-          }
-          if (data.errors && data.errors.length > 0) {
-            apiErrorList = data.errors.map((e: any) => `Row ${e.row}${e.tracking_number ? ` (${e.tracking_number})` : ''}: ${e.reason}`)
-          }
+      // Always send the validated uniqueBatch via JSON endpoint to guarantee duplicate prevention
+      const payload = {
+        shipments: uniqueBatch.map(item => ({
+          tracking_number: item.tracking_number,
+          customer_name: item.customer_name,
+          destination_address: item.destination_address,
+          latitude: item.latitude ?? 19.0760,
+          longitude: item.longitude ?? 72.8777,
+          weight_kg: item.weight_kg,
+          volume_m3: item.volume_m3,
+          time_window_start: item.time_window_start,
+          time_window_end: item.time_window_end,
+          priority: item.priority,
+          hub_id: item.hub_id || 1,
+        })),
+      }
+      const res = await fetch(`${API_BASE}/api/v1/shipments/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify(payload),
+      })
+      if (res.ok) {
+        isServerPersisted = true
+        const data = await res.json()
+        if (data.created_shipments && data.created_shipments.length > 0) {
+          importedList = data.created_shipments
         }
-      } else {
-        // Send JSON batch to API endpoint
-        const payload = {
-          shipments: batchPreview.map(item => ({
-            tracking_number: item.tracking_number,
-            customer_name: item.customer_name,
-            destination_address: item.destination_address,
-            latitude: item.latitude ?? 19.0760,
-            longitude: item.longitude ?? 72.8777,
-            weight_kg: item.weight_kg,
-            volume_m3: item.volume_m3,
-            time_window_start: item.time_window_start,
-            time_window_end: item.time_window_end,
-            priority: item.priority,
-            hub_id: item.hub_id || 1,
-          })),
-        }
-        const res = await fetch(`${API_BASE}/api/v1/shipments/batch`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeaders },
-          body: JSON.stringify(payload),
-        })
-        if (res.ok) {
-          isServerPersisted = true
-          const data = await res.json()
-          if (data.created_shipments && data.created_shipments.length > 0) {
-            importedList = data.created_shipments
-          }
-          if (data.errors && data.errors.length > 0) {
-            apiErrorList = data.errors.map((e: any) => `Row ${e.row}${e.tracking_number ? ` (${e.tracking_number})` : ''}: ${e.reason}`)
-          }
+        if (data.errors && data.errors.length > 0) {
+          apiErrorList = data.errors.map((e: any) => `Row ${e.row}${e.tracking_number ? ` (${e.tracking_number})` : ''}: ${e.reason}`)
         }
       }
     } catch (e) {
-      console.warn('Backend batch endpoint unreachable, falling back to local client state:', e)
+      console.warn('Backend batch endpoint unreachable, applying client-side deduplication:', e)
     }
 
     if (apiErrorList.length > 0 && importedList.length === 0) {
@@ -1289,21 +1342,32 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
       return
     }
 
-    const finalAdditions = importedList.length > 0 ? importedList : batchPreview
-    setShipments([...shipments, ...finalAdditions])
+    const finalAdditions = importedList.length > 0 ? importedList : uniqueBatch
+
+    // Strict deduplication when merging into shipments state
+    setShipments(prev => {
+      const existing = new Set(prev.map(s => s.tracking_number.trim().toUpperCase()))
+      const reallyNew = finalAdditions.filter(s => !existing.has(s.tracking_number.trim().toUpperCase()))
+      return [...prev, ...reallyNew]
+    })
+
     if (apiErrorList.length > 0) {
       setBatchErrors(apiErrorList)
     }
+
+    const skippedDuplicatesCount = batchPreview.length - uniqueBatch.length
 
     addAudit({
       actor_name: activeRole || 'Admin',
       action_type: 'ASSET_CREATED',
       entity_type: 'SHIPMENT_BATCH',
       entity_id: Date.now(),
-      details: `Batch imported ${finalAdditions.length} orders (${isServerPersisted ? 'Server DB Persisted & Audited' : 'Client Mode'})`,
+      details: `Batch imported ${finalAdditions.length} orders${skippedDuplicatesCount > 0 ? ` (${skippedDuplicatesCount} duplicates skipped)` : ''} (${isServerPersisted ? 'Server DB Persisted' : 'Client Mode'})`,
     })
 
-    setBatchSuccessMsg(`Successfully committed ${finalAdditions.length} shipments${isServerPersisted ? ' to Database' : ''}!${apiErrorList.length > 0 ? ` (${apiErrorList.length} rows had errors)` : ''}`)
+    setBatchSuccessMsg(
+      `Successfully committed ${finalAdditions.length} new orders${isServerPersisted ? ' to Database' : ''}!${skippedDuplicatesCount > 0 ? ` (${skippedDuplicatesCount} duplicate tracking numbers skipped)` : ''}`
+    )
 
     if (apiErrorList.length === 0) {
       setTimeout(() => {
@@ -1313,10 +1377,38 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
         setBatchSuccessMsg('')
         setBatchErrors([])
         setIsSubmittingBatch(false)
-      }, 1200)
+      }, 1400)
     } else {
       setIsSubmittingBatch(false)
     }
+  }
+
+  // Detect duplicate tracking numbers in active roster
+  const trackingCountMap = shipments.reduce((acc, s) => {
+    const k = s.tracking_number.trim().toUpperCase()
+    acc[k] = (acc[k] || 0) + 1
+    return acc
+  }, {} as Record<string, number>)
+  const duplicateKeys = Object.keys(trackingCountMap).filter(k => trackingCountMap[k] > 1)
+
+  function handleDeduplicateRoster() {
+    const seen = new Set<string>()
+    const cleaned: Shipment[] = []
+    shipments.forEach(s => {
+      const k = s.tracking_number.trim().toUpperCase()
+      if (!seen.has(k)) {
+        seen.add(k)
+        cleaned.push(s)
+      }
+    })
+    setShipments(cleaned)
+    addAudit({
+      actor_name: activeRole || 'Admin',
+      action_type: 'STATUS_CHANGE',
+      entity_type: 'SHIPMENT',
+      entity_id: Date.now(),
+      details: `Deduplicated shipment roster: removed ${shipments.length - cleaned.length} duplicate entries.`,
+    })
   }
 
   return (
@@ -1329,7 +1421,23 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
           </div>
         ))}
       </div>
-      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 mt-4 flex-shrink-0">
+      {duplicateKeys.length > 0 && (
+        <div className="mx-5 mt-4 p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-center justify-between shadow-sm flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-amber-700 font-bold text-xs">⚠️ Duplicate Tracking Numbers Detected:</span>
+            <span className="text-xs text-amber-900">
+              {duplicateKeys.length} courier ID{duplicateKeys.length > 1 ? 's' : ''} duplicated ({duplicateKeys.join(', ')}).
+            </span>
+          </div>
+          <button
+            onClick={handleDeduplicateRoster}
+            className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm transition"
+          >
+            Deduplicate Roster (Remove Duplicates)
+          </button>
+        </div>
+      )}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 mt-2 flex-shrink-0">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-slate-400"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
@@ -1452,9 +1560,21 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
 
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={() => setBatchModal(false)} className="px-4 py-2 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 font-medium">Cancel</button>
-              <button onClick={commitBatch} disabled={batchPreview.length === 0 || isSubmittingBatch} className={`flex items-center gap-1.5 px-4 py-2 text-xs text-white rounded-lg font-bold transition shadow-sm ${batchPreview.length > 0 && !isSubmittingBatch ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-slate-300 cursor-not-allowed'}`}>
+              <button
+                onClick={commitBatch}
+                disabled={batchPreview.length === 0 || isSubmittingBatch || batchPreview.every(p => shipments.some(s => s.tracking_number.trim().toUpperCase() === p.tracking_number.trim().toUpperCase()))}
+                className={`flex items-center gap-1.5 px-4 py-2 text-xs text-white rounded-lg font-bold transition shadow-sm ${
+                  batchPreview.length > 0 && !isSubmittingBatch && !batchPreview.every(p => shipments.some(s => s.tracking_number.trim().toUpperCase() === p.tracking_number.trim().toUpperCase()))
+                    ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
+                    : 'bg-slate-300 cursor-not-allowed'
+                }`}
+              >
                 {isSubmittingBatch && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-                {isSubmittingBatch ? 'Submitting to API…' : `Ingest & Commit to Fleet (${batchPreview.length})`}
+                {isSubmittingBatch
+                  ? 'Submitting to API…'
+                  : batchPreview.every(p => shipments.some(s => s.tracking_number.trim().toUpperCase() === p.tracking_number.trim().toUpperCase()))
+                  ? 'All Orders are Duplicates (Cannot Ingest)'
+                  : `Ingest & Commit (${batchPreview.filter(p => !shipments.some(s => s.tracking_number.trim().toUpperCase() === p.tracking_number.trim().toUpperCase())).length} New Orders)`}
               </button>
             </div>
           </div>
@@ -1462,8 +1582,13 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
       )}
 
       {(modal === 'add' || modal === 'edit') && (
-        <Modal title={modal === 'add' ? '+ New Shipment — Copilot will auto-analyze' : 'Edit Shipment'} onClose={() => setModal(null)}>
+        <Modal title={modal === 'add' ? '+ New Shipment — Copilot will auto-analyze' : 'Edit Shipment'} onClose={() => { setModal(null); setFormError('') }}>
           <div className="space-y-3">
+            {formError && (
+              <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-semibold">
+                ⚠️ {formError}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3"><Field label="Tracking #"><input className={inputCls} value={form.tracking_number} onChange={e => setForm(p => ({ ...p, tracking_number: e.target.value }))} placeholder="SHP-XXX-HUB" /></Field><Field label="Customer"><input className={inputCls} value={form.customer_name} onChange={e => setForm(p => ({ ...p, customer_name: e.target.value }))} /></Field></div>
             <Field label="Destination Address"><input className={inputCls} value={form.destination_address} onChange={e => setForm(p => ({ ...p, destination_address: e.target.value }))} /></Field>
             <div className="grid grid-cols-3 gap-3">
