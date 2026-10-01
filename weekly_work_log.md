@@ -1,169 +1,120 @@
-# Weekly Work Log: AI Fleet Route Optimizer (50-50 Plan)
+# Weekly Engineering Work Log: AI Fleet Route Optimizer
 
-This document serves as our ongoing project journal. It tracks everything we build week-by-week, explained in clear, plain English, highlighting what was accomplished, why design decisions were made, what files were created, and how everything was tested.
-
----
-
-## Table of Contents
-- [Project Baseline & Setup](#project-baseline--setup)
-- [Month 1: Foundation, Governance, Assets & Shipment Ingestion](#month-1-foundation-governance-assets--shipment-ingestion)
-  - [Week 1: Scaffolding, Security & Application Shell (Completed)](#week-1-scaffolding-security--application-shell)
-  - [Week 2: Fleet Assets & Full-Stack RBAC Auth (Completed)](#week-2-fleet-assets--full-stack-rbac-auth)
-  - [Week 3: RAG Knowledge Base vs. Shipments & Audit (Completed)](#week-3-rag-knowledge-base-vs-shipments--audit)
-  - [Week 4: RAG Compliance Inspector UI vs. Batch Ingestion (Upcoming)](#week-4-rag-compliance-inspector-ui-vs-batch-ingestion)
-- [Month 2: Optimization & Map vs. LangGraph Router & FSM (Weeks 5–8)](#month-2-optimization--map-vs-langgraph-router--fsm)
-- [Month 3: AI Copilot Disruption Solver vs. Driver Mobile & Analytics (Weeks 9–12)](#month-3-ai-copilot-disruption-solver-vs-driver-mobile--analytics)
-- [Month 4: Analytics, Hardening, Containerization & Release (Weeks 13–16)](#month-4-analytics-hardening-containerization--release)
+**Project**: Enterprise AI Fleet Route Optimizer (50-50 Plan)  
+**Engineers**:
+- **Manthan Nimodiya (Track A Lead)**: RAG Systems, Optimization Algorithms & Autonomous Routing
+- **Abhayraj Jaiswal (Track B Lead)**: Multi-Agent Orchestration, Governance, Platform & Operations
 
 ---
-
-## Project Baseline & Setup
-- **Status**: `COMPLETED` ✅
-- **Authors & Balanced 50-50 Roles**:
-  - **Track A Lead**: **Manthan Nimodiya** — *RAG Vector Store & Embeddings, VRPTW Solver, Leaflet Map, Optimization Agent, Resequencing, RAG Compliance UI*
-  - **Track B Lead**: **Abhayraj Jaiswal** — *LangGraph Multi-Agent StateGraph, Router & Policy Agents, In-Transit FSM, RBAC Auth, Shipments & Audit Log, Executive Dashboard*
-- **Roadmap & Architecture Artifacts**:
-  - `conflict_free_architecture_guide.md`
-  - `team_work_split.md`
-  - `milestones_tracker.md`
-  - `implementation_plan_OJT`
-
----
-
-## Month 1: Foundation, Governance, Assets & Shipment Ingestion
 
 ### Week 1: Scaffolding, Security & Application Shell (Sep 1 – Sep 5, 2026)
 - **Status**: `COMPLETED` ✅
-- **Focus Area**: Modular FastAPI Architecture, SQLAlchemy 2.0 Dual Engine, Bcrypt/JWT Security & Tactical UI Shell.
+- **Focus Area**: Dual-engine database setup, security infrastructure, role-based access control, and base UI shell.
 
-#### Detailed Accomplishments:
-1. **FastAPI & Dual Database Layer (Track A: Manthan Nimodiya)**:
-   - Initialized FastAPI backend structure with modular config (`pydantic-settings`).
-   - Configured SQLAlchemy 2.0 engine with seamless SQLite zero-config development fallback and PostgreSQL production support.
-   - Built connection probes and health check endpoints (`/api/v1/health` and `/api/v1/ready`).
-   - Created `TimestampMixin` for automatic UTC-aware timestamp tracking across all database entities.
-2. **Security & RBAC Engine (Track B: Abhayraj Jaiswal)**:
-   - Implemented password hashing using `bcrypt` and signed JWT access token generator (`pyjwt`).
-   - Created `User` database model with `UserRole` enums (`ADMIN`, `FLEET_MANAGER`, `DISPATCHER`, `DRIVER`).
-   - Created security dependency `require_roles([...])` to enforce role guards on protected API routes.
-3. **Frontend Shell & Contract Baseline**:
-   - Built UI shell with TypeScript, dark tactical command center theme.
-   - Created `frontend/src/lib/types.ts` defining all shared TypeScript data contracts.
-   - Created `frontend/src/lib/authContext.tsx` with role switching and token storage.
-   - Created login portal with 1-click role switcher for quick viva demonstration.
-4. **Testing**:
-   - Automated Pytest suite (`test_health.py`, `test_auth_rbac.py`) passing with 100% success.
+#### Track A (Manthan Nimodiya):
+1. **Modular FastAPI Architecture**: Built modular structure (`app/core`, `models`, `schemas`, `api/v1`).
+2. **Dual Database Engine**: Configured SQLAlchemy 2.0 with SQLite development fallback and PostgreSQL production support.
+3. **Health Probes**: Built `/api/v1/health` and `/api/v1/ready` probes with database ping checks.
+4. **Automated Tests**: Implemented `backend/tests/test_health.py` (3/3 tests passed).
+
+#### Track B (Abhayraj Jaiswal):
+1. **Security & Cryptography**: Implemented `bcrypt` password hashing and signed JWT token handlers (`backend/app/core/security.py`).
+2. **Role-Based Guards**: Built FastAPI dependency `require_roles([UserRole.ADMIN, ...])` restricting access by role.
+3. **Command Center UI**: Built responsive UI with dark tactical command center theme and 1-click role switcher.
+4. **Auth Tests**: Implemented `backend/tests/test_auth_rbac.py` (5/5 tests passed).
 
 ---
 
 ### Week 2: Fleet Assets Backend & Full-Stack Workspace (Sep 7 – Sep 11, 2026)
 - **Status**: `COMPLETED` ✅
-- **Focus Area**: Fleet Asset Models (Hubs, Vehicles, Drivers), Relational Constraints, RESTful CRUD APIs & Fleet Management Workspace (US-002).
+- **Focus Area**: Core logistics asset models (Vehicles, Drivers, Hubs), CRUD APIs, UI asset directory, database seeder, and cloud deployments.
 
-#### Detailed Accomplishments:
-1. **Fleet Asset Models & Schema Design (Track A: Manthan Nimodiya)**:
-   - Implemented `Hub` model for distribution depots with geocoordinates (latitude/longitude check constraints) and operating hours.
-   - Implemented `Vehicle` model with payload capacity, cargo volume, fuel efficiency (km/l), and status enums (`AVAILABLE`, `IN_TRANSIT`, `MAINTENANCE`, `DECOMMISSIONED`).
-   - Implemented `Driver` model with commercial license validation, max driving hours constraints (<= 14 hrs/day), and duty status.
-   - Created Pydantic v2 schemas (`HubCreate`, `VehicleCreate`, `DriverCreate`, `FleetOverviewResponse`) with strict data validation.
-2. **RESTful Fleet CRUD Endpoints (Track A: Manthan Nimodiya)**:
-   - Built comprehensive endpoints for `/api/v1/fleet/hubs`, `/api/v1/fleet/vehicles`, and `/api/v1/fleet/drivers`.
-   - Built `/api/v1/fleet/overview` returning real-time aggregated metrics (total vehicles, on-duty drivers, total fleet payload capacity).
-   - Integrated role authorization checks allowing only Admins and Fleet Managers to modify core assets.
-3. **Fleet Management Workspace UI (Track B: Abhayraj Jaiswal)**:
-   - Built Asset Directory UI with dynamic tab switching (Vehicles, Drivers, Hubs).
-   - Built interactive creation modals: `VehicleModal.tsx`, `DriverModal.tsx`, `HubModal.tsx`.
-   - Built `AssetTable.tsx` with status badges, capacity meters, and action buttons.
-4. **Week 2 Wrap-up & Production Hardening Enhancements (Joint)**:
-   - **Command Center Telemetry Redesign**: Upgraded UI to enterprise grade with active telemetry KPIs, fleet status cards, and live system status indicators.
-   - **Database Seeder Script (`backend/scripts/seed_demo_data.py`)**: Built an automated database seeder populating 4 role accounts (`admin@fleetopt.io`, `manager@fleetopt.io`, `dispatcher@fleetopt.io`, `driver@fleetopt.io`), 3 regional distribution hubs, 4 multi-type vehicles, and 5 licensed drivers.
-   - **Cloud Deployments**:
-     - Deployed live FastAPI backend on **Render** backed by PostgreSQL.
-     - Deployed live frontend on **Vercel** with Vite 8 + React 19 and SPA rewrites (`vercel.json`).
-5. **Integration Testing**:
-   - Built and executed `backend/tests/test_fleet_crud.py`.
-   - Verified 4/4 tests passing cleanly across Auth, RBAC, Hub CRUD, Vehicle validation, and Fleet overview aggregations.
+#### Track A (Manthan Nimodiya):
+1. **Relational Models (`backend/app/models/fleet.py`)**:
+   - `Hub`: Coordinates, operating windows, facility capacity.
+   - `Vehicle`: Payload capacity (kg), volumetric capacity (m3), fuel efficiency (km/L).
+   - `Driver`: License categories, duty states, DOT daily driving shift restrictions (<=14h).
+2. **RESTful APIs**: Implemented CRUD for `/api/v1/fleet/vehicles`, `drivers`, `hubs`, and aggregate `/overview`.
+3. **Relational Tests**: Implemented `backend/tests/test_fleet_crud.py` (4/4 tests passed).
+
+#### Track B (Abhayraj Jaiswal):
+1. **JWT Auth Endpoints**: Built `/api/v1/auth/register`, `/login`, and `/me`.
+2. **Fleet Management Workspace**: Tabbed directory UI with status badges and creation modals (`VehicleModal.tsx`, `DriverModal.tsx`, `HubModal.tsx`).
+3. **Telemetry Redesign**: Built active metrics cards showing fleet utilization and operational alerts.
+4. **Production Deployments**: Deployed backend on Render (PostgreSQL) and frontend on Vercel with SPA routing.
 
 ---
 
 ### Week 3: RAG Knowledge Base vs. Shipments & Audit (Sep 21 – Sep 25, 2026)
-- **Status**: `COMPLETED` ✅ (Track A & Track B Delivered)
-- **Focus Area**: RAG Vector Store & Cosine Similarity vs. Shipment Data Models, REST Endpoints & Immutable Audit Logging (US-002, US-006, US-008).
-
-#### Accomplishments Delivered (Track B: Abhayraj Jaiswal):
-1. **Shipment Domain Architecture (`backend/app/models/shipment.py`)**:
-   - Built `Shipment` ORM model supporting delivery time windows `[time_window_start, time_window_end]`, cargo weight (kg), volume (m3), priority rankings (`LOW`, `STANDARD`, `HIGH`, `EXPRESS`), status lifecycle (`UNASSIGNED`, `CLUSTERED`, `ASSIGNED`, `IN_TRANSIT`, `DELIVERED`, `FAILED`), and origin hub foreign key.
-   - Enforced SQL constraints for geocoordinate validation and positive cargo values.
-2. **Pydantic v2 Schemas (`backend/app/schemas/shipment.py`)**:
-   - Enforced client-server contracts ensuring time window closing cannot precede opening time.
-3. **Immutable Audit Logging System (`backend/app/models/audit.py`, `backend/app/services/audit_service.py`)**:
-   - Built `AuditLog` ORM model and automated event helper recording actor name, role, action type (`ASSET_CREATED`, `STATUS_CHANGE`, `ROUTE_MODIFIED`, `COPILOT_OVERRIDE`, `DISPATCH_APPROVED`), and serialized before/after JSON states.
-4. **RESTful APIs (`backend/app/api/v1/shipments.py` & `backend/app/api/v1/audit.py`)**:
-   - Exposed `GET`, `POST`, `PATCH /status`, and `DELETE` endpoints for Shipments with RBAC protection.
-   - Exposed `GET /api/v1/audit` for paginated compliance history inspection.
-5. **Database Seeder & Test Suite**:
-   - Updated `backend/scripts/seed_demo_data.py` to seed 5 realistic customer orders and audit logs.
-   - Built `backend/tests/test_shipments_audit.py` with 5 automated test cases.
-   - **Full test suite passing: 17/17 (100%)**.
-
-#### Accomplishments Delivered (Track A: Manthan Nimodiya):
-1. **Curated SOP Knowledge Base (`backend/app/services/rag/corpus/`)**:
-   - 8 versioned SOP documents across 5 categories: Hazmat transport & incident response (49 CFR, ADR, CMVR Rules 9 & 129–137), driver hours of service (Motor Transport Workers Act 1961, EU 561/2006, FMCSA) & fatigue management, cold chain, vehicle load safety, and dispatch exception handling & SLAs.
-   - Each document is markdown with front-matter (id, version, effective date, legal references) and numbered `§` sections, so every retrieved passage has an exact citation.
-2. **Chunking & Embedding Pipeline (`embeddings.py`)**:
-   - Section-aware chunking (one chunk per `§`, long sections split into overlapping sentence windows) → 41 chunks.
-   - Text normalisation with logistics synonyms ("dangerous goods" → hazmat, "reefer", "OTIF"), stopwords and light stemming.
-   - TF-IDF unigram + bigram embedder, L2-normalised. Runs offline with no API keys or GPU; the `Embedder` interface lets a neural model replace it later.
-3. **Vector Store (`vector_store.py`) & Knowledge Base (`knowledge_base.py`)**:
-   - In-memory NumPy index: cosine similarity is a single matrix-vector product; top-k, min-score and category / document filters.
-   - Built once per process (~9 ms) and shared by the API and, later, the Policy Agent.
-4. **REST API (`backend/app/api/v1/rag.py`)**: `POST /rag/search`, `GET /rag/categories`, `/rag/documents`, `/rag/documents/{id}`, `/rag/stats`, `/rag/benchmark`.
-5. **WikiQA-Style Retrieval Benchmark (`eval_set.json`, `evaluation.py`)**:
-   - 30 answerable questions with gold passages + 3 unanswerable questions (mirroring WikiQA's no-answer questions).
-   - Results: **Recall@1 0.97, Recall@3 1.00, MRR 0.98, p95 latency < 1 ms**. Every off-topic question scores 0 while every answerable one scores ≥ 0.16, which gives Track B's Week 7 guardrail threshold its evidence.
-6. **Testing**: `backend/tests/test_rag.py` with 22 tests (parsing, chunking, embeddings, ranking, filters, benchmark targets, API). **Full suite: 39/39 passing.**
-
----
-
-### Week 4: RAG Compliance Inspector UI vs. Batch Ingestion (Upcoming)
-- **Track A (Manthan Nimodiya)**: Compliance Inspector search UI with citation badges and live RAG querying.
-- **Track B (Abhayraj Jaiswal)**: CSV/JSON Batch shipment uploader API & modal, visual cluster previews, Month 1 regression test suite.
-
----
-
-*(Future weekly progress logs will be appended here as subsequent milestones are executed)*
-### Week 4: RAG Compliance Inspector UI vs. Batch Order Ingestion (Sep 28 – Oct 2, 2026) — COMPLETED
 - **Status**: `COMPLETED` ✅
-- **Focus Area**: Batch Shipment Ingestion (CSV & JSON format parser), Template Generation, Delivery Cluster Preview, and Month 1 Regression Testing (US-002 & US-008).
+- **Focus Area**: RAG Vector Knowledge Base (SOP corpus, TF-IDF embeddings, retrieval benchmark) vs. Shipment Ingestion Domain & Immutable Forensic Audit Log.
 
-#### Detailed Accomplishments (Track B: Abhayraj Jaiswal):
+#### Track A (Manthan Nimodiya):
+1. **Curated Logistics Corpus (`backend/app/services/rag/corpus/`)**:
+   - 8 versioned SOP documents across Hazmat transport (ADR, 49 CFR), Driver Hours of Service (FMCSA, Motor Transport Workers Act 1961), Cold Chain, and Vehicle Safety.
+   - Section-aware chunking producing 41 citable reference chunks.
+2. **TF-IDF Vector Store (`backend/app/services/rag/vector_store.py`)**:
+   - In-memory vector store with cosine similarity ranking and category filters.
+3. **RAG Endpoints (`backend/app/api/v1/rag.py`)**:
+   - `/api/v1/rag/search`, `/categories`, `/documents`, `/documents/{id}`, `/stats`, `/benchmark`.
+4. **Retrieval Benchmark (`backend/services/rag/evaluation.py`)**:
+   - 33-question evaluation set achieving **Recall@3 = 1.00, MRR = 0.98, p95 latency < 1 ms**.
+   - `backend/tests/test_rag.py` (22/22 tests passed).
+
+#### Track B (Abhayraj Jaiswal):
+1. **Shipment ORM Model (`backend/app/models/shipment.py`)**:
+   - Geographic coordinates, weight (kg), volume (m3), delivery time windows `[open, close]`, priority, lifecycle states.
+2. **Immutable Audit Trail (`backend/app/models/audit.py`, `services/audit_service.py`)**:
+   - Append-only audit logger capturing actor ID, role, action type, timestamp, and serialized JSON state diffs.
+3. **Shipments & Audit APIs**:
+   - RESTful endpoints `/api/v1/shipments` and `/api/v1/audit`.
+4. **Testing Suite**:
+   - `backend/tests/test_shipments_audit.py` (5/5 tests passed).
+
+---
+
+### Week 4: RAG Compliance Inspector UI vs. Batch Order Ingestion (Sep 28 – Oct 2, 2026) — COMPLETED
+- **Status**: `COMPLETED` ✅ (Month 1 is 100% Finished)
+- **Focus Area**: Batch Order Ingestion Pipeline (CSV & JSON format parser), Template Generator, Delivery Cluster Preview, Codex Reviews Hardening, and Month 1 Full Regression Test Suite.
+
+#### Track A (Manthan Nimodiya):
+1. **RAG Compliance Inspector UI**:
+   - Dedicated Compliance search interface with real-time semantic query bar.
+   - Document citation preview cards with confidence scores and groundness indicators.
+
+#### Track B (Abhayraj Jaiswal):
 1. **High-Throughput Batch Ingestion Engine (`backend/app/services/batch_ingestion.py`)**:
-   - Built a robust multi-format parser supporting both multipart CSV uploads and JSON array payloads.
-   - Built header normalization (case-insensitive, space-tolerant, UTF-8 BOM stripping).
-   - Enforced row-level data validation:
+   - Multi-format parser supporting multipart CSV uploads and JSON array payloads.
+   - Row-level validation:
+     - Finite float verification (`math.isfinite()`) preventing `NaN` and `Infinity` corruption.
+     - Strict 24-hour clock validation (`^([01]\d|2[0-3]):([0-5]\d)$`) ensuring realistic delivery windows (`00:00` to `23:59`).
      - Coordinate bounds (-90 to +90 lat, -180 to +180 lng).
      - Strictly positive parcel weights and volumes.
-     - Customer delivery time window format (`HH:MM`) and chronological integrity (`start <= end`).
-     - Relational hub existence validation against registered fleet depots.
-     - Uniqueness checks preventing duplicate tracking numbers within the batch or across the database.
-   - Graceful partial failure handling: imports all valid rows while returning a detailed row-by-row error report for rejected lines.
-   - Automatic batch audit logging: captures batch size, sample tracking IDs, and error counts.
+     - Relational hub validation against registered fleet depots.
+     - Duplicate tracking number detection.
+   - Graceful partial failure reporting: imports all valid rows while returning detailed row-by-row error diagnostics for rejected rows.
+   - Automatic batch audit logging recording imported shipments and forensic metadata.
 2. **RESTful Batch Endpoints (`backend/app/api/v1/shipments.py`)**:
-   - `GET /api/v1/shipments/batch/template`: Serves a downloadable sample CSV pre-populated with valid orders across Mumbai, Bengaluru, and Delhi.
-   - `POST /api/v1/shipments/batch/upload`: Accepts multipart CSV file uploads with comprehensive error reporting.
-   - `POST /api/v1/shipments/batch`: Bulk ingestion of shipments via JSON array.
-   - Protected with role-based access control (Admin, Fleet Manager, Dispatcher).
-3. **Frontend Batch Upload Modal & Delivery Cluster Preview (`frontend/src/App.tsx`)**:
-   - Added a prominent `Batch Ingestion (CSV / JSON)` trigger in the Shipments console.
-   - Built an interactive drag-and-drop file upload zone.
-   - Built an instant client-side CSV/JSON parser displaying a live **Delivery Cluster Preview** (total payload weight, volume, express priority count, and destination breakdown).
-   - Built a one-click sample CSV template downloader.
-   - Linked to live fleet roster state and audit logging.
-4. **Month 1 Regression Test Suite (`backend/tests/test_batch_ingestion.py`)**:
-   - Built 7 automated tests covering valid CSV, valid JSON, partial errors with row diagnostics, missing columns, duplicate detection, and RBAC guards.
-   - **All 24/24 tests passing (100%)** across Month 1 backend modules:
+   - `GET /api/v1/shipments/batch/template`: Serves standard downloadable sample CSV template.
+   - `POST /api/v1/shipments/batch/upload`: Multipart CSV parser endpoint.
+   - `POST /api/v1/shipments/batch`: Bulk JSON ingestion accepting `List[Union[ShipmentCreate, Dict[str, Any]]]` for per-record validation.
+3. **Frontend Batch Ingestion Modal & Delivery Cluster Preview (`frontend/src/App.tsx`)**:
+   - Drag-and-drop batch upload modal with client-side preview.
+   - Live **Delivery Cluster Preview** showing total weight, total volume, express count, and regional breakdown.
+   - Direct integration with backend batch ingestion endpoints with role authentication tokens and row-level error reporting.
+   - One-click template download button.
+4. **Month 1 Full Regression Test Suite**:
+   - 10 automated batch tests (`backend/tests/test_batch_ingestion.py`) covering CSV parsing, JSON ingestion, partial failure diagnostics, duplicate detection, finite number validation, clock window validation, and RBAC guards.
+   - **49 / 49 automated backend tests passing (100%)**:
      - `test_auth_rbac.py` (5 passed)
-     - `test_batch_ingestion.py` (7 passed)
+     - `test_batch_ingestion.py` (10 passed)
      - `test_fleet_crud.py` (4 passed)
      - `test_health.py` (3 passed)
+     - `test_rag.py` (22 passed)
      - `test_shipments_audit.py` (5 passed)
+
+---
+
+### Week 5: Spatial Graph & LangGraph Foundation (Oct 5 – Oct 9, 2026) — UPCOMING
+- **Track A (Manthan Nimodiya)**: Haversine Distance Matrix Engine & Leaflet Map Shell (US-004).
+- **Track B (Abhayraj Jaiswal)**: LangGraph Multi-Agent StateGraph Architecture & Router Agent Intent Classifier (US-005).\n
