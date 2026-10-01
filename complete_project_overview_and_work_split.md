@@ -57,9 +57,9 @@ The **Enterprise AI Fleet Route Optimizer** bridges this gap by combining **two 
 
 ---
 
-## 3. Complete Summary of All Work Done Till Now (Weeks 1 to 3)
+## 3. Complete Summary of All Work Done Till Now (Weeks 1 to 4 — Month 1 100% COMPLETE)
 
-Across the first 3 weeks of Month 1, the team established a rock-solid foundation, deployed the application live to the cloud, seeded demo data, and passed **100% of automated tests (17/17 passed)**.
+Across the first 4 weeks (Month 1), the team established a rock-solid foundation, deployed the application live to the cloud, seeded demo data, built shipment ingestion & compliance systems, and achieved **100% passing automated regression tests (24/24 passed)**.
 
 ### Platform Milestones Achieved:
 1. **Core Backend & Dual Engine**:
@@ -70,19 +70,24 @@ Across the first 3 weeks of Month 1, the team established a rock-solid foundatio
    - `bcrypt` password hashing with PBKDF2 standard.
    - Signed JWT token issuance and role-based FastAPI route guards (`require_roles`).
    - 4 distinct operator privilege tiers: `ADMIN`, `FLEET_MANAGER`, `DISPATCHER`, `DRIVER`.
-3. **Fleet Asset Management (US-002)**:
+3. **Fleet Asset Management (US-001 & US-002)**:
    - Complete relational database models for `Hub` (origin depots), `Vehicle` (cargo payload & volume), and `Driver` (DOT driving shifts & licenses).
    - RESTful CRUD APIs with aggregated fleet overview metrics (`/api/v1/fleet/overview`).
    - Interactive Asset Management Workspace with real-time status badges and tabbed tables.
 4. **Shipment Ingestion & Governance Audit Trail (US-002 & US-008)**:
    - Full `Shipment` database models and RESTful APIs (`/api/v1/shipments`) with delivery time window enforcement.
    - Append-only immutable `AuditLog` system (`/api/v1/audit`) capturing actor context, timestamps, and serialized JSON state diffs for forensic auditability.
-5. **Automated Seeder & Live Cloud Hosting**:
+5. **High-Throughput Batch Order Ingestion & Cluster Preview (Week 4)**:
+   - Multi-format ingestion engine parsing CSV uploads and JSON payloads with row-level validation.
+   - Downloadable RFC 4180 CSV template generator (`GET /api/v1/shipments/batch/template`).
+   - Frontend drag-and-drop batch upload modal with real-time **Delivery Cluster Preview** (total weight, volume, priority breakdown).
+   - Batch audit logging recording imported shipments and forensic metadata.
+6. **Automated Seeder & Live Cloud Hosting**:
    - Automated seeder script (`backend/scripts/seed_demo_data.py`) populating 4 user accounts, 3 distribution hubs, 4 vehicles, 5 drivers, 5 shipments, and audit logs.
    - Production FastAPI backend deployed on **Render** (PostgreSQL).
    - Production frontend deployed on **Vercel** with Vite 8, React 19, and SPA rewrites (`vercel.json`).
-6. **Testing Verification**:
-   - **17/17 tests passing cleanly** across health probes, authentication, fleet CRUD, and shipment audit trails.
+7. **Regression Testing Verification**:
+   - **24/24 tests passing cleanly (100%)** across health probes, authentication, fleet CRUD, shipment audit trails, and batch ingestion.
 
 ---
 
@@ -120,7 +125,7 @@ To ensure both engineers have an equal, balanced portfolio for university evalua
 
 ### A. Work Done by ABHAYRAJ JAISWAL (Track B Lead)
 
-Abhayraj owns the **Security Architecture, Governance & Audit Trail, Shipment Ingestion, and the upcoming Multi-Agent Orchestration Engine (LangGraph)**.
+Abhayraj owns the **Security Architecture, Governance & Audit Trail, Shipment Ingestion & Batch Pipeline, and the upcoming Multi-Agent Orchestration Engine (LangGraph)**.
 
 #### 1. Full-Stack RBAC Authentication & Security Engine (`Week 1`)
 - **Backend**: Implemented `backend/app/core/security.py` using `bcrypt` password hashing and signed JWT token issuance (`pyjwt`).
@@ -145,6 +150,13 @@ Abhayraj owns the **Security Architecture, Governance & Audit Trail, Shipment In
 - **Audit Helper Service (`backend/app/services/audit_service.py`)**: Built automated `record_audit_event()` utility ensuring all asset creations and state transitions are logged.
 - **Audit REST API (`backend/app/api/v1/audit.py`)**: Built paginated query endpoint with filters for entity type, action type, and actor role.
 - **Testing (`backend/tests/test_shipments_audit.py`)**: Built 5 comprehensive tests verifying coordinate validation, role access guards, and automatic audit creation on shipment status updates (5/5 passed).
+
+#### 5. High-Throughput Batch Order Ingestion & Regression Testing (`Week 4`)
+- **Batch Ingestion Engine (`backend/app/services/batch_ingestion.py`)**: Multi-format parser supporting CSV file uploads and JSON arrays with header normalization, coordinate boundary checks, delivery window verification, and partial-failure row diagnostics.
+- **Downloadable CSV Template (`backend/app/api/v1/shipments.py`)**: RFC 4180 standard sample generator (`GET /api/v1/shipments/batch/template`) with realistic multi-city delivery data.
+- **Batch REST Endpoints**: `POST /api/v1/shipments/batch/upload` and `POST /api/v1/shipments/batch` guarded by role authorizations.
+- **Frontend Batch Modal & Cluster Preview (`frontend/src/App.tsx`)**: Drag-and-drop file uploader with live client-side parsing, dynamic metrics (payload weight, volume, express count), and 1-click template download.
+- **Month 1 Full Regression Test Suite (`backend/tests/test_batch_ingestion.py`)**: 7 comprehensive tests covering CSV parsing, JSON ingestion, partial failure diagnostics, duplicate detection, and security guards. **Total suite: 24/24 tests passed (100%)**.
 
 ---
 
@@ -174,24 +186,31 @@ Manthan owns the **Backend Scaffolding, Fleet Database Layer, VRPTW Mathematical
 #### 4. Interactive Workflow Canvas & Node Graph (`Week 2/3`)
 - Built `frontend/src/App.tsx` featuring an interactive node canvas visualizer, live backend probing, and role-based permissions switcher.
 
-#### 5. RAG Vector Knowledge Base (Active / In Progress for `Week 3`)
-- Constructing vector store indexing engine (`backend/app/services/rag/vector_store.py`) with cosine similarity search.
-- Ingesting enterprise logistics regulations, Hazmat ADR/DOT rules, and driver rest break mandates into vector embeddings.
+#### 5. RAG Vector Knowledge Base & Compliance Inspector (`Week 3/4`)
+- Vector store indexing engine (`backend/app/services/rag/vector_store.py`) with cosine similarity search.
+- Ingestion of enterprise logistics regulations, Hazmat ADR/DOT rules, and driver rest break mandates into vector embeddings.
+- RAG Compliance Inspector portal search interface with real-time semantic query bar, source citations, and confidence scores.
 
 ---
 
 ## 5. What Comes Next in the Roadmap?
 
-### Immediate Next Steps (Month 1 Wrap-up):
-- **Week 4 (Sep 28 – Oct 2, 2026)**:
-  - **Manthan (Track A)**: RAG Compliance Inspector search UI with citation badges and live document excerpts.
-  - **Abhayraj (Track B)**: CSV/JSON Batch shipment uploader API & modal, visual cluster previews, and Month 1 regression test suite.
+### Current Status:
+- **Month 1 (Weeks 1, 2, 3, 4)**: **100% COMPLETED** ✅ (25% of overall 16-week roadmap).
 
 ### Upcoming in Month 2 (Optimization & Multi-Agent AI):
-- **Week 5**: Haversine Distance Matrix & Leaflet Map Shell (Manthan) vs. LangGraph StateGraph & Router Agent (Abhayraj).
-- **Week 6**: Deterministic VRPTW Solver Core with Clarke-Wright Savings (Manthan) vs. In-Transit FSM & Driver Telemetry (Abhayraj).
-- **Week 7**: Route Visualizer on Map (Manthan) vs. Zero-Hallucination Guardrails & Confidence Scoring (Abhayraj).
-- **Week 8**: Resequencing Workspace (Manthan) vs. Policy & Compliance Agent Integration (Abhayraj).
+- **Week 5 (Oct 5 – Oct 9, 2026)**:
+  - **Manthan (Track A)**: Haversine Distance Matrix & Leaflet Map Shell.
+  - **Abhayraj (Track B)**: LangGraph Multi-Agent StateGraph Architecture & Router Agent (Intent Classifier).
+- **Week 6 (Oct 12 – Oct 16, 2026)**:
+  - **Manthan (Track A)**: Deterministic VRPTW Solver Core with Clarke-Wright Savings algorithm.
+  - **Abhayraj (Track B)**: In-Transit Finite State Machine (FSM) & Real-time Driver Telemetry tracking.
+- **Week 7 (Oct 19 – Oct 23, 2026)**:
+  - **Manthan (Track A)**: Interactive Route Polylines visualizer & Split Manifest view on Leaflet canvas.
+  - **Abhayraj (Track B)**: Zero-Hallucination Guardrails & RAG Similarity confidence scoring.
+- **Week 8 (Oct 26 – Oct 30, 2026)**:
+  - **Manthan (Track A)**: Drag-and-Drop Route Resequencing UI and recalculation API.
+  - **Abhayraj (Track B)**: Policy & Compliance Agent integrating labor laws and Hazmat verification.
 
 ---
 
@@ -199,5 +218,6 @@ Manthan owns the **Backend Scaffolding, Fleet Database Layer, VRPTW Mathematical
 
 When presenting this project to professors, evaluators, or industry panels:
 1. **Explain the Hybrid Architecture**: "We do not rely solely on an LLM for routing because language models cannot guarantee capacity constraints. Instead, we use deterministic graph algorithms (VRPTW) for mathematical guarantees and multi-agent GenAI (LangGraph + RAG) for natural language disruption handling and regulatory compliance."
-2. **Highlight the 50-50 Split**: "Abhayraj built the security engine, shipment pipeline, and immutable governance audit trail, and leads the LangGraph multi-agent orchestration. Manthan built the fleet asset engine, spatial models, and leads the deterministic VRPTW solver and RAG vector store."
-3. **Showcase Enterprise Engineering Standards**: Point to 17/17 automated passing tests, dual SQLite/PostgreSQL database engines, live cloud hosting on Render and Vercel, and immutable before/after state diff auditing.
+2. **Highlight the 50-50 Split**: "Abhayraj built the security engine, shipment & batch ingestion pipeline, and immutable governance audit trail, and leads the LangGraph multi-agent orchestration. Manthan built the fleet asset engine, spatial models, and leads the deterministic VRPTW solver and RAG vector store."
+3. **Showcase Enterprise Engineering Standards**: Point to **24/24 automated passing tests (100%)**, dual SQLite/PostgreSQL database engines, live cloud hosting on Render and Vercel, high-throughput CSV/JSON batch processing, and immutable before/after state diff auditing.
+
