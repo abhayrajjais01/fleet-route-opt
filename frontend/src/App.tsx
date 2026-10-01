@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { API_BASE, checkApiHealth } from './lib/api'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type UserRole = 'ADMIN' | 'FLEET_MANAGER' | 'DISPATCHER' | 'DRIVER'
@@ -62,9 +63,7 @@ const INIT_AUDIT: AuditEntry[] = [
   { id: 4, timestamp: '2026-09-22 11:58:40', actor_name: 'Copilot AI', action_type: 'COPILOT_OVERRIDE', entity_type: 'ROUTE', entity_id: 17, details: 'AI suggested reroute due to NH-48 congestion' },
 ]
 
-// ─── API CLIENT HELPER (FastAPI at http://localhost:8000) ─────────────────────
-const API_BASE = 'http://localhost:8000'
-
+// ─── API CLIENT HELPER (base URL & health probe live in lib/api.ts) ──────────
 const DEMO_CREDENTIALS: Record<UserRole, { email: string; pass: string }> = {
   ADMIN: { email: 'admin@fleetopt.io', pass: 'password123' },
   FLEET_MANAGER: { email: 'manager@fleetopt.io', pass: 'password123' },
@@ -85,14 +84,6 @@ async function fetchAuthToken(role: UserRole = 'ADMIN'): Promise<string | null> 
     return data.access_token || null
   } catch {
     return null
-  }
-}
-async function checkApiHealth(): Promise<boolean> {
-  try {
-    const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(1500) })
-    return res.ok
-  } catch {
-    return false
   }
 }
 
