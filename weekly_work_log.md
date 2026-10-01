@@ -132,3 +132,38 @@ This document serves as our ongoing project journal. It tracks everything we bui
 ---
 
 *(Future weekly progress logs will be appended here as subsequent milestones are executed)*
+### Week 4: RAG Compliance Inspector UI vs. Batch Order Ingestion (Sep 28 – Oct 2, 2026) — COMPLETED
+- **Status**: `COMPLETED` ✅
+- **Focus Area**: Batch Shipment Ingestion (CSV & JSON format parser), Template Generation, Delivery Cluster Preview, and Month 1 Regression Testing (US-002 & US-008).
+
+#### Detailed Accomplishments (Track B: Abhayraj Jaiswal):
+1. **High-Throughput Batch Ingestion Engine (`backend/app/services/batch_ingestion.py`)**:
+   - Built a robust multi-format parser supporting both multipart CSV uploads and JSON array payloads.
+   - Built header normalization (case-insensitive, space-tolerant, UTF-8 BOM stripping).
+   - Enforced row-level data validation:
+     - Coordinate bounds (-90 to +90 lat, -180 to +180 lng).
+     - Strictly positive parcel weights and volumes.
+     - Customer delivery time window format (`HH:MM`) and chronological integrity (`start <= end`).
+     - Relational hub existence validation against registered fleet depots.
+     - Uniqueness checks preventing duplicate tracking numbers within the batch or across the database.
+   - Graceful partial failure handling: imports all valid rows while returning a detailed row-by-row error report for rejected lines.
+   - Automatic batch audit logging: captures batch size, sample tracking IDs, and error counts.
+2. **RESTful Batch Endpoints (`backend/app/api/v1/shipments.py`)**:
+   - `GET /api/v1/shipments/batch/template`: Serves a downloadable sample CSV pre-populated with valid orders across Mumbai, Bengaluru, and Delhi.
+   - `POST /api/v1/shipments/batch/upload`: Accepts multipart CSV file uploads with comprehensive error reporting.
+   - `POST /api/v1/shipments/batch`: Bulk ingestion of shipments via JSON array.
+   - Protected with role-based access control (Admin, Fleet Manager, Dispatcher).
+3. **Frontend Batch Upload Modal & Delivery Cluster Preview (`frontend/src/App.tsx`)**:
+   - Added a prominent `Batch Ingestion (CSV / JSON)` trigger in the Shipments console.
+   - Built an interactive drag-and-drop file upload zone.
+   - Built an instant client-side CSV/JSON parser displaying a live **Delivery Cluster Preview** (total payload weight, volume, express priority count, and destination breakdown).
+   - Built a one-click sample CSV template downloader.
+   - Linked to live fleet roster state and audit logging.
+4. **Month 1 Regression Test Suite (`backend/tests/test_batch_ingestion.py`)**:
+   - Built 7 automated tests covering valid CSV, valid JSON, partial errors with row diagnostics, missing columns, duplicate detection, and RBAC guards.
+   - **All 24/24 tests passing (100%)** across Month 1 backend modules:
+     - `test_auth_rbac.py` (5 passed)
+     - `test_batch_ingestion.py` (7 passed)
+     - `test_fleet_crud.py` (4 passed)
+     - `test_health.py` (3 passed)
+     - `test_shipments_audit.py` (5 passed)

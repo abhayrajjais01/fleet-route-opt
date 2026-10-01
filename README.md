@@ -7,7 +7,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-v4-38B2AC.svg?logo=tailwind-css&logoColor=white)](https://tailwindcss.com)
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0-D71F00.svg)](https://www.sqlalchemy.org)
-[![Tests](https://img.shields.io/badge/Tests-17%2F17%20Passed%20(100%25)-brightgreen.svg)](https://github.com/abhayrajjais01/fleet-route-opt)
+[![Tests](https://img.shields.io/badge/Tests-49%2F49%20Passed%20(100%25)-brightgreen.svg)](https://github.com/abhayrajjais01/fleet-route-opt)
 [![Render](https://img.shields.io/badge/Backend-Render-46E3B7.svg?logo=render&logoColor=white)](https://fleet-route-opt.onrender.com)
 [![Vercel](https://img.shields.io/badge/Frontend-Vercel-000000.svg?logo=vercel&logoColor=white)](https://fleet-route-opt.vercel.app)
 
@@ -38,9 +38,9 @@ For complete weekly details and evaluation guides:
 | **Week 1** | **Foundations, Security & App Shell** | FastAPI Core, DB Engine, Health Probes | RBAC Auth, JWT Security, Command Center UI Shell | `COMPLETED` ✅ |
 | **Week 2** | **Fleet Asset Management (US-002)** | Fleet CRUD APIs, DB Models, Constraints | Interactive Fleet Workspace UI, Modals, Telemetry Cards | `COMPLETED` ✅ |
 | **Week 3** | **RAG Knowledge Base & Shipment Engine** | Vector Store Engine & RAG Ingestion (US-006) | Shipment Models, APIs & Immutable Audit Log (US-002 & US-008) | `COMPLETED` ✅ |
-| **Week 4** | **Batch Ingestion & RAG Inspector** | RAG Compliance Inspector Search UI | Batch Order Uploader & Month 1 Regression Tests | `PLANNED` |
+| **Week 4** | **Batch Ingestion & RAG Inspector** | RAG Compliance Inspector Search UI | Batch Order Uploader & Month 1 Regression Tests | `COMPLETED` ✅ |
 
-- **Automated Backend Test Suite**: `python -m pytest` → **39 / 39 PASSED (100%)**
+- **Automated Backend Test Suite**: `python -m pytest` → **49 / 49 PASSED (100%)**
 - **RAG Retrieval Benchmark**: `python -m app.services.rag.evaluation` → **Recall@3 1.00 · MRR 0.98 · p95 < 1 ms** (WikiQA-style eval set)
 - **Database Seeder**: `python scripts/seed_demo_data.py` → **Pre-loads 4 roles, 3 hubs, 4 vehicles, 5 drivers, 5 shipments, and audit logs**
 - **Live Deployments**:
@@ -147,7 +147,7 @@ fleet-route-opt/
 │   │   └── main.py                      # FastAPI root entrypoint, CORS & lifespan
 │   ├── scripts/
 │   │   └── seed_demo_data.py            # Automated database seeder (Users, Assets, Orders, Logs)
-│   ├── tests/                           # Pytest automated test suites (39/39 passed)
+│   ├── tests/                           # Pytest automated test suites (49/49 passed)
 │   │   ├── test_health.py               # Probe validation (3 tests)
 │   │   ├── test_auth_rbac.py            # JWT & RBAC tests (5 tests)
 │   │   ├── test_fleet_crud.py           # Fleet asset CRUD tests (4 tests)

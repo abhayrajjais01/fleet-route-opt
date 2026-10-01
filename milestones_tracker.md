@@ -2,7 +2,7 @@
 
 **Team & Balanced 50-50 Full-Stack & GenAI Tracks**:
 - **Track A Lead**: **Manthan Nimodiya** (*RAG Vector Store & Embeddings, VRPTW Solver, Leaflet Map, Optimization Agent, Resequencing, RAG Compliance UI*)
-- **Track B Lead**: **Abhayraj Jaiswal** (*LangGraph Multi-Agent StateGraph, Router & Policy Agents, In-Transit FSM, RBAC Auth, Shipments & Audit Log, Executive Dashboard*)
+- **Track B Lead**: **Abhayraj Jaiswal** (*LangGraph Multi-Agent StateGraph, Router & Policy Agents, In-Transit FSM, RBAC Auth, Shipments & Batch Ingestion, Executive Dashboard*)
 
 ---
 
@@ -10,15 +10,15 @@
 
 | Metric | Status |
 | :--- | :--- |
-| **Overall Roadmap Progress** | **18.75% Completed** (Weeks 1–3 Done) |
-| **Current Active Month** | **Month 1: Foundation, Governance, Assets & Shipment Ingestion** |
-| **Current Active Week** | **Week 3: Completed (Track A & Track B Delivered)** |
-| **Next Immediate Milestone** | **Week 4: Batch Ingestion & RAG Inspector Portal (Sep 28 – Oct 2, 2026)** |
+| **Overall Roadmap Progress** | **25.0% Completed** (Month 1: Weeks 1, 2, 3, 4 Completed) |
+| **Current Active Month** | **Month 1: Foundation, Governance, Assets & Shipment Ingestion (100% COMPLETE)** |
+| **Current Active Week** | **Week 4: Completed (Ready for Month 2 Transition)** |
+| **Next Immediate Milestone** | **Month 2, Week 5: Spatial Graph & LangGraph Router (Oct 5 – Oct 9, 2026)** |
 
 ```
-Overall Progress: [████░░░░░░░░░░░░░░░░] 18.75% (Weeks 1–3 Done)
-Month 1 Progress: [███████████████░░░░░] 75.0% (Weeks 1–3 Done)
-Month 2 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
+Overall Progress: [█████░░░░░░░░░░░░░░░] 25.0% (Month 1 Completed: 4 / 16 Weeks Done)
+Month 1 Progress: [████████████████████] 100.0% (Weeks 1, 2, 3, and 4 COMPLETED)
+Month 2 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0% (Starting Next)
 Month 3 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
 Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
 ```
@@ -32,8 +32,8 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 | **Month 1** | **Week 1** | Foundations & Shell | Backend Engine & DB Setup | Security, RBAC & Auth UI Shell | `COMPLETED` ✅ |
 | | **Week 2** | Assets & Authentication | Fleet Asset Backend Models & APIs | Full-Stack RBAC Auth & Route Guards | `COMPLETED` ✅ |
 | | **Week 3** | RAG Store & Shipments | RAG Knowledge Base & Vector Store | Shipment Ingestion & Audit Logging | `COMPLETED` ✅ |
-| | **Week 4** | Compliance UI & Ingestion | RAG Compliance Inspector Search UI | Batch Order Uploader & Regression Tests| `PLANNED` |
-| **Month 2** | **Week 5** | Spatial Map & LangGraph | Haversine Matrix & Leaflet Map Shell| LangGraph StateGraph & Router Agent| `PLANNED` |
+| | **Week 4** | Compliance UI & Ingestion | RAG Compliance Inspector Search UI | Batch Order Uploader & Regression Tests| `COMPLETED` ✅ |
+| **Month 2** | **Week 5** | Spatial Map & LangGraph | Haversine Matrix & Leaflet Map Shell| LangGraph StateGraph & Router Agent| `UPCOMING` |
 | | **Week 6** | VRPTW Solver & FSM | Deterministic VRPTW Solver Core | In-Transit FSM & Telemetry Tracking| `PLANNED` |
 | | **Week 7** | Map Polylines & Guardrails | Route Visualizer & Split Manifest | RAG Similarity Guardrails & Scores | `PLANNED` |
 | | **Week 8** | Resequencing & Policy Agent | Drag-and-Drop Resequencing UI/API | Policy & Compliance Agent + RAG Check| `PLANNED` |
@@ -84,13 +84,24 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 - **Status**: `COMPLETED` ✅ (Sep 21 – Sep 25, 2026)
 - **Manthan Nimodiya (Track A: RAG Lead)**:
   - [x] Curate and chunk enterprise logistics SOPs, Hazmat ADR/DOT rules, driver rest-break mandates, and WikiQA-style samples (8 SOPs, 5 categories, 41 section-level chunks in `backend/app/services/rag/corpus/`)
-  - [x] Vector embedding index with cosine similarity search (`backend/app/services/rag/vector_store.py`, TF-IDF embedder in `embeddings.py`)
   - [x] Semantic search retrieval service with category filtering (Hazmat, Driver Rest, Cold Chain, Vehicle Safety, Operations) exposed at `/api/v1/rag/*`
   - [x] Vector store unit test suite and retrieval benchmark tests (`backend/tests/test_rag.py`: 22 tests; Recall@3 = 1.0, MRR = 0.98, p95 latency < 1 ms; 39/39 full suite passing)
 - **Abhayraj Jaiswal (Track B: Operations & Audit Lead)**:
   - [x] `Shipment` database model (`backend/app/models/shipment.py`): coordinates, weight, volume, delivery time windows `[open, close]`, priority, status
-  - [x] `AuditLog` database model & automated state-change interceptor (`backend/app/models/audit.py`)
+  - [x] `AuditLog` database model & automated state-change interceptor (`backend/app/models/audit.py`, `audit_service.py`)
   - [x] Pydantic validation schemas (`backend/app/schemas/shipment.py`, `backend/app/schemas/audit.py`)
   - [x] RESTful Shipment CRUD API (`/api/v1/shipments`) & Audit query API (`/api/v1/audit`)
-  - [x] Automated test suite: `backend/tests/test_shipments_audit.py` (5/5 passed, 17/17 full suite passing)
-  - [x] Database seeder integration populating 5 customer orders & audit history for viva demo
+  - [x] Automated test suite: `backend/tests/test_shipments_audit.py` (5/5 passed)
+
+#### Week 4: RAG Compliance Inspector Portal vs. Batch Ingestion (US-002, US-006, US-008)
+- **Status**: `COMPLETED` ✅ (Sep 28 – Oct 2, 2026)
+- **Manthan Nimodiya (Track A)**:
+  - [x] Dedicated Compliance & SOP search UI page with real-time semantic query bar
+  - [x] Source document citation cards with confidence scores
+- **Abhayraj Jaiswal (Track B)**:
+  - [x] High-throughput Batch Order Ingestion API (`POST /api/v1/shipments/batch/upload` & `POST /api/v1/shipments/batch`)
+  - [x] RFC 4180 standard CSV template generator endpoint (`GET /api/v1/shipments/batch/template`)
+  - [x] Multi-format CSV and JSON parser with row-level diagnostics, coordinate checks, finite number validation, and bulk insertion
+  - [x] Automatic batch audit trail recording
+  - [x] Frontend Drag-and-Drop Batch Upload modal with live Delivery Cluster Preview, template downloader, and API integration
+  - [x] Month 1 Full Regression Test Suite (`backend/tests/test_batch_ingestion.py` — 10/10 passed, **49/49 Full Suite Passing**)
