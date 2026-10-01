@@ -37,10 +37,11 @@ For complete weekly details and evaluation guides:
 | :--- | :--- | :--- | :--- | :---: |
 | **Week 1** | **Foundations, Security & App Shell** | FastAPI Core, DB Engine, Health Probes | RBAC Auth, JWT Security, Command Center UI Shell | `COMPLETED` ✅ |
 | **Week 2** | **Fleet Asset Management (US-002)** | Fleet CRUD APIs, DB Models, Constraints | Interactive Fleet Workspace UI, Modals, Telemetry Cards | `COMPLETED` ✅ |
-| **Week 3** | **RAG Knowledge Base & Shipment Engine** | Vector Store Engine & RAG Ingestion (US-006) | Shipment Models, APIs & Immutable Audit Log (US-002 & US-008) | `IN PROGRESS` ⏳ *(Track B Done)* |
+| **Week 3** | **RAG Knowledge Base & Shipment Engine** | Vector Store Engine & RAG Ingestion (US-006) | Shipment Models, APIs & Immutable Audit Log (US-002 & US-008) | `COMPLETED` ✅ |
 | **Week 4** | **Batch Ingestion & RAG Inspector** | RAG Compliance Inspector Search UI | Batch Order Uploader & Month 1 Regression Tests | `PLANNED` |
 
-- **Automated Backend Test Suite**: `python -m pytest` → **17 / 17 PASSED (100%)**
+- **Automated Backend Test Suite**: `python -m pytest` → **39 / 39 PASSED (100%)**
+- **RAG Retrieval Benchmark**: `python -m app.services.rag.evaluation` → **Recall@3 1.00 · MRR 0.98 · p95 < 1 ms** (WikiQA-style eval set)
 - **Database Seeder**: `python scripts/seed_demo_data.py` → **Pre-loads 4 roles, 3 hubs, 4 vehicles, 5 drivers, 5 shipments, and audit logs**
 - **Live Deployments**:
   - Backend API: [https://fleet-route-opt.onrender.com](https://fleet-route-opt.onrender.com) (FastAPI + PostgreSQL)
@@ -146,7 +147,7 @@ fleet-route-opt/
 │   │   └── main.py                      # FastAPI root entrypoint, CORS & lifespan
 │   ├── scripts/
 │   │   └── seed_demo_data.py            # Automated database seeder (Users, Assets, Orders, Logs)
-│   ├── tests/                           # Pytest automated test suites (17/17 passed)
+│   ├── tests/                           # Pytest automated test suites (39/39 passed)
 │   │   ├── test_health.py               # Probe validation (3 tests)
 │   │   ├── test_auth_rbac.py            # JWT & RBAC tests (5 tests)
 │   │   ├── test_fleet_crud.py           # Fleet asset CRUD tests (4 tests)
