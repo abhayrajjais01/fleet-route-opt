@@ -1,6 +1,6 @@
 """Pydantic v2 Schemas for Shipment Management - US-002 & US-008."""
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.models.shipment import ShipmentPriority, ShipmentStatus
 
@@ -58,3 +58,25 @@ class ShipmentResponse(ShipmentBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# =====================================================================
+# Track B (Week 4): Batch Order Ingestion Schemas
+# =====================================================================
+
+class BatchIngestionRowError(BaseModel):
+    row: int = Field(..., description="Line/Row number in CSV or index in JSON array")
+    tracking_number: Optional[str] = Field(None, description="Tracking ID if extracted")
+    reason: str = Field(..., description="Detailed explanation of rejection")
+
+
+class BatchShipmentIngestionResponse(BaseModel):
+    total_processed: int = Field(..., description="Total rows/records inspected")
+    successful_count: int = Field(..., description="Number of orders ingested successfully")
+    failed_count: int = Field(..., description="Number of rejected rows")
+    errors: List[BatchIngestionRowError] = Field(default_factory=list, description="Row-level error breakdown")
+    created_shipments: List[ShipmentResponse] = Field(default_factory=list, description="Successfully created shipments")
+
+
+class BatchShipmentJSONRequest(BaseModel):
+    shipments: List[ShipmentCreate] = Field(..., min_length=1, description="List of shipments to ingest")

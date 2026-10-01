@@ -1,9 +1,10 @@
 """
-shipments.py - RESTful CRUD APIs for Shipment Orders (US-002 & US-008)
+shipments.py - RESTful CRUD APIs for Shipment Orders & Batch Ingestion (US-002 & US-008)
 """
 
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -17,11 +18,88 @@ from app.schemas.shipment import (
     ShipmentUpdate,
     ShipmentStatusUpdate,
     ShipmentResponse,
+    BatchShipmentIngestionResponse,
+    BatchShipmentJSONRequest,
 )
 from app.services.audit_service import record_audit_event
+from app.services.batch_ingestion import (
+    generate_csv_template,
+    parse_and_validate_csv,
+    parse_and_validate_json,
+)
 
 router = APIRouter()
 
+
+# =====================================================================
+# Track B (Week 4): Batch Ingestion Endpoints (Placed first to avoid /{id} capture)
+# =====================================================================
+
+@router.get("/batch/template")
+def download_shipments_csv_template(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Download an RFC 4180 standard CSV template pre-populated with sample orders.
+    Available to all authenticated operators.
+    """
+    csv_content = generate_csv_template()
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=sample_shipments_template.csv"},
+    )
+
+
+@router.post("/batch/upload", response_model=BatchShipmentIngestionResponse, status_code=status.HTTP_200_OK)
+async def upload_shipments_csv(
+    file: UploadFile = File(..., description="Multipart CSV file containing shipment rows"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FLEET_MANAGER, UserRole.DISPATCHER])),
+):
+    """
+    High-throughput CSV batch shipment ingestion.
+    Parses rows, validates spatial/temporal/capacity boundaries, bulk-inserts valid rows,
+    and returns a row-level diagnostics report.
+    Requires ADMIN, FLEET_MANAGER, or DISPATCHER role.
+    """
+    if not file.filename.lower().endswith((".csv", ".txt")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file must be a .csv file."
+        )
+
+    try:
+        content_bytes = await file.read()
+        csv_text = content_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            csv_text = content_bytes.decode("latin-1")
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unable to decode CSV file. Please provide UTF-8 encoded text."
+            )
+
+    return parse_and_validate_csv(csv_text=csv_text, db=db, actor=current_user)
+
+
+@router.post("/batch", response_model=BatchShipmentIngestionResponse, status_code=status.HTTP_200_OK)
+def batch_create_shipments_json(
+    payload: BatchShipmentJSONRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FLEET_MANAGER, UserRole.DISPATCHER])),
+):
+    """
+    Bulk ingestion of shipments via JSON array.
+    Requires ADMIN, FLEET_MANAGER, or DISPATCHER role.
+    """
+    return parse_and_validate_json(shipments=payload.shipments, db=db, actor=current_user)
+
+
+# =====================================================================
+# Single Shipment CRUD Endpoints
+# =====================================================================
 
 @router.get("", response_model=List[ShipmentResponse])
 def list_shipments(

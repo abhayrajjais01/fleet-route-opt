@@ -1055,6 +1055,10 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [modal, setModal] = useState<'add' | 'edit' | null>(null)
+  const [batchModal, setBatchModal] = useState(false)
+  const [batchPreview, setBatchPreview] = useState<Shipment[]>([])
+  const [batchErrors, setBatchErrors] = useState<string[]>([])
+  const [batchSuccessMsg, setBatchSuccessMsg] = useState('')
   const [editTarget, setEditTarget] = useState<Shipment | null>(null)
   const blank: Omit<Shipment, 'id'> = { tracking_number: '', customer_name: '', destination_address: '', weight_kg: 100, volume_m3: 1, time_window_start: '09:00', time_window_end: '12:00', priority: 'STANDARD', status: 'UNASSIGNED', hub_id: 1 }
   const [form, setForm] = useState(blank)
@@ -1085,6 +1089,98 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
     addAudit({ actor_name: 'Admin', action_type: 'STATUS_CHANGE', entity_type: 'SHIPMENT', entity_id: s.id, details: `${s.tracking_number}: ${s.status} → ${next[s.status]}` })
   }
 
+  function downloadCsvTemplate() {
+    const csvContent = "tracking_number,customer_name,destination_address,latitude,longitude,weight_kg,volume_m3,time_window_start,time_window_end,priority,hub_id\n" +
+      "SHP-CSV-001,Reliance Retail Hub,Bandra Kurla Complex Mumbai,19.0657,72.8687,250.0,2.1,09:00,13:00,HIGH,1\n" +
+      "SHP-CSV-002,Tata Digital Logistics,Hiranandani Business Park Powai Mumbai,19.1176,72.9060,110.5,0.9,10:00,15:00,STANDARD,1\n" +
+      "SHP-CSV-003,Flipkart Supply Chain,Sector 11 CBD Belapur Navi Mumbai,19.0144,73.0380,520.0,4.2,08:30,12:00,EXPRESS,1\n" +
+      "SHP-CSV-004,Infosys Technologies Ltd,Electronics City Phase 1 Bengaluru,12.8452,77.6602,340.0,2.8,11:00,16:00,STANDARD,2\n" +
+      "SHP-CSV-005,Amazon India Fulfillment,Okhla Phase II New Delhi,28.5320,77.2710,185.0,1.4,09:00,12:30,EXPRESS,3"
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'sample_shipments_template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function handleBatchFile(file: File) {
+    setBatchErrors([])
+    setBatchSuccessMsg('')
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const text = e.target?.result as string
+      if (!text) return
+      if (file.name.endsWith('.json')) {
+        try {
+          const parsed = JSON.parse(text)
+          if (Array.isArray(parsed)) {
+            setBatchPreview(parsed.map((x, i) => ({ ...blank, ...x, id: Date.now() + i })))
+          } else {
+            setBatchErrors(['JSON file must contain an array of shipment objects.'])
+          }
+        } catch {
+          setBatchErrors(['Invalid JSON file structure.'])
+        }
+      } else {
+        const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0)
+        if (lines.length <= 1) {
+          setBatchErrors(['CSV file has no data rows.'])
+          return
+        }
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
+        const parsedRows: Shipment[] = []
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(',').map(c => c.trim())
+          if (cols.length < 5) continue
+          const rowObj: any = {}
+          headers.forEach((h, idx) => { rowObj[h] = cols[idx] ?? '' })
+          const tracking = rowObj.tracking_number || `SHP-BATCH-${i}`
+          const customer = rowObj.customer_name || `Customer ${i}`
+          const addr = rowObj.destination_address || 'Central Depot Delivery Area'
+          const weight = parseFloat(rowObj.weight_kg) || 100
+          const volume = parseFloat(rowObj.volume_m3) || 1.0
+          const hubId = parseInt(rowObj.hub_id) || 1
+          const prio = (['LOW', 'STANDARD', 'HIGH', 'EXPRESS'].includes(rowObj.priority?.toUpperCase()) ? rowObj.priority.toUpperCase() : 'STANDARD') as ShipmentPriority
+          parsedRows.push({
+            id: Date.now() + i,
+            tracking_number: tracking,
+            customer_name: customer,
+            destination_address: addr,
+            weight_kg: weight,
+            volume_m3: volume,
+            time_window_start: rowObj.time_window_start || '09:00',
+            time_window_end: rowObj.time_window_end || '17:00',
+            priority: prio,
+            status: 'UNASSIGNED',
+            hub_id: hubId,
+          })
+        }
+        setBatchPreview(parsedRows)
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  function commitBatch() {
+    if (batchPreview.length === 0) return
+    setShipments([...shipments, ...batchPreview])
+    addAudit({
+      actor_name: 'Admin',
+      action_type: 'ASSET_CREATED',
+      entity_type: 'SHIPMENT_BATCH',
+      entity_id: Date.now(),
+      details: `Batch imported ${batchPreview.length} customer shipments into active fleet roster`,
+    })
+    setBatchSuccessMsg(`Successfully imported ${batchPreview.length} shipments!`)
+    setTimeout(() => {
+      setBatchModal(false)
+      setBatchPreview([])
+      setBatchSuccessMsg('')
+    }, 1000)
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="grid grid-cols-4 gap-3 p-5 pb-0 flex-shrink-0">
@@ -1097,7 +1193,7 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
       </div>
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 mt-4 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2.5 py-1.5">
+          <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-slate-400"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" className="text-xs outline-none w-36 text-slate-600 placeholder-slate-400" />
           </div>
@@ -1106,10 +1202,16 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
             {['UNASSIGNED', 'CLUSTERED', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED', 'FAILED'].map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-        <button onClick={() => { setForm(blank); setModal('add') }} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm shadow-blue-200">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          New Shipment → AI Workflow
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => { setBatchModal(true); setBatchPreview([]); setBatchErrors([]); setBatchSuccessMsg('') }} className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors shadow-sm shadow-emerald-200">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Batch Ingestion (CSV / JSON)
+          </button>
+          <button onClick={() => { setForm(blank); setModal('add') }} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm shadow-blue-200">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            New Shipment → AI Workflow
+          </button>
+        </div>
       </div>
       <div className="flex-1 overflow-auto">
         <table className="w-full text-xs">
@@ -1138,6 +1240,87 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
           </tbody>
         </table>
       </div>
+
+      {batchModal && (
+        <Modal title="📦 Batch Order Ingestion (CSV / JSON) — US-002" onClose={() => setBatchModal(false)}>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg">
+              <div>
+                <p className="text-xs font-bold text-slate-800">CSV Specification & Template</p>
+                <p className="text-[11px] text-slate-500">Includes columns: tracking_number, customer_name, destination_address, weight_kg, priority, hub_id.</p>
+              </div>
+              <button onClick={downloadCsvTemplate} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-sm transition">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-blue-600"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download Template
+              </button>
+            </div>
+
+            <div className="border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-xl p-6 text-center bg-slate-50/50 hover:bg-emerald-50/30 transition-colors">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-8 h-8 text-slate-400 mx-auto mb-2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
+              <p className="text-xs font-semibold text-slate-700">Drag & drop your CSV or JSON file here</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Supports multi-order consignments up to 100 records</p>
+              <input type="file" accept=".csv,.json" onChange={e => { if (e.target.files?.[0]) handleBatchFile(e.target.files[0]) }} className="mt-3 text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700" />
+            </div>
+
+            {batchErrors.length > 0 && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+                <p className="font-bold mb-1">Validation Errors:</p>
+                <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
+                  {batchErrors.map((err, idx) => <li key={idx}>{err}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {batchSuccessMsg && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-800 text-center">
+                ✓ {batchSuccessMsg}
+              </div>
+            )}
+
+            {batchPreview.length > 0 && (
+              <div className="border border-slate-200 rounded-xl p-3.5 bg-white space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-slate-800">Delivery Cluster Preview</p>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                    {batchPreview.length} Ready to Ingest
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 py-1 text-center">
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                    <p className="text-[10px] text-slate-400">Total Payload</p>
+                    <p className="text-sm font-bold text-slate-700">{batchPreview.reduce((acc, x) => acc + x.weight_kg, 0).toFixed(1)} kg</p>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                    <p className="text-[10px] text-slate-400">Total Volume</p>
+                    <p className="text-sm font-bold text-slate-700">{batchPreview.reduce((acc, x) => acc + x.volume_m3, 0).toFixed(1)} m³</p>
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                    <p className="text-[10px] text-slate-400">Express Priority</p>
+                    <p className="text-sm font-bold text-amber-600">{batchPreview.filter(x => x.priority === 'EXPRESS' || x.priority === 'HIGH').length} Orders</p>
+                  </div>
+                </div>
+                <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 border-t border-slate-100 pt-1">
+                  {batchPreview.map(p => (
+                    <div key={p.id} className="flex items-center justify-between py-1.5 text-[11px]">
+                      <span className="font-mono font-bold text-blue-700">{p.tracking_number}</span>
+                      <span className="text-slate-600 truncate max-w-[140px]">{p.customer_name}</span>
+                      <span className="text-slate-400">{p.weight_kg}kg</span>
+                      <Badge s={p.priority} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setBatchModal(false)} className="px-4 py-2 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 font-medium">Cancel</button>
+              <button onClick={commitBatch} disabled={batchPreview.length === 0} className={`px-4 py-2 text-xs text-white rounded-lg font-bold transition shadow-sm ${batchPreview.length > 0 ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-slate-300 cursor-not-allowed'}`}>
+                Ingest & Commit to Fleet ({batchPreview.length})
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {(modal === 'add' || modal === 'edit') && (
         <Modal title={modal === 'add' ? '+ New Shipment — Copilot will auto-analyze' : 'Edit Shipment'} onClose={() => setModal(null)}>
