@@ -16,7 +16,7 @@ import pytest
 
 from app.services.optimizer.distance_matrix import (
     EARTH_RADIUS_KM,
-    band_speed_kmh,
+    average_speed_kmh,
     build_distance_matrix,
     cache_stats,
     clear_cache,
@@ -60,9 +60,18 @@ def test_antipodal_points_do_not_break_the_formula():
 
 
 # ==================== DETOUR & DURATION ==================== #
-@pytest.mark.parametrize("km, factor", [(1, 1.45), (4.99, 1.45), (5, 1.35), (24, 1.35), (60, 1.25), (300, 1.20)])
-def test_detour_factor_bands(km, factor):
-    assert detour_factor(km) == factor
+@pytest.mark.parametrize("km, factor", [(0, 1.45), (5, 1.38), (15, 1.34), (100, 1.22), (300, 1.18), (900, 1.18)])
+def test_detour_factor_interpolates_between_anchors(km, factor):
+    assert detour_factor(km) == pytest.approx(factor)
+
+
+def test_longer_legs_never_get_shorter_road_distance_or_drive_time():
+    """Regression: stepped bands made a 5.3 km leg faster than a 3.8 km one. Interpolation must stay monotonic."""
+    legs = np.arange(0.0, 1000.0, 0.05)
+    road = [km * detour_factor(km) for km in legs]
+    minutes = [km * detour_factor(km) / average_speed_kmh(km) for km in legs]
+    assert np.all(np.diff(road) >= 0)
+    assert np.all(np.diff(minutes) >= 0)
 
 
 def test_road_distance_is_longer_than_straight_line():
@@ -74,7 +83,7 @@ def test_heavier_vehicles_take_longer_on_the_same_leg():
     van = travel_minutes(*MUMBAI_HUB, *PUNE_HUB, vehicle_type="VAN")
     semi = travel_minutes(*MUMBAI_HUB, *PUNE_HUB, vehicle_type="SEMI_TRUCK")
     assert semi > van
-    assert band_speed_kmh(200, "SEMI_TRUCK") < band_speed_kmh(200, "VAN")
+    assert average_speed_kmh(200, "SEMI_TRUCK") < average_speed_kmh(200, "VAN")
 
 
 def test_mumbai_to_pune_estimate_is_realistic():
