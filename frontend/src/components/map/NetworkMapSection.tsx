@@ -34,7 +34,6 @@ export default function NetworkMapSection({ hubs, shipments }: { hubs: MapHub[];
     () => shipments.filter((s): s is MapStop => Number.isFinite(s.latitude) && Number.isFinite(s.longitude)),
     [shipments],
   )
-  const missingCoords = shipments.length - stops.length
   const selectedHub = hubs.find(h => h.id === selectedHubId) ?? null
   const hubStops = useMemo(() => (selectedHub ? stops.filter(s => s.hub_id === selectedHub.id) : []), [stops, selectedHub])
 
@@ -90,108 +89,86 @@ export default function NetworkMapSection({ hubs, shipments }: { hubs: MapHub[];
   const totalStraight = rows.reduce((sum, r) => sum + r.straightKm, 0)
 
   return (
-    <div className="flex h-full overflow-hidden">
-      {/* ── Map ── */}
-      <div className="flex-1 min-w-0 relative">
-        <LeafletMap ref={mapRef} hubs={hubs} stops={stops} selectedHubId={selectedHubId} metrics={metrics} onSelectHub={setSelectedHubId} />
-        <div className="absolute top-3 right-3 z-[400] bg-white/95 border border-slate-200 rounded-xl px-3 py-2 shadow-sm text-[10px] text-slate-600 space-y-1">
-          <p className="font-semibold text-slate-500 uppercase tracking-wider">Legend</p>
-          <p className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-slate-900 inline-block" />Distribution hub</p>
-          {Object.entries(PRIORITY_COLOR).map(([p, c]) => <p key={p} className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full inline-block" style={{ background: c }} />{p} stop</p>)}
-          <p className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-dashed border-slate-400 inline-block" />Hub → stop link</p>
-        </div>
+    <div className="relative h-full overflow-hidden">
+      <div className="absolute inset-0">
+        <LeafletMap ref={mapRef} hubs={hubs} stops={stops} selectedHubId={selectedHubId} metrics={metrics} onSelectHub={setSelectedHubId}
+          fitPadding={{ topLeft: [60, 60], bottomRight: [420, 60] }} />
       </div>
 
-      {/* ── Side panel ── */}
-      <aside className="w-[340px] flex-shrink-0 flex flex-col border-l border-slate-200 bg-white overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-200 space-y-3">
-          <div>
-            <p className="text-sm font-bold text-slate-800">Network Map</p>
-            <p className="text-[11px] text-slate-400">{hubs.length} hubs · {stops.length} stops plotted{missingCoords > 0 && ` · ${missingCoords} without coordinates`}</p>
-          </div>
+      {/* Legend */}
+      <div className="absolute bottom-4 left-16 z-[400] rounded-xl bg-white/95 backdrop-blur shadow-md ring-1 ring-slate-900/5 px-3 py-2 flex items-center gap-4 text-xs text-slate-600">
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-slate-900" />Hub</span>
+        {Object.entries(PRIORITY_COLOR).map(([p, c]) => <span key={p} className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: c }} />{p.charAt(0) + p.slice(1).toLowerCase()}</span>)}
+      </div>
+
+      {/* Panel */}
+      <div className="absolute top-4 right-4 bottom-4 w-[360px] z-[400] rounded-2xl bg-white shadow-xl shadow-slate-900/15 ring-1 ring-slate-900/5 flex flex-col overflow-hidden">
+        <div className="px-5 pt-5 pb-4 border-b border-slate-100 space-y-3">
           <div className="flex flex-wrap gap-1.5">
-            <button onClick={() => setSelectedHubId(null)} className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${selectedHubId === null ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}>All hubs</button>
-            {hubs.map(h => (
-              <button key={h.id} onClick={() => setSelectedHubId(h.id)} className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border font-mono transition-colors ${selectedHubId === h.id ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}>{h.code}</button>
+            {[{ id: null as number | null, label: 'All hubs' }, ...hubs.map(h => ({ id: h.id as number | null, label: h.name.split(' ').slice(0, 2).join(' ') }))].map(o => (
+              <button key={String(o.id)} onClick={() => setSelectedHubId(o.id)} className={`px-3 py-1.5 rounded-full text-sm transition-colors ${selectedHubId === o.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{o.label}</button>
             ))}
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Vehicle</span>
-            <select value={vehicle} onChange={e => setVehicle(e.target.value as MatrixVehicleType)} className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-600 bg-white outline-none">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-500">Drive times for</span>
+            <select value={vehicle} onChange={e => setVehicle(e.target.value as MatrixVehicleType)} className="border border-slate-200 rounded-lg px-2 py-1 text-sm text-slate-800 bg-white outline-none">
               {VEHICLES.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
             </select>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {offline && (
-            <div className="border border-amber-200 bg-amber-50 rounded-xl p-3 text-[11px] text-amber-800">
-              Distance engine unreachable at <span className="font-mono">{API_BASE}</span>. The map still shows every hub and stop; start the backend for road distances and drive times.
-            </div>
-          )}
-          {error && <p className="text-xs text-red-600">{error}</p>}
-          {loading && <p className="text-xs text-slate-400 flex items-center gap-2"><span className="w-3 h-3 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin" />Computing distance matrix…</p>}
+        <div className="flex-1 overflow-y-auto px-3 py-3">
+          {offline && <p className="mx-2 mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">Distance engine offline at <span className="font-mono">{API_BASE}</span>. The map still shows every hub and stop.</p>}
+          {error && <p className="mx-2 text-sm text-red-600">{error}</p>}
+          {loading && <p className="mx-2 text-sm text-slate-400">Measuring distances…</p>}
 
           {selectedHub && (
             <>
-              <button onClick={() => mapRef.current?.focusHub(selectedHub.id)} className="w-full text-left p-3 rounded-xl bg-slate-900 text-white">
-                <p className="font-mono text-[10px] text-slate-400">{selectedHub.code} · origin</p>
-                <p className="text-sm font-semibold">{selectedHub.name}</p>
-                <p className="text-[11px] text-slate-300">{selectedHub.address}</p>
+              <button onClick={() => mapRef.current?.focusHub(selectedHub.id)} className="w-full text-left mx-0 px-2 pb-3">
+                <p className="text-base font-semibold text-slate-900">{selectedHub.name}</p>
+                <p className="text-sm text-slate-500">{selectedHub.address}</p>
+                {rows.length > 0 && <p className="text-sm text-slate-600 mt-2">{rows.length} stops · {totalRoad.toFixed(0)} km of driving out · roads add {Math.round(((totalStraight > 0 ? totalRoad / totalStraight : 1) - 1) * 100)}% over straight lines</p>}
               </button>
-              {rows.length > 0 && (
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-lg bg-slate-50 p-2"><p className="text-sm font-bold text-slate-800">{rows.length}</p><p className="text-[10px] text-slate-400">stops</p></div>
-                  <div className="rounded-lg bg-slate-50 p-2"><p className="text-sm font-bold text-slate-800">{totalRoad.toFixed(1)}</p><p className="text-[10px] text-slate-400">road km (out)</p></div>
-                  <div className="rounded-lg bg-slate-50 p-2"><p className="text-sm font-bold text-slate-800">{totalStraight > 0 ? (totalRoad / totalStraight).toFixed(2) : '—'}×</p><p className="text-[10px] text-slate-400">detour</p></div>
-                </div>
-              )}
-              {hubStops.length === 0 && <p className="text-xs text-slate-400 p-2">No geocoded stops assigned to this hub yet.</p>}
+              {hubStops.length === 0 && <p className="px-2 text-sm text-slate-400">No stops with a location at this hub yet.</p>}
               {rows.map((r, i) => (
-                <button key={r.stop.id} onClick={() => mapRef.current?.focusStop(r.stop.id)} className="w-full text-left p-3 border border-slate-200 rounded-xl hover:border-violet-300 hover:bg-violet-50/40 transition-colors">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full text-[10px] font-bold text-white flex items-center justify-center flex-shrink-0" style={{ background: PRIORITY_COLOR[r.stop.priority] ?? PRIORITY_COLOR.STANDARD }}>{i + 1}</span>
-                    <span className="font-mono text-[11px] font-bold text-slate-700">{r.stop.tracking_number}</span>
-                    <span className="ml-auto text-[10px] font-semibold" style={{ color: PRIORITY_COLOR[r.stop.priority] }}>{r.stop.priority}</span>
+                <button key={r.stop.id} onClick={() => mapRef.current?.focusStop(r.stop.id)} className="w-full text-left flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-slate-50">
+                  <span className="w-7 h-7 rounded-full text-xs font-semibold text-white flex items-center justify-center flex-shrink-0" style={{ background: PRIORITY_COLOR[r.stop.priority] ?? PRIORITY_COLOR.STANDARD }}>{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900 truncate">{r.stop.customer_name}</p>
+                    <p className="text-xs text-slate-500 truncate">{r.stop.destination_address}</p>
                   </div>
-                  <p className="text-xs text-slate-600 mt-1 truncate">{r.stop.customer_name} · {r.stop.destination_address}</p>
-                  <div className="flex items-center gap-3 mt-1.5 text-[11px]">
-                    <span className="font-semibold text-slate-800">{r.roadKm.toFixed(1)} km</span>
-                    <span className="text-slate-400">({r.straightKm.toFixed(1)} km straight)</span>
-                    <span className="ml-auto font-semibold text-violet-700">~{formatMinutes(r.minutes)}</span>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-sm font-medium text-slate-900 tabular-nums">{formatMinutes(r.minutes)}</p>
+                    <p className="text-xs text-slate-500 tabular-nums">{r.roadKm.toFixed(1)} km</p>
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Window {r.stop.time_window_start}–{r.stop.time_window_end} · {r.stop.weight_kg} kg</p>
                 </button>
               ))}
             </>
           )}
 
           {selectedHub === null && matrix && (
-            <div>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Hub-to-hub road distance · drive time</p>
-              <table className="w-full text-[11px]">
-                <thead><tr><th />{matrix.ids.map(id => <th key={id} className="font-mono text-[10px] text-slate-400 font-semibold p-1">{hubs.find(h => `hub-${h.id}` === id)?.code.replace('HUB-', '')}</th>)}</tr></thead>
-                <tbody>
-                  {matrix.ids.map((rowId, i) => (
-                    <tr key={rowId} className="border-t border-slate-100">
-                      <td className="font-mono text-[10px] text-slate-400 font-semibold p-1">{hubs.find(h => `hub-${h.id}` === rowId)?.code.replace('HUB-', '')}</td>
-                      {matrix.distance_km[i].map((km, j) => (
-                        <td key={j} className="p-1 text-center">{i === j ? <span className="text-slate-300">—</span> : <><p className="font-semibold text-slate-700">{km.toFixed(0)} km</p><p className="text-[10px] text-violet-600">{formatMinutes(matrix.duration_min[i][j])}</p></>}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="px-2">
+              <p className="text-sm text-slate-500 mb-3">Driving between hubs</p>
+              <div className="space-y-2">
+                {matrix.ids.flatMap((a, i) => matrix.ids.slice(i + 1).map((b, k) => {
+                  const j = i + 1 + k
+                  const ha = hubs.find(h => `hub-${h.id}` === a), hb = hubs.find(h => `hub-${h.id}` === b)
+                  return (
+                    <div key={a + b} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
+                      <p className="text-sm text-slate-800 flex-1">{ha?.name.split(' ')[0]} <span className="text-slate-400">↔</span> {hb?.name.split(' ')[0]}</p>
+                      <div className="text-right">
+                        <p className="text-sm font-medium text-slate-900 tabular-nums">{formatMinutes(matrix.duration_min[i][j])}</p>
+                        <p className="text-xs text-slate-500 tabular-nums">{matrix.distance_km[i][j].toFixed(0)} km</p>
+                      </div>
+                    </div>
+                  )
+                }))}
+              </div>
             </div>
           )}
         </div>
-
-        {matrix && (
-          <p className="px-4 py-2 border-t border-slate-200 text-[10px] font-mono text-slate-400">
-            {matrix.ids.length}×{matrix.ids.length} matrix · {matrix.computed_ms.toFixed(2)} ms · cache {matrix.cache.hits} hit / {matrix.cache.misses} miss · haversine × detour factor
-          </p>
-        )}
-      </aside>
+        {matrix && <p className="px-5 py-2.5 border-t border-slate-100 text-xs text-slate-400" title={`${matrix.ids.length}×${matrix.ids.length} matrix in ${matrix.computed_ms.toFixed(2)} ms · cache ${matrix.cache.hits} hits / ${matrix.cache.misses} misses`}>Road distance = straight line × detour factor · estimated drive times</p>}
+      </div>
     </div>
   )
 }
