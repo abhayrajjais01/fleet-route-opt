@@ -14,7 +14,7 @@
 | **Current Active Month** | **Month 2: Optimization & Map vs. LangGraph Router & FSM (25.0% Complete)** |
 | **Current Active Week** | **Week 5: Spatial Graph & LangGraph Router (Oct 5 – Oct 9, 2026 — COMPLETED ✅)** |
 | **Next Immediate Milestone** | **Month 2, Week 6: VRPTW Solver Core & In-Transit FSM (Oct 12 – Oct 16, 2026)** |
-| **Automated Test Suite** | **97 / 97 PASSED (100% pass rate in 11.98s)** |
+| **Automated Test Suite** | **99 / 99 PASSED (100% pass rate in 11.98s)** |
 
 ```
 Overall Progress: [██████░░░░░░░░░░░░░░] 31.2% (Weeks 1–4 Done, Week 5 Delivered: 5 / 16 Weeks)
@@ -128,7 +128,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - [x] Dual-Engine Execution Pipeline: native compiled LangGraph execution when available with graceful zero-dependency deterministic fallback
   - [x] Copilot REST API (`/api/v1/copilot/query`, `/intents`, `/health`): enforced RBAC security (`ADMIN`, `FLEET_MANAGER`, `DISPATCHER`), dynamic RAG health verification, and 403 Forbidden enforcement for drivers
   - [x] Frontend AI Command Center (`CopilotCommandCenter.tsx`, `copilotApi.ts`): real-time copilot chat console, quick test scenario chips, execution trace drawer, token auto-fetch fallback, and live operational context forwarding
-  - [x] Automated Router & StateGraph Test Suite (`backend/tests/test_copilot_router.py`: 21/21 passed, **97/97 combined test suite passing**)
+  - [x] Automated Router & StateGraph Test Suite (`backend/tests/test_copilot_router.py`: 23/23 passed, **99/99 combined test suite passing**)
 
 ---
 

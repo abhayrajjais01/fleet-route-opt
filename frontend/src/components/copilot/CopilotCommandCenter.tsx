@@ -158,10 +158,13 @@ export const CopilotCommandCenter: React.FC<CopilotCommandCenterProps> = ({
           time_window_start: s.time_window_start,
           time_window_end: s.time_window_end,
         })),
-        vehicles_count: vehicles.length,
+        total_vehicles_count: vehicles.length,
         active_vehicles_count: vehicles.filter((v) => v.current_status !== 'AVAILABLE' && v.current_status !== 'DECOMMISSIONED').length,
+        total_drivers_count: drivers.length,
+        on_duty_drivers_count: drivers.filter((d) => d.status === 'ON_DUTY' || d.status === 'ON_TRIP').length,
+        in_transit_shipments_count: shipments.filter((s) => s.status === 'IN_TRANSIT').length,
         unassigned_shipments_count: shipments.filter((s) => s.status === 'UNASSIGNED').length,
-        drivers_count: drivers.length,
+        otif_rate: '99.2%',
         active_role: activeRole,
       }
 

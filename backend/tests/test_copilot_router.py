@@ -330,3 +330,47 @@ def test_copilot_query_todays_kpis(graph: CopilotStateGraph):
     assert resp.intent == AgentIntent.GENERAL_INQUIRY
     assert "OTIF" in resp.response
     assert "Active Vehicles: 4" in resp.response
+def test_copilot_query_pending_routing_phrase(graph: CopilotStateGraph):
+    """Verifies that asking specifically for 'pending routing' returns the shipment report, not generic help."""
+    context = {
+        "shipments": [
+            {
+                "tracking_number": "SHP-003-NV",
+                "customer_name": "Flipkart Supply Chain",
+                "destination_address": "Belapur, Navi Mumbai",
+                "weight_kg": 920,
+                "priority": "EXPRESS",
+                "status": "UNASSIGNED",
+                "time_window_start": "08:00",
+                "time_window_end": "11:00",
+            },
+        ]
+    }
+    resp = graph.execute("What shipments are pending routing?", context=context)
+    assert resp.intent == AgentIntent.GENERAL_INQUIRY
+    assert "Unassigned Shipments Report" in resp.response
+    assert "SHP-003-NV" in resp.response
+    assert "Dispatch Planner" in resp.suggested_action
+
+
+def test_copilot_kpi_dynamic_operational_state(graph: CopilotStateGraph):
+    """Verifies that daily KPI summaries dynamically derive values from the supplied client state."""
+    context = {
+        "shipments": [
+            {"status": "IN_TRANSIT"},
+            {"status": "IN_TRANSIT"},
+            {"status": "IN_TRANSIT"},
+            {"status": "ASSIGNED"},
+            {"status": "UNASSIGNED"},
+        ],
+        "active_vehicles_count": 6,
+        "on_duty_drivers_count": 5,
+        "otif_rate": "97.8%",
+    }
+    resp = graph.execute("Give me today's performance metrics and KPIs", context=context)
+    assert resp.intent == AgentIntent.GENERAL_INQUIRY
+    assert "Active Vehicles: 6" in resp.response
+    assert "In-Transit Shipments: 3" in resp.response
+    assert "Unassigned Consignments: 1" in resp.response
+    assert "On-Duty Drivers: 5" in resp.response
+    assert "97.8%" in resp.response
