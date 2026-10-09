@@ -1,30 +1,14 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { API_BASE, checkApiHealth } from './lib/api'
 import ComplianceInspector from './components/compliance/ComplianceInspector'
 import { CopilotCommandCenter } from './components/copilot/CopilotCommandCenter'
+import LiveTrackingSection from './components/tracking/LiveTrackingSection'
+import DispatchPlanner, { type DispatchDecision } from './components/workflow/DispatchPlanner'
+import NetworkMapSection from './components/map/NetworkMapSection'
+import type { UserRole, VehicleType, VehicleStatus, DriverStatus, LicenseType, ShipmentStatus, ShipmentPriority, AuditAction, AdminSection, Vehicle, Driver, Hub, Shipment, User, AuditEntry } from './lib/types'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
-type UserRole = 'ADMIN' | 'FLEET_MANAGER' | 'DISPATCHER' | 'DRIVER'
-type VehicleType = 'VAN' | 'BOX_TRUCK' | 'SEMI_TRUCK' | 'EV'
-type VehicleStatus = 'AVAILABLE' | 'IN_TRANSIT' | 'MAINTENANCE' | 'DECOMMISSIONED'
-type DriverStatus = 'ON_DUTY' | 'OFF_DUTY' | 'ON_TRIP' | 'RESTING'
-type LicenseType = 'CLASS_A' | 'CLASS_B' | 'COMMERCIAL'
-type ShipmentStatus = 'UNASSIGNED' | 'CLUSTERED' | 'ASSIGNED' | 'IN_TRANSIT' | 'DELIVERED' | 'FAILED'
-type ShipmentPriority = 'LOW' | 'STANDARD' | 'HIGH' | 'EXPRESS'
-type AuditAction = 'ROUTE_MODIFIED' | 'STATUS_CHANGE' | 'COPILOT_OVERRIDE' | 'DISPATCH_APPROVED' | 'ASSET_CREATED' | 'ASSET_DELETED'
-type AdminSection = 'dashboard' | 'fleet' | 'shipments' | 'workflow' | 'tracking' | 'compliance' | 'audit' | 'users'
-type NodeStatus = 'ok' | 'warning' | 'error' | 'pending'
-type WorkflowPhase = 'analyzing' | 'canvas' | 'route'
-
-interface Vehicle { id: number; name: string; plate_number: string; vehicle_type: VehicleType; max_payload_kg: number; max_volume_m3: number; fuel_efficiency_kpl: number; current_status: VehicleStatus; assigned_hub_id: number; fuel_pct: number }
-interface Driver { id: number; full_name: string; license_number: string; license_type: LicenseType; phone_number: string; status: DriverStatus; max_driving_hours_per_day: number; assigned_hub_id: number; current_vehicle_id: number | null; rating: number }
-interface Hub { id: number; name: string; code: string; address: string; latitude: number; longitude: number; contact_phone: string; operating_hours: string }
-interface Shipment { id: number; tracking_number: string; customer_name: string; destination_address: string; weight_kg: number; volume_m3: number; time_window_start: string; time_window_end: string; priority: ShipmentPriority; status: ShipmentStatus; hub_id: number }
-interface User { id: number; email: string; full_name: string; role: UserRole; is_active: boolean }
-interface AuditEntry { id: number; timestamp: string; actor_name: string; action_type: AuditAction; entity_type: string; entity_id: number; details: string }
 interface CopilotMsg { id: string; sender: 'user' | 'assistant'; content: string; timestamp: string; trace?: string; proposal?: { title: string; description: string; status: 'PROPOSED' | 'APPROVED' | 'REJECTED' } }
-interface WFNode { id: string; type: 'shipment' | 'hub' | 'driver' | 'vehicle' | 'stop' | 'destination' | 'return'; label: string; sublabel: string; status: NodeStatus; data: any; x: number; y: number }
-interface WFEdge { from: string; to: string; label?: string }
 
 // ─── SEED DATA ────────────────────────────────────────────────────────────────
 const INIT_HUBS: Hub[] = [
@@ -33,24 +17,32 @@ const INIT_HUBS: Hub[] = [
   { id: 3, name: 'Pune Regional Gateway', code: 'HUB-PNQ-03', address: 'Phase 2, Hinjawadi, Pune', latitude: 18.5913, longitude: 73.7389, contact_phone: '+91-20-6710-2200', operating_hours: '06:00–22:00' },
 ]
 const INIT_VEHICLES: Vehicle[] = [
-  { id: 1, name: 'Alpha Prime Van', plate_number: 'MH-02-EE-1001', vehicle_type: 'VAN', max_payload_kg: 1500, max_volume_m3: 12, fuel_efficiency_kpl: 14.2, current_status: 'AVAILABLE', assigned_hub_id: 1, fuel_pct: 82 },
+  { id: 1, name: 'Alpha Prime Van', plate_number: 'MH-02-EE-1001', vehicle_type: 'VAN', max_payload_kg: 1500, max_volume_m3: 12, fuel_efficiency_kpl: 14.2, current_status: 'IN_TRANSIT', assigned_hub_id: 1, fuel_pct: 82 },
   { id: 2, name: 'Heavy Box Carrier', plate_number: 'MH-04-AB-2045', vehicle_type: 'BOX_TRUCK', max_payload_kg: 3500, max_volume_m3: 24.5, fuel_efficiency_kpl: 8.5, current_status: 'IN_TRANSIT', assigned_hub_id: 1, fuel_pct: 54 },
-  { id: 3, name: 'Eco Cargo Electric', plate_number: 'MH-01-EV-8822', vehicle_type: 'EV', max_payload_kg: 950, max_volume_m3: 8, fuel_efficiency_kpl: 18, current_status: 'AVAILABLE', assigned_hub_id: 2, fuel_pct: 67 },
+  { id: 3, name: 'Eco Cargo Electric', plate_number: 'MH-01-EV-8822', vehicle_type: 'EV', max_payload_kg: 950, max_volume_m3: 8, fuel_efficiency_kpl: 18, current_status: 'IN_TRANSIT', assigned_hub_id: 2, fuel_pct: 67 },
   { id: 4, name: 'Interstate Hauler', plate_number: 'MH-12-QQ-4001', vehicle_type: 'SEMI_TRUCK', max_payload_kg: 8500, max_volume_m3: 55, fuel_efficiency_kpl: 5.8, current_status: 'MAINTENANCE', assigned_hub_id: 3, fuel_pct: 28 },
+  { id: 5, name: 'Metro Box Truck', plate_number: 'MH-43-BX-3310', vehicle_type: 'BOX_TRUCK', max_payload_kg: 2500, max_volume_m3: 18, fuel_efficiency_kpl: 9.2, current_status: 'AVAILABLE', assigned_hub_id: 2, fuel_pct: 74 },
 ]
 const INIT_DRIVERS: Driver[] = [
-  { id: 1, full_name: 'Rajesh Kumar', license_number: 'DL-14-2021-9988', license_type: 'COMMERCIAL', phone_number: '+91-98200-11223', status: 'ON_DUTY', max_driving_hours_per_day: 8, assigned_hub_id: 1, current_vehicle_id: null, rating: 4.8 },
+  { id: 1, full_name: 'Rajesh Kumar', license_number: 'DL-14-2021-9988', license_type: 'COMMERCIAL', phone_number: '+91-98200-11223', status: 'ON_TRIP', max_driving_hours_per_day: 8, assigned_hub_id: 1, current_vehicle_id: 1, rating: 4.8 },
   { id: 2, full_name: 'Vikramjit Singh', license_number: 'MH04-2015-88319', license_type: 'CLASS_A', phone_number: '+91-98700-44556', status: 'ON_TRIP', max_driving_hours_per_day: 10, assigned_hub_id: 1, current_vehicle_id: 2, rating: 4.6 },
   { id: 3, full_name: 'Amit Patil', license_number: 'MH01-2020-55441', license_type: 'CLASS_B', phone_number: '+91-99600-77889', status: 'RESTING', max_driving_hours_per_day: 8, assigned_hub_id: 2, current_vehicle_id: null, rating: 4.4 },
   { id: 4, full_name: 'Suresh Reddy', license_number: 'KA01-2019-33441', license_type: 'COMMERCIAL', phone_number: '+91-98450-99887', status: 'OFF_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 3, current_vehicle_id: null, rating: 4.7 },
-  { id: 5, full_name: 'Priya Mehta', license_number: 'GJ01-2022-12345', license_type: 'CLASS_B', phone_number: '+91-97200-55678', status: 'ON_DUTY', max_driving_hours_per_day: 8, assigned_hub_id: 2, current_vehicle_id: 3, rating: 4.9 },
+  { id: 5, full_name: 'Priya Mehta', license_number: 'GJ01-2022-12345', license_type: 'CLASS_B', phone_number: '+91-97200-55678', status: 'ON_TRIP', max_driving_hours_per_day: 8, assigned_hub_id: 2, current_vehicle_id: 3, rating: 4.9 },
+  { id: 6, full_name: 'Neha Kulkarni', license_number: 'MH43-2018-77120', license_type: 'COMMERCIAL', phone_number: '+91-98190-33445', status: 'ON_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 2, current_vehicle_id: null, rating: 4.7 },
 ]
 const INIT_SHIPMENTS: Shipment[] = [
-  { id: 1, tracking_number: 'SHP-001-MUM', customer_name: 'Reliance Industries', destination_address: 'BKC, Mumbai', weight_kg: 450, volume_m3: 3.2, time_window_start: '09:00', time_window_end: '12:00', priority: 'HIGH', status: 'IN_TRANSIT', hub_id: 1 },
-  { id: 2, tracking_number: 'SHP-002-MUM', customer_name: 'TCS Logistics', destination_address: 'Powai, Mumbai', weight_kg: 180, volume_m3: 1.5, time_window_start: '10:00', time_window_end: '14:00', priority: 'STANDARD', status: 'ASSIGNED', hub_id: 1 },
-  { id: 3, tracking_number: 'SHP-003-NV', customer_name: 'Flipkart Supply Chain', destination_address: 'Belapur, Navi Mumbai', weight_kg: 920, volume_m3: 7.8, time_window_start: '08:00', time_window_end: '11:00', priority: 'EXPRESS', status: 'UNASSIGNED', hub_id: 2 },
-  { id: 4, tracking_number: 'SHP-004-PNQ', customer_name: 'Amazon India', destination_address: 'Kothrud, Pune', weight_kg: 640, volume_m3: 5.1, time_window_start: '11:00', time_window_end: '15:00', priority: 'STANDARD', status: 'DELIVERED', hub_id: 3 },
-  { id: 5, tracking_number: 'SHP-005-MUM', customer_name: 'HDFC Bank', destination_address: 'Nariman Point, Mumbai', weight_kg: 120, volume_m3: 0.8, time_window_start: '09:30', time_window_end: '11:00', priority: 'EXPRESS', status: 'IN_TRANSIT', hub_id: 1 },
+  { id: 1, tracking_number: 'SHP-001-MUM', customer_name: 'Reliance Industries', destination_address: 'BKC, Mumbai', weight_kg: 450, volume_m3: 3.2, time_window_start: '09:00', time_window_end: '12:00', priority: 'HIGH', status: 'IN_TRANSIT', hub_id: 1, latitude: 19.066, longitude: 72.865, assigned_vehicle_id: 2 },
+  { id: 2, tracking_number: 'SHP-002-MUM', customer_name: 'TCS Logistics', destination_address: 'Powai, Mumbai', weight_kg: 180, volume_m3: 1.5, time_window_start: '10:00', time_window_end: '14:00', priority: 'STANDARD', status: 'ASSIGNED', hub_id: 1, latitude: 19.1176, longitude: 72.906, assigned_vehicle_id: 1 },
+  { id: 3, tracking_number: 'SHP-003-NV', customer_name: 'Flipkart Supply Chain', destination_address: 'Belapur, Navi Mumbai', weight_kg: 920, volume_m3: 7.8, time_window_start: '08:00', time_window_end: '11:00', priority: 'EXPRESS', status: 'UNASSIGNED', hub_id: 2, latitude: 19.0235, longitude: 73.04 },
+  { id: 4, tracking_number: 'SHP-004-PNQ', customer_name: 'Amazon India', destination_address: 'Kothrud, Pune', weight_kg: 640, volume_m3: 5.1, time_window_start: '11:00', time_window_end: '15:00', priority: 'STANDARD', status: 'DELIVERED', hub_id: 3, latitude: 18.5074, longitude: 73.8077 },
+  { id: 5, tracking_number: 'SHP-005-MUM', customer_name: 'HDFC Bank', destination_address: 'Nariman Point, Mumbai', weight_kg: 120, volume_m3: 0.8, time_window_start: '09:30', time_window_end: '11:00', priority: 'EXPRESS', status: 'IN_TRANSIT', hub_id: 1, latitude: 18.9256, longitude: 72.8242, assigned_vehicle_id: 2 },
+  { id: 6, tracking_number: 'SHP-006-NV', customer_name: 'Reliance Retail', destination_address: 'Nerul, Navi Mumbai', weight_kg: 260, volume_m3: 1.9, time_window_start: '09:00', time_window_end: '12:00', priority: 'STANDARD', status: 'IN_TRANSIT', hub_id: 2, latitude: 19.033, longitude: 73.0297, assigned_vehicle_id: 3 },
+  { id: 7, tracking_number: 'SHP-007-NV', customer_name: 'DMart Logistics', destination_address: 'Kharghar, Navi Mumbai', weight_kg: 310, volume_m3: 2.4, time_window_start: '09:30', time_window_end: '10:15', priority: 'HIGH', status: 'ASSIGNED', hub_id: 2, latitude: 19.0473, longitude: 73.0699, assigned_vehicle_id: 3 },
+  { id: 8, tracking_number: 'SHP-008-NV', customer_name: 'Godrej Appliances', destination_address: 'Airoli, Navi Mumbai', weight_kg: 180, volume_m3: 1.2, time_window_start: '11:00', time_window_end: '15:00', priority: 'STANDARD', status: 'ASSIGNED', hub_id: 2, latitude: 19.159, longitude: 72.9986, assigned_vehicle_id: 3 },
+  { id: 9, tracking_number: 'SHP-009-MUM', customer_name: 'Myntra Fulfilment', destination_address: 'Bandra West, Mumbai', weight_kg: 140, volume_m3: 1.1, time_window_start: '09:00', time_window_end: '12:30', priority: 'HIGH', status: 'IN_TRANSIT', hub_id: 1, latitude: 19.0596, longitude: 72.8295, assigned_vehicle_id: 1 },
+  { id: 10, tracking_number: 'SHP-010-MUM', customer_name: 'Tata CLiQ', destination_address: 'Lower Parel, Mumbai', weight_kg: 220, volume_m3: 1.6, time_window_start: '10:00', time_window_end: '13:00', priority: 'STANDARD', status: 'ASSIGNED', hub_id: 1, latitude: 18.998, longitude: 72.83, assigned_vehicle_id: 2 },
+  { id: 11, tracking_number: 'SHP-011-MUM', customer_name: 'Nykaa Warehouse', destination_address: 'Ghatkopar, Mumbai', weight_kg: 160, volume_m3: 1, time_window_start: '11:30', time_window_end: '16:00', priority: 'LOW', status: 'ASSIGNED', hub_id: 1, latitude: 19.086, longitude: 72.9081, assigned_vehicle_id: 1 },
 ]
 const INIT_USERS: User[] = [
   { id: 1, email: 'admin@fleetops.in', full_name: 'Abhayraj Jaiswal', role: 'ADMIN', is_active: true },
@@ -87,52 +79,6 @@ async function fetchAuthToken(role: UserRole = 'ADMIN'): Promise<string | null> 
   } catch {
     return null
   }
-}
-
-// ─── WORKFLOW GENERATOR ───────────────────────────────────────────────────────
-const NODE_W = 152, NODE_H = 68
-
-function buildWorkflow(shipment: Shipment, vehicles: Vehicle[], drivers: Driver[], hubs: Hub[]): { nodes: WFNode[]; edges: WFEdge[]; analysis: string; risks: string[] } {
-  const hub = hubs.find(h => h.id === shipment.hub_id) ?? hubs[0]
-  const availVehicles = vehicles.filter(v => v.current_status === 'AVAILABLE' && v.assigned_hub_id === hub.id)
-  const bestVehicle = availVehicles.find(v => v.max_payload_kg >= shipment.weight_kg) ?? availVehicles[0] ?? null
-  const availDrivers = drivers.filter(d => (d.status === 'ON_DUTY' || d.status === 'RESTING') && d.assigned_hub_id === hub.id && d.current_vehicle_id === null)
-  const bestDriver = availDrivers[0] ?? null
-
-  const payloadOk = bestVehicle ? bestVehicle.max_payload_kg >= shipment.weight_kg : false
-  const licenseOk = bestDriver ? (shipment.weight_kg > 1000 ? bestDriver.license_type !== 'CLASS_B' : true) : false
-
-  const risks: string[] = []
-  if (!bestVehicle) risks.push('No available vehicle at this hub — consider reassigning to HUB-NV-02')
-  else if (!payloadOk) risks.push(`Payload ${shipment.weight_kg}kg exceeds ${bestVehicle.name} capacity (${bestVehicle.max_payload_kg}kg) — upgrade vehicle`)
-  if (!bestDriver) risks.push('No available driver at hub — call back resting driver or reassign')
-  else if (!licenseOk) risks.push(`Shipment weight requires CLASS_A license — ${bestDriver.full_name} holds ${bestDriver.license_type}`)
-  if (bestVehicle && bestVehicle.fuel_pct < 30) risks.push(`Vehicle fuel at ${bestVehicle.fuel_pct}% — refuel before dispatch`)
-  if (shipment.priority === 'EXPRESS' && availDrivers.length < 2) risks.push('EXPRESS priority — recommend dedicated driver with no other stops')
-
-  const analysis = risks.length === 0
-    ? `✓ Optimal workflow found. ${bestVehicle?.name} (${bestVehicle?.plate_number}) + ${bestDriver?.full_name} is the best match for this ${shipment.weight_kg}kg ${shipment.priority} shipment. ETA within ${shipment.time_window_start}–${shipment.time_window_end} window is achievable with +18% VRPTW route efficiency. No compliance violations detected.`
-    : `⚠ Workflow generated with ${risks.length} flag${risks.length > 1 ? 's' : ''}. Review and resolve before dispatching. Copilot recommends addressing risks below before approval.`
-
-  const nodes: WFNode[] = [
-    { id: 'shipment', type: 'shipment', label: shipment.tracking_number, sublabel: `${shipment.weight_kg}kg · ${shipment.priority}`, status: 'ok', data: shipment, x: 30, y: 130 },
-    { id: 'hub', type: 'hub', label: hub.name.split(' ').slice(0, 2).join(' '), sublabel: hub.code, status: 'ok', data: hub, x: 240, y: 130 },
-    { id: 'driver', type: 'driver', label: bestDriver ? bestDriver.full_name : 'No Driver', sublabel: bestDriver ? bestDriver.license_type : 'UNAVAILABLE', status: bestDriver ? (licenseOk ? 'ok' : 'warning') : 'error', data: bestDriver, x: 450, y: 55 },
-    { id: 'vehicle', type: 'vehicle', label: bestVehicle ? bestVehicle.name : 'No Vehicle', sublabel: bestVehicle ? bestVehicle.plate_number : 'UNAVAILABLE', status: bestVehicle ? (payloadOk ? (bestVehicle.fuel_pct < 30 ? 'warning' : 'ok') : 'warning') : 'error', data: bestVehicle, x: 450, y: 205 },
-    { id: 'stop', type: 'stop', label: 'Hub Pickup', sublabel: hub.address.split(',')[0], status: 'ok', data: hub, x: 660, y: 130 },
-    { id: 'destination', type: 'destination', label: 'Delivery Point', sublabel: shipment.destination_address.split(',')[0], status: 'ok', data: shipment, x: 870, y: 130 },
-    { id: 'return', type: 'return', label: 'Return to Hub', sublabel: hub.code, status: 'ok', data: hub, x: 1080, y: 130 },
-  ]
-  const edges: WFEdge[] = [
-    { from: 'shipment', to: 'hub' },
-    { from: 'hub', to: 'driver' },
-    { from: 'hub', to: 'vehicle' },
-    { from: 'driver', to: 'stop' },
-    { from: 'vehicle', to: 'stop' },
-    { from: 'stop', to: 'destination', label: 'VRPTW route' },
-    { from: 'destination', to: 'return' },
-  ]
-  return { nodes, edges, analysis, risks }
 }
 
 // ─── STATUS STYLING ───────────────────────────────────────────────────────────
@@ -174,554 +120,24 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <div className="space-y-1"><label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{label}</label>{children}</div>
 }
 
-// ─── WORKFLOW CANVAS (Interactive n8n-style Drag & Reposition) ────────────────
-const NODE_ICONS: Record<string, string> = {
-  shipment: '📦', hub: '🏭', driver: '👤', vehicle: '🚛', stop: '📍', destination: '🎯', return: '↩',
-}
-const NODE_STATUS_STYLE: Record<NodeStatus, { border: string; bg: string; glow: string }> = {
-  ok: { border: '#22c55e', bg: '#f0fdf4', glow: '0 0 0 3px #22c55e22' },
-  warning: { border: '#f59e0b', bg: '#fffbeb', glow: '0 0 0 3px #f59e0b22' },
-  error: { border: '#ef4444', bg: '#fef2f2', glow: '0 0 0 3px #ef444422' },
-  pending: { border: '#94a3b8', bg: '#f8fafc', glow: 'none' },
-}
-
-function WorkflowCanvas({
-  nodes,
-  edges,
-  selectedNode,
-  onSelectNode,
-  onNodeChange,
-  onNodesMove,
-  vehicles,
-  drivers,
-  hubs,
-}: {
-  nodes: WFNode[];
-  edges: WFEdge[];
-  selectedNode: string | null;
-  onSelectNode: (id: string | null) => void;
-  onNodeChange: (id: string, data: any) => void;
-  onNodesMove: (updatedNodes: WFNode[]) => void;
-  vehicles: Vehicle[];
-  drivers: Driver[];
-  hubs: Hub[];
-}) {
-  const CANVAS_W = 1270, CANVAS_H = 340
-  const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
-  const canvasRef = useRef<HTMLDivElement>(null)
-
-  // Compute bezier path between nodes
-  function edgePath(fromId: string, toId: string) {
-    const fn = nodes.find(n => n.id === fromId)
-    const tn = nodes.find(n => n.id === toId)
-    if (!fn || !tn) return ''
-    const x0 = fn.x + NODE_W, y0 = fn.y + NODE_H / 2
-    const x1 = tn.x, y1 = tn.y + NODE_H / 2
-    const cx = (x0 + x1) / 2
-    return `M ${x0} ${y0} C ${cx} ${y0} ${cx} ${y1} ${x1} ${y1}`
-  }
-
-  const handleMouseDown = (e: React.MouseEvent, node: WFNode) => {
-    e.stopPropagation()
-    onSelectNode(node.id)
-    setDraggingId(node.id)
-    const rect = canvasRef.current?.getBoundingClientRect()
-    if (rect) {
-      setDragOffset({
-        x: e.clientX - rect.left - node.x,
-        y: e.clientY - rect.top - node.y,
-      })
-    }
-  }
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!draggingId || !canvasRef.current) return
-    const rect = canvasRef.current.getBoundingClientRect()
-    const newX = Math.max(10, Math.min(CANVAS_W - NODE_W - 10, e.clientX - rect.left - dragOffset.x))
-    const newY = Math.max(10, Math.min(CANVAS_H - NODE_H - 10, e.clientY - rect.top - dragOffset.y))
-
-    onNodesMove(
-      nodes.map((n) => (n.id === draggingId ? { ...n, x: newX, y: newY } : n))
-    )
-  }
-
-  const handleMouseUp = () => {
-    setDraggingId(null)
-  }
-
-  const selNode = nodes.find(n => n.id === selectedNode)
-
-  return (
-    <div className="flex gap-0 h-full overflow-hidden">
-      {/* Canvas */}
-      <div
-        ref={canvasRef}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onClick={() => onSelectNode(null)}
-        className="flex-1 overflow-auto bg-[#fafafa] relative cursor-crosshair"
-        style={{ backgroundImage: 'radial-gradient(circle, #e2e8f0 1px, transparent 1px)', backgroundSize: '24px 24px' }}
-      >
-        <svg width={CANVAS_W} height={CANVAS_H} className="absolute top-0 left-0 pointer-events-none" style={{ zIndex: 0 }}>
-          <defs>
-            <marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-              <path d="M0,0 L0,7 L7,3.5 z" fill="#94a3b8" />
-            </marker>
-          </defs>
-          {edges.map(e => (
-            <g key={e.from + e.to}>
-              <path d={edgePath(e.from, e.to)} fill="none" stroke="#cbd5e1" strokeWidth="2" markerEnd="url(#arrow)" />
-              {e.label && (() => {
-                const fn = nodes.find(n => n.id === e.from)
-                const tn = nodes.find(n => n.id === e.to)
-                if (!fn || !tn) return null
-                const mx = (fn.x + NODE_W + tn.x) / 2
-                const my = (fn.y + NODE_H / 2 + tn.y + NODE_H / 2) / 2 - 8
-                return <text x={mx} y={my} textAnchor="middle" fontSize="9" fill="#94a3b8" fontFamily="DM Sans">{e.label}</text>
-              })()}
-            </g>
-          ))}
-        </svg>
-        <div className="relative" style={{ width: CANVAS_W, height: CANVAS_H, zIndex: 1 }}>
-          {nodes.map(n => {
-            const style = NODE_STATUS_STYLE[n.status]
-            const isSelected = selectedNode === n.id
-            return (
-              <div
-                key={n.id}
-                onMouseDown={(e) => handleMouseDown(e, n)}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onSelectNode(isSelected ? null : n.id)
-                }}
-                className="absolute cursor-grab active:cursor-grabbing select-none transition-transform hover:scale-105"
-                style={{ left: n.x, top: n.y, width: NODE_W, height: NODE_H }}
-              >
-                <div
-                  className="h-full rounded-xl border-2 flex flex-col justify-center px-3 gap-0.5 transition-all"
-                  style={{
-                    borderColor: isSelected ? '#2563eb' : style.border,
-                    background: isSelected ? '#eff6ff' : style.bg,
-                    boxShadow: isSelected ? '0 0 0 3px #2563eb33' : style.glow,
-                  }}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-base leading-none">{NODE_ICONS[n.type]}</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{n.type}</span>
-                    {n.status === 'error' && <span className="ml-auto text-red-500 text-xs font-bold">⚠</span>}
-                    {n.status === 'warning' && <span className="ml-auto text-amber-500 text-xs font-bold">!</span>}
-                    {n.status === 'ok' && <span className="ml-auto text-emerald-500 text-xs font-bold">✓</span>}
-                  </div>
-                  <p className="text-xs font-bold text-slate-800 truncate">{n.label}</p>
-                  <p className="text-[10px] text-slate-500 truncate font-mono">{n.sublabel}</p>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Node detail panel */}
-      <div className="w-64 flex-shrink-0 border-l border-slate-200 bg-white flex flex-col overflow-y-auto">
-        {!selNode ? (
-          <div className="flex-1 flex items-center justify-center text-center p-6">
-            <div>
-              <p className="text-2xl mb-2">👆</p>
-              <p className="text-xs font-semibold text-slate-500">Drag or click any node to inspect / reassign</p>
-            </div>
-          </div>
-        ) : (
-          <div className="p-4 space-y-4">
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{selNode.type} Detail</p>
-              <p className="font-bold text-slate-800">{selNode.label}</p>
-              <p className="text-xs text-slate-500 font-mono">{selNode.sublabel}</p>
-              <div className="mt-2">
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${selNode.status === 'ok' ? 'bg-emerald-50 text-emerald-700' : selNode.status === 'warning' ? 'bg-amber-50 text-amber-700' : selNode.status === 'error' ? 'bg-red-50 text-red-700' : 'bg-slate-50 text-slate-500'}`}>
-                  {selNode.status === 'ok' ? '✓ Clear' : selNode.status === 'warning' ? '! Warning' : selNode.status === 'error' ? '⚠ Error' : '… Pending'}
-                </span>
-              </div>
-            </div>
-
-            {/* Reassign controls */}
-            {selNode.type === 'driver' && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-semibold text-slate-500 uppercase">Reassign Driver</p>
-                {drivers.filter(d => d.status === 'ON_DUTY' || d.status === 'RESTING').map(d => (
-                  <button key={d.id} onClick={() => onNodeChange(selNode.id, d)}
-                    className={`w-full text-left p-2.5 rounded-lg border text-xs transition-colors ${selNode.data?.id === d.id ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                    <p className="font-semibold text-slate-800">{d.full_name}</p>
-                    <p className="text-slate-400 font-mono">{d.license_type} · ★ {d.rating}</p>
-                  </button>
-                ))}
-              </div>
-            )}
-            {selNode.type === 'vehicle' && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-semibold text-slate-500 uppercase">Reassign Vehicle</p>
-                {vehicles.filter(v => v.current_status === 'AVAILABLE').map(v => (
-                  <button key={v.id} onClick={() => onNodeChange(selNode.id, v)}
-                    className={`w-full text-left p-2.5 rounded-lg border text-xs transition-colors ${selNode.data?.id === v.id ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                    <p className="font-semibold text-slate-800">{v.name}</p>
-                    <p className="text-slate-400 font-mono">{v.plate_number} · {v.max_payload_kg}kg</p>
-                    <div className="mt-1"><Bar pct={v.fuel_pct} /></div>
-                  </button>
-                ))}
-              </div>
-            )}
-            {selNode.type === 'hub' && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-semibold text-slate-500 uppercase">Switch Hub</p>
-                {hubs.map(h => (
-                  <button key={h.id} onClick={() => onNodeChange(selNode.id, h)}
-                    className={`w-full text-left p-2.5 rounded-lg border text-xs transition-colors ${selNode.data?.id === h.id ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                    <p className="font-semibold text-slate-800">{h.name}</p>
-                    <p className="text-slate-400 font-mono">{h.code} · {h.operating_hours}</p>
-                  </button>
-                ))}
-              </div>
-            )}
-            {(selNode.type === 'shipment' || selNode.type === 'destination' || selNode.type === 'stop' || selNode.type === 'return') && selNode.data && (
-              <div className="space-y-2 text-xs">
-                {Object.entries(selNode.data).filter(([k]) => !['id', 'hub_id', 'current_vehicle_id', 'user_id', 'created_at', 'updated_at'].includes(k)).map(([k, v]) => (
-                  <div key={k} className="flex justify-between gap-2">
-                    <span className="text-slate-400 capitalize">{k.replace(/_/g, ' ')}</span>
-                    <span className="text-slate-700 font-mono text-right truncate max-w-[120px]">{String(v)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── ROUTE MAP VIEW ───────────────────────────────────────────────────────────
-function RouteMapView({ shipment, nodes, onComplete }: { shipment: Shipment; nodes: WFNode[]; onComplete: () => void }) {
-  const [progress, setProgress] = useState(0)
-  const [phase, setPhase] = useState<'hub' | 'transit' | 'delivery' | 'return'>('hub')
-  const [elapsed, setElapsed] = useState(0)
-  const animRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    const start = Date.now()
-    const duration = 18000 // 18s animation
-    function tick() {
-      const pct = Math.min((Date.now() - start) / duration * 100, 100)
-      setProgress(pct)
-      setElapsed(Math.floor((Date.now() - start) / 1000))
-      if (pct < 15) setPhase('hub')
-      else if (pct < 75) setPhase('transit')
-      else if (pct < 92) setPhase('delivery')
-      else setPhase('return')
-      if (pct < 100) animRef.current = requestAnimationFrame(tick)
-    }
-    animRef.current = requestAnimationFrame(tick)
-    return () => { if (animRef.current) cancelAnimationFrame(animRef.current) }
-  }, [])
-
-  const hub = nodes.find(n => n.type === 'hub')?.data
-  const driver = nodes.find(n => n.type === 'driver')?.data
-  const vehicle = nodes.find(n => n.type === 'vehicle')?.data
-
-  // Route points: Hub → Stop → Destination (SVG viewBox 0 0 560 360)
-  const routePoints = { hub: { x: 180, y: 120 }, stop: { x: 300, y: 200 }, dest: { x: 420, y: 140 }, ret: { x: 180, y: 120 } }
-
-  // Compute position along route
-  function getMarkerPos() {
-    const p = progress / 100
-    if (p < 0.3) {
-      const t = p / 0.3
-      return { x: routePoints.hub.x + (routePoints.stop.x - routePoints.hub.x) * t, y: routePoints.hub.y + (routePoints.stop.y - routePoints.hub.y) * t }
-    } else if (p < 0.7) {
-      const t = (p - 0.3) / 0.4
-      return { x: routePoints.stop.x + (routePoints.dest.x - routePoints.stop.x) * t, y: routePoints.stop.y + (routePoints.dest.y - routePoints.stop.y) * t }
-    } else {
-      const t = (p - 0.7) / 0.3
-      return { x: routePoints.dest.x + (routePoints.ret.x - routePoints.dest.x) * t, y: routePoints.dest.y + (routePoints.ret.y - routePoints.dest.y) * t }
-    }
-  }
-
-  const markerPos = getMarkerPos()
-  const totalDist = 48.4
-  const distTravelled = (totalDist * progress / 100).toFixed(1)
-  const etaMins = Math.max(0, Math.floor((100 - progress) / 100 * 42))
-
-  const phaseLabels: Record<string, string> = { hub: 'Loading at Hub', transit: 'En Route', delivery: 'At Delivery Point', return: 'Returning to Hub' }
-  const phaseColors: Record<string, string> = { hub: '#d97706', transit: '#2563eb', delivery: '#16a34a', return: '#7c3aed' }
-
-  return (
-    <div className="flex flex-col h-full overflow-hidden bg-white">
-      {/* Status bar */}
-      <div className="flex items-center gap-4 px-5 py-3 border-b border-slate-200 bg-white">
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: phaseColors[phase] }} />
-          <span className="text-sm font-bold text-slate-800">{phaseLabels[phase]}</span>
-        </div>
-        <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-          <div className="h-full rounded-full transition-all duration-300" style={{ width: `${progress}%`, background: phaseColors[phase] }} />
-        </div>
-        <span className="font-mono text-sm font-bold text-slate-700">{progress.toFixed(0)}%</span>
-        <div className="flex gap-4 text-xs font-mono text-slate-500">
-          <span>{distTravelled} / {totalDist} km</span>
-          <span>ETA {etaMins}m</span>
-          <span>{elapsed}s elapsed</span>
-        </div>
-        {progress >= 100 && (
-          <button onClick={onComplete} className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 transition-colors">Complete ✓</button>
-        )}
-      </div>
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Map */}
-        <div className="flex-1 bg-slate-50 relative overflow-hidden">
-          <svg viewBox="0 0 560 360" className="w-full h-full">
-            <rect width="560" height="360" fill="#f1f5f9" />
-            {/* Grid */}
-            {Array.from({ length: 12 }).map((_, i) => (
-              <g key={i}>
-                <line x1={i * 50} y1="0" x2={i * 50} y2="360" stroke="#e2e8f0" strokeWidth="0.5" />
-                <line x1="0" y1={i * 32} x2="560" y2={i * 32} stroke="#e2e8f0" strokeWidth="0.5" />
-              </g>
-            ))}
-            {/* Roads */}
-            <path d="M 100 280 Q 180 120 300 200 Q 380 250 420 140 Q 440 80 480 100" stroke="#e2e8f0" strokeWidth="8" fill="none" strokeLinecap="round" />
-            <path d="M 100 280 Q 180 120 300 200 Q 380 250 420 140 Q 440 80 480 100" stroke="white" strokeWidth="5" fill="none" strokeLinecap="round" />
-
-            {/* Completed route */}
-            {progress > 0 && (
-              <path d={`M ${routePoints.hub.x} ${routePoints.hub.y} L ${routePoints.stop.x} ${routePoints.stop.y} L ${routePoints.dest.x} ${routePoints.dest.y}`}
-                stroke="#3b82f6" strokeWidth="3" fill="none" strokeLinecap="round"
-                strokeDasharray="1000" strokeDashoffset={1000 - progress * 7} />
-            )}
-            {/* Remaining route */}
-            <path d={`M ${routePoints.hub.x} ${routePoints.hub.y} L ${routePoints.stop.x} ${routePoints.stop.y} L ${routePoints.dest.x} ${routePoints.dest.y} L ${routePoints.ret.x} ${routePoints.ret.y}`}
-              stroke="#cbd5e1" strokeWidth="2" fill="none" strokeLinecap="round" strokeDasharray="6 4" />
-
-            {/* Hub marker */}
-            <rect x={routePoints.hub.x - 14} y={routePoints.hub.y - 14} width="28" height="28" rx="6" fill="#d97706" />
-            <text x={routePoints.hub.x} y={routePoints.hub.y + 5} textAnchor="middle" fontSize="14">🏭</text>
-            <text x={routePoints.hub.x} y={routePoints.hub.y + 28} textAnchor="middle" fontSize="9" fill="#64748b" fontFamily="DM Sans">Hub</text>
-
-            {/* Stop */}
-            <circle cx={routePoints.stop.x} cy={routePoints.stop.y} r="10" fill="#7c3aed" />
-            <text x={routePoints.stop.x} y={routePoints.stop.y + 4} textAnchor="middle" fontSize="10">📍</text>
-            <text x={routePoints.stop.x} y={routePoints.stop.y + 22} textAnchor="middle" fontSize="9" fill="#64748b" fontFamily="DM Sans">Pickup</text>
-
-            {/* Destination */}
-            <circle cx={routePoints.dest.x} cy={routePoints.dest.y} r="12" fill={progress >= 75 ? '#16a34a' : '#94a3b8'} />
-            <text x={routePoints.dest.x} y={routePoints.dest.y + 5} textAnchor="middle" fontSize="12">🎯</text>
-            <text x={routePoints.dest.x} y={routePoints.dest.y + 26} textAnchor="middle" fontSize="9" fill="#64748b" fontFamily="DM Sans">{shipment.destination_address.split(',')[0]}</text>
-
-            {/* Moving vehicle marker */}
-            <circle cx={markerPos.x} cy={markerPos.y} r="16" fill="#2563eb" opacity="0.15" />
-            <circle cx={markerPos.x} cy={markerPos.y} r="9" fill="#2563eb" />
-            <text x={markerPos.x} y={markerPos.y + 4} textAnchor="middle" fontSize="10">🚛</text>
-
-            {/* Info label near vehicle */}
-            {vehicle && (
-              <g>
-                <rect x={markerPos.x - 40} y={markerPos.y - 32} width="80" height="18" rx="4" fill="white" stroke="#e2e8f0" strokeWidth="1" />
-                <text x={markerPos.x} y={markerPos.y - 20} textAnchor="middle" fontSize="8.5" fill="#374151" fontFamily="DM Sans" fontWeight="600">{vehicle.plate_number}</text>
-              </g>
-            )}
-          </svg>
-        </div>
-
-        {/* Side info panel */}
-        <div className="w-56 border-l border-slate-200 bg-white flex flex-col p-4 gap-4 overflow-y-auto">
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Shipment</p>
-            <p className="font-mono text-sm font-bold text-blue-700">{shipment.tracking_number}</p>
-            <p className="text-xs text-slate-600">{shipment.customer_name}</p>
-            <p className="text-xs text-slate-400">{shipment.destination_address}</p>
-            <div className="mt-1"><Badge s={shipment.priority} /></div>
-          </div>
-          {driver && (
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Driver</p>
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700">{driver.full_name.split(' ').map((n: string) => n[0]).join('')}</div>
-                <div><p className="text-xs font-semibold text-slate-800">{driver.full_name}</p><p className="text-[10px] text-slate-400">★ {driver.rating}</p></div>
-              </div>
-            </div>
-          )}
-          {vehicle && (
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Vehicle</p>
-              <p className="text-xs font-semibold text-slate-800">{vehicle.name}</p>
-              <p className="font-mono text-[10px] text-slate-400">{vehicle.plate_number}</p>
-              <div className="mt-1.5"><Bar pct={vehicle.fuel_pct} /></div>
-            </div>
-          )}
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Route Progress</p>
-            {[
-              { label: 'Hub Dispatch', done: progress > 5 },
-              { label: 'Pickup Stop', done: progress > 30 },
-              { label: 'En Route', done: progress > 45 },
-              { label: 'Delivery', done: progress > 80 },
-              { label: 'Return', done: progress >= 100 },
-            ].map((s, i) => (
-              <div key={i} className="flex items-center gap-2 py-1">
-                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 ${s.done ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'}`}>{s.done ? '✓' : i + 1}</span>
-                <span className={`text-xs ${s.done ? 'text-emerald-700 font-semibold' : 'text-slate-400'}`}>{s.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── WORKFLOW SECTION ─────────────────────────────────────────────────────────
-function WorkflowSection({ shipment, vehicles, drivers, hubs, addAudit, onDone }: {
-  shipment: Shipment; vehicles: Vehicle[]; drivers: Driver[]; hubs: Hub[]
-  addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void; onDone: () => void
-}) {
-  const [phase, setPhase] = useState<WorkflowPhase>('analyzing')
-  const [nodes, setNodes] = useState<WFNode[]>([])
-  const [edges, setEdges] = useState<WFEdge[]>([])
-  const [analysis, setAnalysis] = useState('')
-  const [risks, setRisks] = useState<string[]>([])
-  const [selectedNode, setSelectedNode] = useState<string | null>(null)
-  const [retriggerLoading, setRetriggerLoading] = useState(false)
-
-  function runAnalysis(ns: WFNode[] = [], es: WFEdge[] = []) {
-    const result = buildWorkflow(shipment, vehicles, drivers, hubs)
-    if (ns.length > 0) {
-      // Merge overridden nodes and preserve user dragged positions
-      result.nodes = result.nodes.map(n => {
-        const override = ns.find(x => x.id === n.id)
-        return override ? { ...n, ...override, x: override.x, y: override.y } : n
-      })
-    }
-    setNodes(result.nodes)
-    setEdges(result.edges)
-    setAnalysis(result.analysis)
-    setRisks(result.risks)
-    setPhase('canvas')
-  }
-
-  useEffect(() => {
-    const t = setTimeout(() => runAnalysis(), 2200)
-    return () => clearTimeout(t)
-  }, [])
-
-  function handleRetrigger() {
-    setRetriggerLoading(true)
-    setPhase('analyzing')
-    setTimeout(() => { runAnalysis(nodes, edges); setRetriggerLoading(false) }, 1800)
-  }
-
-  function handleNodeChange(id: string, data: any) {
-    setNodes(prev => prev.map(n => {
-      if (n.id !== id) return n
-      const newLabel = data.full_name ?? data.name ?? n.label
-      const newSub = data.plate_number ?? data.license_type ?? data.code ?? n.sublabel
-      return { ...n, label: newLabel, sublabel: newSub, data, status: 'ok' }
-    }))
-  }
-
-  function handleNodesMove(updatedNodes: WFNode[]) {
-    setNodes(updatedNodes)
-  }
-
-  function handleApprove() {
-    addAudit({ actor_name: 'Abhayraj Jaiswal', action_type: 'DISPATCH_APPROVED', entity_type: 'SHIPMENT', entity_id: shipment.id, details: `Workflow approved for ${shipment.tracking_number} — dispatched` })
-    setPhase('route')
-  }
-
-  if (phase === 'route') {
-    return <RouteMapView shipment={shipment} nodes={nodes} onComplete={onDone} />
-  }
-
-  return (
-    <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
-      <div className="flex-shrink-0 px-5 py-3 border-b border-slate-200 bg-white flex items-center gap-3">
-        <div className="w-7 h-7 rounded-full bg-violet-600 flex items-center justify-center text-white text-xs font-bold">AI</div>
-        <div className="flex-1">
-          <p className="text-sm font-bold text-slate-800">Copilot Workflow — <span className="font-mono text-blue-700">{shipment.tracking_number}</span></p>
-          <p className="text-[10px] text-slate-400">AI-generated dispatch plan · {shipment.customer_name} · {shipment.weight_kg}kg · {shipment.priority}</p>
-        </div>
-        <button onClick={onDone} className="text-xs text-slate-400 hover:text-slate-600">← Back to Shipments</button>
-      </div>
-
-      {phase === 'analyzing' ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <div className="relative w-16 h-16 mx-auto">
-              <div className="absolute inset-0 rounded-full border-4 border-violet-100" />
-              <div className="absolute inset-0 rounded-full border-4 border-violet-600 border-t-transparent animate-spin" />
-              <div className="absolute inset-0 flex items-center justify-center text-2xl">🤖</div>
-            </div>
-            <div>
-              <p className="font-bold text-slate-800">Copilot Analyzing…</p>
-              <p className="text-xs text-slate-400 mt-1">Running VRPTW solver · Checking driver compliance · Matching vehicle capacity · Validating time windows</p>
-            </div>
-            <div className="flex gap-2 justify-center">
-              {['RouterAgent', 'OptimizationAgent', 'PolicyAgent'].map((a, i) => (
-                <span key={a} className="text-[10px] font-mono px-2 py-1 bg-violet-50 border border-violet-200 text-violet-700 rounded-full animate-pulse" style={{ animationDelay: `${i * 0.3}s` }}>{a}</span>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col flex-1 overflow-hidden">
-          {/* AI analysis banner */}
-          <div className={`flex-shrink-0 flex items-start gap-3 px-5 py-3 border-b border-slate-200 ${risks.length === 0 ? 'bg-emerald-50' : 'bg-amber-50'}`}>
-            <span className="text-lg">{risks.length === 0 ? '✅' : '⚠️'}</span>
-            <div className="flex-1">
-              <p className="text-xs text-slate-700 leading-relaxed">{analysis}</p>
-              {risks.length > 0 && (
-                <ul className="mt-1.5 space-y-0.5">
-                  {risks.map((r, i) => <li key={i} className="text-[11px] text-amber-800 flex gap-1.5"><span>•</span>{r}</li>)}
-                </ul>
-              )}
-            </div>
-            <div className="flex gap-2 flex-shrink-0">
-              <button onClick={handleRetrigger} disabled={retriggerLoading} className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 bg-white text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50">
-                {retriggerLoading ? <span className="w-3 h-3 border border-slate-400 border-t-transparent rounded-full animate-spin" /> : '↺'} Re-analyze
-              </button>
-              <button onClick={handleApprove} disabled={risks.some(r => r.includes('No '))} className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed">
-                ✓ Approve & Dispatch
-              </button>
-            </div>
-          </div>
-
-          {/* Canvas */}
-          <div className="flex-1 overflow-hidden">
-            <WorkflowCanvas
-              nodes={nodes}
-              edges={edges}
-              selectedNode={selectedNode}
-              onSelectNode={setSelectedNode}
-              onNodeChange={handleNodeChange}
-              onNodesMove={handleNodesMove}
-              vehicles={vehicles}
-              drivers={drivers}
-              hubs={hubs}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── COPILOT DASHBOARD (Main Page) ────────────────────────────────────────────
 function CopilotDashboard({ vehicles, drivers, shipments, hubs, audit, setSection }: {
   vehicles: Vehicle[]; drivers: Driver[]; shipments: Shipment[]; hubs: Hub[]; audit: AuditEntry[]
   setSection: (s: AdminSection) => void
 }) {
-  const [messages, setMessages] = useState<CopilotMsg[]>([
-    { id: '0', sender: 'assistant', content: 'Good morning, Commander. I\'m your Fleet AI Copilot. Here\'s what needs your attention right now:\n\n• **3 shipments** are active — 1 EXPRESS at risk of SLA breach\n• **Vehicle MH-12-QQ-4001** is in maintenance, 2 routes affected\n• **SHP-003-NV** (920kg, Flipkart) is UNASSIGNED — add it to Shipments and I\'ll generate the workflow\n\nAsk me anything or use the quick actions below.', timestamp: '12:00' },
-  ])
+  // Opening briefing is computed from live data so it never goes stale.
+  const [messages, setMessages] = useState<CopilotMsg[]>(() => {
+    const active = shipments.filter(s => s.status === 'IN_TRANSIT' || s.status === 'ASSIGNED')
+    const express = active.filter(s => s.priority === 'EXPRESS')
+    const unassigned = shipments.filter(s => s.status === 'UNASSIGNED')
+    const maintenance = vehicles.filter(v => v.current_status === 'MAINTENANCE')
+    const lines = [
+      `• **${active.length} shipments** are dispatched${express.length ? `, ${express.length} of them EXPRESS` : ''}`,
+      ...maintenance.map(v => `• **${v.plate_number}** (${v.name}) is in maintenance`),
+      ...unassigned.map(s => `• **${s.tracking_number}** (${s.weight_kg} kg, ${s.customer_name}) is UNASSIGNED: open the Dispatch Planner to plan it`),
+    ]
+    return [{ id: '0', sender: 'assistant', content: `Good morning. I'm your Fleet AI Copilot. Here's what needs your attention right now:\n\n${lines.join('\n')}\n\nAsk me anything or use the quick actions below.`, timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) }]
+  })
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -782,27 +198,34 @@ function CopilotDashboard({ vehicles, drivers, shipments, hubs, audit, setSectio
     }, 1100)
   }
 
+  const operational = vehicles.filter(v => v.current_status !== 'DECOMMISSIONED')
+  const onTrip = vehicles.filter(v => v.current_status === 'IN_TRANSIT').length
   const statBar = [
-    { label: 'Vehicles Active', value: vehicles.filter(v => v.current_status !== 'AVAILABLE' && v.current_status !== 'DECOMMISSIONED').length, color: '#2563eb' },
-    { label: 'In Transit', value: shipments.filter(s => s.status === 'IN_TRANSIT').length, color: '#7c3aed' },
-    { label: 'Unassigned', value: shipments.filter(s => s.status === 'UNASSIGNED').length, color: '#dc2626' },
-    { label: 'Drivers On Duty', value: drivers.filter(d => d.status === 'ON_DUTY' || d.status === 'ON_TRIP').length, color: '#15803d' },
-    { label: 'OTIF Rate', value: '99.2%', color: '#15803d' },
+    { label: 'Vehicles on trip', value: `${onTrip}/${operational.length}`, sub: `${vehicles.filter(v => v.current_status === 'MAINTENANCE').length} in maintenance`, color: '#4f46e5', bg: '#eef2ff' },
+    { label: 'Shipments dispatched', value: shipments.filter(s => s.status === 'IN_TRANSIT' || s.status === 'ASSIGNED').length, sub: `${shipments.filter(s => s.status === 'IN_TRANSIT').length} in transit`, color: '#7c3aed', bg: '#f5f3ff' },
+    { label: 'Unassigned', value: shipments.filter(s => s.status === 'UNASSIGNED').length, sub: 'need a plan', color: '#dc2626', bg: '#fef2f2' },
+    { label: 'Drivers on duty', value: drivers.filter(d => d.status === 'ON_DUTY' || d.status === 'ON_TRIP').length, sub: `of ${drivers.length} registered`, color: '#059669', bg: '#ecfdf5' },
+    { label: 'Fleet utilisation', value: `${operational.length ? Math.round((onTrip / operational.length) * 100) : 0}%`, sub: 'vehicles on trip', color: '#0891b2', bg: '#ecfeff' },
   ]
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Stat bar */}
-      <div className="flex-shrink-0 flex items-center gap-0 border-b border-slate-200 bg-white">
-        {statBar.map((s, i) => (
-          <div key={s.label} className={`flex-1 flex flex-col items-center justify-center py-2.5 ${i < statBar.length - 1 ? 'border-r border-slate-200' : ''}`}>
-            <p className="text-lg font-black" style={{ color: s.color }}>{s.value}</p>
-            <p className="text-[10px] text-slate-400">{s.label}</p>
+      <div className="flex-shrink-0 flex flex-wrap items-stretch gap-3 px-5 py-4 border-b border-slate-200 bg-white">
+        {statBar.map(s => (
+          <div key={s.label} className="flex-1 basis-[170px] min-w-0 rounded-xl border border-slate-200 px-4 py-3 flex items-center gap-3">
+            <span className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: s.bg }}><span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} /></span>
+            <div className="min-w-0">
+              <p className="text-[11px] text-slate-500 truncate">{s.label}</p>
+              <p className="text-xl font-bold text-slate-900 leading-tight tabular-nums">{s.value}</p>
+              <p className="text-[10px] text-slate-400 truncate">{s.sub}</p>
+            </div>
           </div>
         ))}
-        <button onClick={() => setSection('shipments')} className="flex-shrink-0 flex items-center gap-2 mx-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors">
-          + New Shipment
-        </button>
+        <div className="flex flex-col gap-2 justify-center">
+          <button onClick={() => setSection('workflow')} className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold rounded-lg shadow-sm">Plan dispatch</button>
+          <button onClick={() => setSection('shipments')} className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg">+ New shipment</button>
+        </div>
       </div>
 
       {/* Copilot chat */}
@@ -1064,7 +487,7 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
 
 // ─── SHIPMENTS SECTION ────────────────────────────────────────────────────────
 function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWorkflow, activeRole }: {
-  shipments: Shipment[]; setShipments: (s: Shipment[]) => void
+  shipments: Shipment[]; setShipments: React.Dispatch<React.SetStateAction<Shipment[]>>
   hubs: Hub[]; addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
   onTriggerWorkflow: (s: Shipment) => void
   activeRole?: UserRole
@@ -1687,139 +1110,17 @@ function UsersSection({ users, setUsers }: { users: User[]; setUsers: (u: User[]
   )
 }
 
-// ─── TRACKING SECTION ─────────────────────────────────────────────────────────
-function TrackingSection({
-  vehicles,
-  drivers,
-  activeRole,
-}: {
-  vehicles: Vehicle[];
-  drivers: Driver[];
-  activeRole: UserRole;
-}) {
-  const [sel, setSel] = useState<number | null>(1)
-  const [driverFsmState, setDriverFsmState] = useState<'EN_ROUTE' | 'ARRIVED' | 'DELIVERED' | 'DELAYED'>('EN_ROUTE')
-  const active = vehicles.filter(v => v.current_status === 'IN_TRANSIT' || v.current_status === 'AVAILABLE')
-  const positions: Record<number, { x: number; y: number }> = { 1: { x: 190, y: 115 }, 2: { x: 345, y: 295 }, 3: { x: 150, y: 315 }, 4: { x: 220, y: 220 } }
-  const vcol: Record<VehicleStatus, string> = { AVAILABLE: '#22c55e', IN_TRANSIT: '#3b82f6', MAINTENANCE: '#f97316', DECOMMISSIONED: '#9ca3af' }
-  const selV = vehicles.find(v => v.id === sel)
-  const selD = drivers.find(d => d.current_vehicle_id === sel)
-
-  return (
-    <div className="flex h-full overflow-hidden">
-      <div className="flex-1 relative bg-slate-50 overflow-hidden">
-        <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur border border-slate-200 rounded-lg px-3 py-2 flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-xs text-slate-600 font-medium">{active.length} vehicles tracked</span>
-        </div>
-        <svg viewBox="0 0 560 360" className="w-full h-full">
-          <rect width="560" height="360" fill="#f8fafc" />
-          {Array.from({ length: 10 }).map((_, i) => <g key={i}><line x1={i * 62} y1="0" x2={i * 62} y2="360" stroke="#e2e8f0" strokeWidth="0.5" /><line x1="0" y1={i * 40} x2="560" y2={i * 40} stroke="#e2e8f0" strokeWidth="0.5" /></g>)}
-          <path d="M80 60 L460 60 L480 180 L440 310 L320 400 L200 395 L100 300 L75 180 Z" stroke="#cbd5e1" strokeWidth="1.5" fill="#f1f5f9" />
-          {[{ x: 190, y: 115, n: 'Mumbai' }, { x: 150, y: 315, n: 'Navi Mumbai' }, { x: 345, y: 295, n: 'Pune' }, { x: 220, y: 220, n: 'Thane' }, { x: 400, y: 160, n: 'Nashik' }].map(c => <g key={c.n}><circle cx={c.x} cy={c.y} r="4" fill="#94a3b8" /><text x={c.x + 7} y={c.y + 4} fill="#64748b" fontSize="9" fontFamily="DM Sans">{c.n}</text></g>)}
-          <path d="M190 115 L220 220 L345 295" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="5 3" opacity="0.4" />
-          {active.map(v => {
-            const pos = positions[v.id]
-            if (!pos) return null
-            const isS = sel === v.id
-            const col = vcol[v.current_status]
-            return (
-              <g key={v.id} className="cursor-pointer" onClick={() => setSel(s => s === v.id ? null : v.id)}>
-                {isS && <circle cx={pos.x} cy={pos.y} r="18" fill={col} opacity="0.12" />}
-                <circle cx={pos.x} cy={pos.y} r={isS ? 9 : 7} fill={isS ? col : 'white'} stroke={col} strokeWidth="2.5" />
-                {v.current_status === 'IN_TRANSIT' && <circle cx={pos.x} cy={pos.y} r="7" fill="none" stroke={col} strokeWidth="1" opacity="0.4"><animate attributeName="r" values="7;16;7" dur="2s" repeatCount="indefinite" /><animate attributeName="opacity" values="0.4;0;0.4" dur="2s" repeatCount="indefinite" /></circle>}
-                {isS && <text x={pos.x} y={pos.y - 18} textAnchor="middle" fill={col} fontSize="9" fontWeight="700" fontFamily="DM Sans" style={{ filter: 'drop-shadow(0 1px 0 white)' }}>{v.plate_number}</text>}
-              </g>
-            )
-          })}
-        </svg>
-      </div>
-
-      <div className="w-64 border-l border-slate-200 flex flex-col bg-white">
-        <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-          <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-            {activeRole === 'DRIVER' ? 'Driver Cockpit' : 'Live Telemetry'}
-          </p>
-          <span className="text-[10px] font-mono text-emerald-600 font-bold">● Active</span>
-        </div>
-
-        {activeRole === 'DRIVER' ? (
-          <div className="p-4 space-y-4 overflow-y-auto">
-            <div className="border border-blue-200 bg-blue-50 rounded-xl p-3 space-y-1">
-              <p className="text-[10px] font-bold text-blue-600 uppercase">Assigned Driver</p>
-              <p className="font-bold text-slate-800 text-sm">Rajesh Kumar</p>
-              <p className="text-xs text-slate-500">Vehicle: Alpha Prime Van (MH-02-EE-1001)</p>
-              <div className="pt-1">
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">
-                  Shift: 7.5 hrs remaining (≤10h)
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-[10px] font-bold text-slate-400 uppercase">1-Tap Delivery FSM Action</p>
-              <button
-                onClick={() => setDriverFsmState('ARRIVED')}
-                className={`w-full py-2 px-3 rounded-lg text-xs font-bold border transition ${
-                  driverFsmState === 'ARRIVED' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                1. Mark Arrived at Destination
-              </button>
-              <button
-                onClick={() => setDriverFsmState('DELIVERED')}
-                className={`w-full py-2 px-3 rounded-lg text-xs font-bold border transition ${
-                  driverFsmState === 'DELIVERED' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                2. Confirm e-POD Signature
-              </button>
-              <button
-                onClick={() => setDriverFsmState('DELAYED')}
-                className={`w-full py-2 px-3 rounded-lg text-xs font-bold border transition ${
-                  driverFsmState === 'DELAYED' ? 'bg-red-600 text-white border-red-600' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                3. Report Road Delay
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-            {active.map(v => (
-              <button key={v.id} onClick={() => setSel(s => s === v.id ? null : v.id)} className={`w-full text-left px-4 py-3 transition-colors hover:bg-slate-50 ${sel === v.id ? 'bg-blue-50 border-l-2 border-l-blue-500' : ''}`}>
-                <div className="flex items-center justify-between mb-1"><span className="font-mono text-xs font-bold text-slate-700">{v.plate_number}</span><Badge s={v.current_status} /></div>
-                <p className="text-xs text-slate-500">{v.name}</p>
-                <div className="mt-1.5"><Bar pct={v.fuel_pct} /></div>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {selV && activeRole !== 'DRIVER' && (
-          <div className="border-t-2 border-blue-200 bg-blue-50 p-4 space-y-1.5">
-            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Selected</p>
-            <p className="font-mono text-sm font-bold text-slate-800">{selV.plate_number}</p>
-            <p className="text-xs text-slate-600">{selV.name}</p>
-            {selD && <p className="text-xs text-slate-500">Driver: <span className="font-medium text-slate-700">{selD.full_name}</span></p>}
-            <p className="text-xs text-slate-500">Fuel: <span className="font-medium">{selV.fuel_pct}%</span> · {selV.fuel_efficiency_kpl} kpl</p>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
-const ALL_NAV: { id: AdminSection; label: string; path: string; roles: UserRole[] }[] = [
-  { id: 'dashboard', label: 'AI Command', path: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
-  { id: 'shipments', label: 'Shipments', path: 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z', roles: ['ADMIN', 'DISPATCHER'] },
-  { id: 'workflow', label: 'Workflow', path: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', roles: ['ADMIN', 'DISPATCHER'] },
-  { id: 'fleet', label: 'Fleet Assets', path: 'M1 3h15v13H1zM16 8h4l3 3v5h-7V8z', roles: ['ADMIN', 'FLEET_MANAGER'] },
-  { id: 'tracking', label: 'Live Tracking', path: 'M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] },
-  { id: 'compliance', label: 'Compliance', path: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
-  { id: 'audit', label: 'Audit Log', path: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2', roles: ['ADMIN', 'FLEET_MANAGER'] },
-  { id: 'users', label: 'Users', path: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', roles: ['ADMIN'] },
+const ALL_NAV: { id: AdminSection; label: string; group: 'Operations' | 'Assets & policy' | 'Governance'; path: string; roles: UserRole[] }[] = [
+  { id: 'dashboard', label: 'AI Command', group: 'Operations', path: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
+  { id: 'shipments', label: 'Shipments', group: 'Operations', path: 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z', roles: ['ADMIN', 'DISPATCHER'] },
+  { id: 'workflow', label: 'Dispatch Planner', group: 'Operations', path: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', roles: ['ADMIN', 'DISPATCHER'] },
+  { id: 'tracking', label: 'Live Tracking', group: 'Operations', path: 'M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] },
+  { id: 'map', label: 'Network Map', group: 'Operations', path: 'M9 20l-5.447-2.724A1 1 0 0 1 3 16.382V5.618a1 1 0 0 1 1.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0 0 21 18.382V7.618a1 1 0 0 0-.553-.894L15 4m0 13V4m0 0L9 7', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
+  { id: 'fleet', label: 'Fleet Assets', group: 'Assets & policy', path: 'M1 3h15v13H1zM16 8h4l3 3v5h-7V8z', roles: ['ADMIN', 'FLEET_MANAGER'] },
+  { id: 'compliance', label: 'Compliance', group: 'Assets & policy', path: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
+  { id: 'audit', label: 'Audit Log', group: 'Governance', path: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2', roles: ['ADMIN', 'FLEET_MANAGER'] },
+  { id: 'users', label: 'Users', group: 'Governance', path: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', roles: ['ADMIN'] },
 ]
 
 export default function App() {
@@ -1856,6 +1157,13 @@ export default function App() {
     setAudit(prev => [{ ...entry, id: Date.now(), timestamp: ts }, ...prev])
   }
 
+  // Dispatch Planner approval: lock the plan onto the shipment, vehicle and driver (Live Tracking picks it up).
+  function dispatch(d: DispatchDecision) {
+    setShipments(prev => prev.map(s => s.id === d.shipmentId ? { ...s, status: 'ASSIGNED', assigned_vehicle_id: d.vehicleId, dispatch_time: d.departure } : s))
+    setVehicles(prev => prev.map(v => v.id === d.vehicleId ? { ...v, current_status: 'IN_TRANSIT' } : v))
+    setDrivers(prev => prev.map(dr => dr.id === d.driverId ? { ...dr, status: 'ON_TRIP', current_vehicle_id: d.vehicleId } : dr))
+  }
+
   function triggerWorkflow(s: Shipment) {
     setWorkflowShipment(s)
     setSection('workflow')
@@ -1876,102 +1184,109 @@ export default function App() {
   const currentUser = roleUserNames[activeRole]
 
   return (
-    <div className="h-screen flex flex-col bg-white overflow-hidden" style={{ fontFamily: 'DM Sans, sans-serif' }}>
-      {/* Top bar */}
-      <header className="flex-shrink-0 h-12 border-b border-slate-200 flex items-center px-4 gap-3 bg-white z-20">
-        <button onClick={() => setSidebarOpen(o => !o)} className="p-1.5 rounded hover:bg-slate-100 transition-colors text-slate-500">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
-        </button>
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded bg-blue-600 flex items-center justify-center"><svg viewBox="0 0 16 16" fill="white" className="w-3.5 h-3.5"><path d="M2 5h9v6H2zm9 1h2l2 2v3h-4V6z" /><circle cx="4.5" cy="12.5" r="1.5" /><circle cx="12.5" cy="12.5" r="1.5" /></svg></div>
-          <span className="font-bold text-sm text-slate-800">FleetOps</span>
-          <span className={`text-xs font-mono px-2 py-0.5 rounded-full font-bold ${
-            activeRole === 'ADMIN' ? 'bg-red-100 text-red-700' :
-            activeRole === 'FLEET_MANAGER' ? 'bg-purple-100 text-purple-700' :
-            activeRole === 'DISPATCHER' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
-          }`}>
-            {activeRole}
-          </span>
-        </div>
-        <div className="flex-1 text-xs text-slate-400 font-mono hidden sm:flex items-center gap-2">
-          <span>fleet-route-opt · VRPTW + LangGraph Copilot</span>
-          <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-slate-200">
-            <span className={`w-1.5 h-1.5 rounded-full ${isBackendOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
-            {isBackendOnline ? 'API :8000 Online' : 'Local Fast Mode'}
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          {unassigned > 0 && (
-            <button onClick={() => setSection('shipments')} className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 border border-amber-300 text-amber-800 text-xs font-bold rounded-lg animate-pulse">
-              ⚠ {unassigned} unassigned shipment{unassigned > 1 ? 's' : ''}
+    <div className="h-screen flex overflow-hidden bg-slate-50 text-slate-900" style={{ fontFamily: 'DM Sans, sans-serif' }}>
+      {/* Sidebar */}
+      {sidebarOpen && (
+        <aside className="w-60 flex-shrink-0 flex flex-col bg-slate-950 text-slate-300">
+          <div className="h-14 flex items-center gap-2.5 px-4 border-b border-white/5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-900/40">
+              <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5" width="18" height="18"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z" /><circle cx="7" cy="17.5" r="1.5" /><circle cx="17" cy="17.5" r="1.5" /></svg>
+            </div>
+            <div className="leading-tight">
+              <p className="text-sm font-bold text-white">FleetOps</p>
+              <p className="text-[10px] text-slate-500">AI Route Optimizer</p>
+            </div>
+          </div>
+          <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+            {(['Operations', 'Assets & policy', 'Governance'] as const).map(group => {
+              const items = filteredNav.filter(n => n.group === group)
+              if (!items.length) return null
+              return (
+                <div key={group}>
+                  <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{group}</p>
+                  {items.map(item => {
+                    const on = section === item.id
+                    return (
+                      <button key={item.id} onClick={() => setSection(item.id)}
+                        className={`relative w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${on ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'}`}>
+                        {on && <span className="absolute -left-3 top-1.5 bottom-1.5 w-1 rounded-r bg-violet-500" />}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0"><path d={item.path} /></svg>
+                        <span className="text-[13px] font-medium flex-1">{item.label}</span>
+                        {item.id === 'shipments' && unassigned > 0 && <span className="text-[10px] font-bold px-1.5 rounded-full bg-red-500/90 text-white">{unassigned}</span>}
+                        {item.id === 'tracking' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </nav>
+          <div className="m-3 p-3 rounded-xl bg-white/5 space-y-1.5">
+            {[
+              { k: 'Backend API', v: isBackendOnline ? 'Online' : 'Offline', ok: !!isBackendOnline },
+              { k: 'Distance engine', v: isBackendOnline ? 'Ready' : 'Estimate', ok: !!isBackendOnline },
+              { k: 'RAG knowledge base', v: isBackendOnline ? 'Grounded' : 'Offline', ok: !!isBackendOnline },
+            ].map(r => (
+              <div key={r.k} className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-500">{r.k}</span>
+                <span className={`flex items-center gap-1.5 font-medium ${r.ok ? 'text-emerald-400' : 'text-amber-400'}`}><span className={`w-1.5 h-1.5 rounded-full ${r.ok ? 'bg-emerald-400' : 'bg-amber-400'}`} />{r.v}</span>
+              </div>
+            ))}
+          </div>
+        </aside>
+      )}
+
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* Top bar */}
+        <header className="flex-shrink-0 h-14 bg-white border-b border-slate-200 flex items-center gap-3 px-4">
+          <button onClick={() => setSidebarOpen(o => !o)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" title="Toggle sidebar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+          </button>
+          <div className="min-w-0 whitespace-nowrap">
+            <p className="text-sm font-semibold text-slate-900 leading-tight">{ALL_NAV.find(n => n.id === section)?.label}</p>
+            <p className="text-[11px] text-slate-400 leading-tight">{ALL_NAV.find(n => n.id === section)?.group} · Mumbai–Pune network</p>
+          </div>
+          <div className="flex-1" />
+          {unassigned > 0 && activeRole !== 'DRIVER' && (
+            <button onClick={() => setSection('workflow')} className="hidden xl:flex whitespace-nowrap items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold hover:bg-amber-100">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{unassigned} unassigned · plan now
             </button>
           )}
-
-          {/* Persona Role Switcher Pill */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg">
             {(['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] as UserRole[]).map((r) => (
               <button
                 key={r}
                 onClick={() => {
                   setActiveRole(r)
                   if (r === 'DRIVER') setSection('tracking')
-                  else if (r === 'DISPATCHER' && section === 'users') setSection('shipments')
+                  else if (!ALL_NAV.find(n => n.id === section)?.roles.includes(r)) setSection(ALL_NAV.find(n => n.roles.includes(r))!.id)
                 }}
-                className={`px-2 py-0.5 text-[10px] font-bold rounded transition ${
-                  activeRole === r ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-800'
-                }`}
+                className={`px-2.5 py-1 text-[10px] font-bold rounded-md whitespace-nowrap transition ${activeRole === r ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-800'}`}
               >
                 {r.replace('_', ' ')}
               </button>
             ))}
           </div>
-
-          <div className="flex items-center gap-2 border border-slate-200 bg-slate-50 rounded-lg px-2.5 py-1">
-            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${currentUser.badgeColor}`}>
-              {currentUser.initials}
+          <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ${currentUser.badgeColor}`}>{currentUser.initials}</div>
+            <div className="hidden xl:block leading-tight whitespace-nowrap">
+              <p className="text-xs font-semibold text-slate-800">{currentUser.name}</p>
+              <p className="text-[10px] text-slate-400">{activeRole.replace('_', ' ').toLowerCase()}</p>
             </div>
-            <span className="text-xs font-semibold text-slate-700">{currentUser.name}</span>
           </div>
-        </div>
-      </header>
-
-      <div className="flex-1 flex min-h-0">
-        {/* Sidebar */}
-        {sidebarOpen && (
-          <aside className="w-48 flex-shrink-0 border-r border-slate-200 flex flex-col bg-white z-10">
-            <nav className="flex-1 py-2 overflow-y-auto">
-              {filteredNav.map(item => (
-                <button key={item.id} onClick={() => setSection(item.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${section === item.id ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'}`}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4 flex-shrink-0"><path d={item.path} /></svg>
-                  <span className="text-sm font-medium flex-1">{item.label}</span>
-                  {item.id === 'shipments' && unassigned > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600">{unassigned}</span>}
-                  {item.id === 'workflow' && workflowShipment && <span className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />}
-                  {section === item.id && <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />}
-                </button>
-              ))}
-            </nav>
-            <div className="p-3 border-t border-slate-100 space-y-1">
-              <div className="flex justify-between text-[11px]"><span className="text-slate-400">VRPTW</span><span className="text-blue-600 font-mono font-medium">Ready</span></div>
-              <div className="flex justify-between text-[11px]"><span className="text-slate-400">AI Copilot</span><span className="text-violet-600 font-mono font-medium">● Online</span></div>
-              <div className="flex justify-between text-[11px]"><span className="text-slate-400">RAG</span><span className="text-emerald-600 font-mono font-medium">Grounded</span></div>
-            </div>
-          </aside>
-        )}
+        </header>
 
         {/* Main content */}
-        <main className="flex-1 min-w-0 overflow-hidden bg-slate-50/30">
+        <main className="flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50/30">
           {section === 'dashboard' && <CopilotCommandCenter vehicles={vehicles} drivers={drivers} shipments={shipments} hubs={hubs} audit={audit} setSection={setSection} activeRole={activeRole} authToken={authToken} />}
           {section === 'shipments' && <ShipmentsSection shipments={shipments} setShipments={setShipments} hubs={hubs} addAudit={addAudit} onTriggerWorkflow={triggerWorkflow} activeRole={activeRole} />}
-          {section === 'workflow' && workflowShipment
-            ? <WorkflowSection shipment={workflowShipment} vehicles={vehicles} drivers={drivers} hubs={hubs} addAudit={addAudit} onDone={() => setSection('shipments')} />
-            : section === 'workflow' && (
-              <div className="flex items-center justify-center h-full text-center p-10">
-                <div><p className="text-4xl mb-4">🤖</p><p className="font-bold text-slate-700 text-lg">No active workflow</p><p className="text-sm text-slate-400 mt-1">Add a new shipment or click "AI Workflow" on any existing shipment to begin.</p><button onClick={() => setSection('shipments')} className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700">Go to Shipments →</button></div>
-              </div>
-            )}
+          {section === 'workflow' && <DispatchPlanner shipments={shipments} hubs={hubs} vehicles={vehicles} drivers={drivers} initialShipmentId={workflowShipment?.id ?? null} onDispatch={dispatch} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
           {section === 'fleet' && <FleetSection vehicles={vehicles} setVehicles={setVehicles} drivers={drivers} setDrivers={setDrivers} hubs={hubs} setHubs={setHubs} addAudit={addAudit} />}
-          {section === 'tracking' && <TrackingSection vehicles={vehicles} drivers={drivers} activeRole={activeRole} />}
+          {section === 'map' && <NetworkMapSection hubs={hubs} shipments={shipments} />}
+          {/* Kept mounted so the simulation clock and reported events survive page switches */}
+          <div className={section === 'tracking' ? 'h-full' : 'hidden'}>
+            <LiveTrackingSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments} activeRole={activeRole} driverId={1} addAudit={addAudit} />
+          </div>
           {section === 'compliance' && <ComplianceInspector />}
           {section === 'audit' && <AuditSection entries={audit} />}
           {section === 'users' && <UsersSection users={users} setUsers={setUsers} />}

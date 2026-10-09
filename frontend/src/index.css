@@ -14,3 +14,8 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Map marker pulse used by live vehicle markers */
+.fleet-pulse { position: absolute; top: 0; left: 50%; width: 30px; height: 30px; margin-left: -15px; border-radius: 9px; opacity: .45; animation: fleet-pulse 1.8s ease-out infinite; }
+@keyframes fleet-pulse { from { transform: scale(1); opacity: .45 } to { transform: scale(2.1); opacity: 0 } }
+.leaflet-container { font-family: 'DM Sans', sans-serif; background: #e9eef5; }

@@ -206,7 +206,10 @@ Manthan owns the **Backend Scaffolding, Fleet Database Layer, VRPTW Mathematical
   - **Manthan (Track A)**: Haversine Distance Matrix Engine & Leaflet Map Shell (`feat/manthan-week5`).
   - **Abhayraj (Track B)**: LangGraph Multi-Agent StateGraph Architecture, Router Agent (Intent Classifier & Entity Extractor), RAG Policy Delegation, and AI Copilot Command Center UI (`feat/abhayraj-week5`).
 
-### Next Immediate Milestone (Month 2, Week 6):
+### Upcoming in Month 2 (Optimization & Multi-Agent AI):
+- **Week 5 (Oct 5 – Oct 9, 2026)**: **COMPLETED** ✅
+  - **Manthan (Track A)**: Haversine Distance Matrix & Leaflet Map Shell. *(Delivered: `/api/v1/routes/distance-matrix` with detour-corrected road km & drive times, LRU cache, Leaflet Network Map with custom SVG hub/stop markers, and 20 automated tests.)*
+  - **Abhayraj (Track B)**: LangGraph Multi-Agent StateGraph Architecture & Router Agent Intent Classifier. *(Delivered: Router Agent with 6 logistics intents, structured entity extraction, RAG policy citation delegation, CopilotCommandCenter UI, `/api/v1/copilot/*` endpoints, and 16 automated tests.)*
 - **Week 6 (Oct 12 – Oct 16, 2026)**:
   - **Manthan (Track A)**: Deterministic VRPTW Solver Core with Clarke-Wright Savings algorithm.
   - **Abhayraj (Track B)**: In-Transit Finite State Machine (FSM) & Real-time Driver Telemetry tracking.

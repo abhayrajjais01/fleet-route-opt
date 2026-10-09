@@ -31,7 +31,7 @@ The project is strictly split across two balanced engineering tracks covering bo
 ## 16-Week Roadmap & Delivery Status
 
 ```
-Overall Progress: [██████░░░░░░░░░░░░░░] 31.2% (Month 1 Done, Week 5 Delivered: 5 / 16 Weeks Done)
+Overall Progress: [██████░░░░░░░░░░░░░░] 31.2% (Month 1 Done, Week 5 Track A & B Delivered: 5 / 16 Weeks Done)
 Month 1 Progress: [████████████████████] 100.0% (Weeks 1, 2, 3, and 4 COMPLETED)
 Month 2 Progress: [█████░░░░░░░░░░░░░░░] 25.0% (Week 5 Delivered, Week 6 Starting Next)
 Month 3 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
@@ -46,7 +46,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 | **Week 4** | **Batch Ingestion & Compliance UI** | RAG Compliance Inspector Search UI | Batch Order Uploader (CSV/JSON), Cluster Preview & Regression Tests | `COMPLETED` ✅ |
 | **Week 5** | **Spatial Map & LangGraph Foundation** | Haversine Matrix & Leaflet Map Shell | LangGraph StateGraph & Router Agent (Intent Classifier) | `COMPLETED` ✅ |
 
-- **Automated Backend Test Suite**: `python -m pytest` → **72 / 72 PASSED (100%)**
+- **Automated Backend Test Suite**: `python -m pytest` → **92 / 92 PASSED (100%)**
 - **RAG Retrieval Benchmark**: `python -m app.services.rag.evaluation` → **Recall@3 1.00 · MRR 0.98 · p95 < 1 ms** (WikiQA-style eval set)
 - **Database Seeder**: `python scripts/seed_demo_data.py` → **Pre-loads 4 roles, 3 hubs, 4 vehicles, 5 drivers, 5 shipments, and audit logs**
 - **Live Deployments**:
@@ -118,7 +118,7 @@ fleet-route-opt/
 │   │       └── rag/                     # Vector store, corpus, embeddings, evaluation
 │   ├── scripts/
 │   │   └── seed_demo_data.py            # Automated database seeder
-│   └── tests/                           # Pytest automated test suites (49/49 passed)
+│   └── tests/                           # Pytest automated test suites (76/76 passed)
 │       ├── test_health.py               # Probe validation (3 tests)
 │       ├── test_auth_rbac.py            # JWT & RBAC tests (5 tests)
 │       ├── test_fleet_crud.py           # Fleet asset CRUD tests (4 tests)

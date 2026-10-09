@@ -5,6 +5,7 @@ from app.api.v1.fleet import router as fleet_router
 from app.api.v1.shipments import router as shipments_router
 from app.api.v1.audit import router as audit_router
 from app.api.v1.rag import router as rag_router
+from app.api.v1.routes import router as routes_router
 from app.api.v1.copilot import router as copilot_router
 
 api_router = APIRouter()
@@ -17,9 +18,8 @@ api_router.include_router(health_router, prefix="")
 # =====================================================================
 api_router.include_router(fleet_router, prefix="/fleet", tags=["Fleet Asset Management"])
 api_router.include_router(rag_router, prefix="/rag", tags=["RAG Compliance Engine"])
-# from app.api.v1.routes import router as routes_router
+api_router.include_router(routes_router, prefix="/routes", tags=["Route Optimization (VRPTW)"])
 # from app.api.v1.tracking import router as tracking_router
-# api_router.include_router(routes_router, prefix="/routes", tags=["Route Optimization (VRPTW)"])
 # api_router.include_router(tracking_router, prefix="/tracking", tags=["Live Tracking & FSM"])
 
 # =====================================================================

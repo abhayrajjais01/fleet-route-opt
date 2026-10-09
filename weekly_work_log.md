@@ -122,10 +122,28 @@
 ---
 
 ### Week 5: Spatial Graph & LangGraph Multi-Agent Router (Oct 5 – Oct 9, 2026) — COMPLETED ✅
-- **Track A (Manthan Nimodiya)**: Haversine Distance Matrix Engine & Leaflet Map Shell (US-004).
-- **Track B (Abhayraj Jaiswal)**: LangGraph Multi-Agent StateGraph Architecture & Router Agent Intent Classifier (US-005).
+- **Status**: `COMPLETED` ✅ (Track A & Track B Delivered)
+- **Focus Area**: Haversine Distance Matrix Engine & Leaflet Map Shell (US-003, US-004) vs. LangGraph StateGraph & Router Agent (US-005).
 
-#### Track B (Abhayraj Jaiswal) Technical Implementation Log:
+#### Track A (Manthan Nimodiya):
+1. **Distance & Duration Engine (`backend/app/services/optimizer/distance_matrix.py`)**:
+   - Haversine great-circle distance on a spherical Earth (mean radius 6371.0088 km); verified against reference values (1° latitude = 111.195 km, London–Paris 343.6 km).
+   - Road detour (circuity) correction: 1.45× for short city hops falling to 1.18× for long highway legs, linearly interpolated between anchor distances.
+   - Drive time from distance-dependent average speeds (20 km/h city → 56 km/h expressway), scaled down for box trucks and semi trucks.
+   - Interpolation instead of stepped bands, so a longer leg can never get a shorter drive time (bug caught on the map, now covered by a regression test).
+2. **Distance Matrix Generator & Cache**:
+   - Fully vectorised NumPy all-pairs computation: 200 × 200 matrix in ~4 ms (well inside the < 5 s solver budget).
+   - LRU cache keyed by rounded coordinates + vehicle type; cached matrices are read-only and a repeat request returns in < 1 ms.
+3. **REST API (`backend/app/api/v1/routes.py`)**: `POST /api/v1/routes/distance-matrix` for 2–250 points, returning straight-line km, road km, drive minutes and cache stats. This is the cost input for the Week 6 VRPTW solver.
+4. **Leaflet Map (`frontend/src/components/map/`)**:
+   - OpenStreetMap tiles (free, no API key) via a small imperative Leaflet wrapper.
+   - Custom SVG markers: dark hub tiles with the hub code, and teardrop stop pins coloured by priority (EXPRESS / HIGH / STANDARD / LOW) and numbered by distance from the hub.
+   - Interactive popups (customer, address, time window, weight, status, road km and ETA from hub), with all user-supplied text HTML-escaped.
+5. **Network Map Page**: hub selector, vehicle-type selector, stops ranked by road distance with drive times, detour ratio, hub-to-hub distance/time matrix, click-to-focus on the map, and an offline banner if the distance API is down.
+6. **Fixes**: added coordinates to the frontend `Shipment` type and demo shipments, which also cleared the existing TypeScript errors in the batch upload code.
+7. **Testing**: `backend/tests/test_distance_matrix.py` with 20 tests (accuracy, symmetry, triangle inequality, monotonic drive time, caching, performance, API validation).
+
+#### Track B (Abhayraj Jaiswal):
 1. **LangGraph StateGraph Multi-Agent Coordination Architecture (`backend/app/services/copilot/state_graph.py`)**:
    - Engineered dual execution engine supporting native compiled `langgraph.graph.StateGraph` and resilient deterministic fallback.
    - Structured `AgentState` managing session state, dispatcher context, candidate confidence scores, and immutable step trace logs.
@@ -161,7 +179,16 @@
    - Interactive prompt input bar with scenario chips for emergency breakdowns, corridor delays, compliance SOPs, and reroutes.
    - Rich response rendering: color-coded intent badges, confidence meter progress bars, entity pill tags, and suggested action triggers.
    - Expandable **StateGraph Multi-Agent Execution Trace** accordion displaying node-by-node sequence and millisecond latencies.
-6. **Automated Test Suite (`backend/tests/test_copilot_router.py`)**:
-   - 16 comprehensive automated unit and integration tests covering intent classification, entity extraction, confidence thresholds, RAG citation retrieval, execution trace validity, and RBAC authentication.
-   - **72 / 72 automated backend tests passing (100% pass rate)**.
-   - Frontend production build (`pnpm run build`) passing with 0 errors in 1.09s.\n
+6. **Automated Test Suite & Regression Verification**:
+   - 16 comprehensive automated unit and integration tests (`backend/tests/test_copilot_router.py`) covering intent classification, entity extraction, confidence thresholds, RAG citation retrieval, execution trace validity, and RBAC authentication.
+   - **Combined Test Suite: 92 / 92 automated backend tests passing (100% pass rate)**:
+     - `test_distance_matrix.py` (20 passed)
+     - `test_copilot_router.py` (16 passed)
+     - `test_rag.py` (22 passed)
+     - `test_batch_ingestion.py` (10 passed)
+     - `test_auth_rbac.py` (5 passed)
+     - `test_shipments_audit.py` (5 passed)
+     - `test_fleet_crud.py` (4 passed)
+     - `test_health.py` (3 passed)
+     - `test_database_url.py` (7 passed)
+   - Frontend production build (`pnpm run build`) passing with 0 errors.
