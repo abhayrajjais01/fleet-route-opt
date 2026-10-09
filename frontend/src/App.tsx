@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { API_BASE, checkApiHealth } from './lib/api'
 import ComplianceInspector from './components/compliance/ComplianceInspector'
+import { CopilotCommandCenter } from './components/copilot/CopilotCommandCenter'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type UserRole = 'ADMIN' | 'FLEET_MANAGER' | 'DISPATCHER' | 'DRIVER'
@@ -1834,6 +1835,11 @@ export default function App() {
   const [users, setUsers] = useState<User[]>(INIT_USERS)
   const [audit, setAudit] = useState<AuditEntry[]>(INIT_AUDIT)
   const [workflowShipment, setWorkflowShipment] = useState<Shipment | null>(null)
+  const [authToken, setAuthToken] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchAuthToken(activeRole).then(token => setAuthToken(token))
+  }, [activeRole])
 
   // Live Backend Probing
   useEffect(() => {
@@ -1955,7 +1961,7 @@ export default function App() {
 
         {/* Main content */}
         <main className="flex-1 min-w-0 overflow-hidden bg-slate-50/30">
-          {section === 'dashboard' && <CopilotDashboard vehicles={vehicles} drivers={drivers} shipments={shipments} hubs={hubs} audit={audit} setSection={setSection} />}
+          {section === 'dashboard' && <CopilotCommandCenter vehicles={vehicles} drivers={drivers} shipments={shipments} hubs={hubs} audit={audit} setSection={setSection} activeRole={activeRole} authToken={authToken} />}
           {section === 'shipments' && <ShipmentsSection shipments={shipments} setShipments={setShipments} hubs={hubs} addAudit={addAudit} onTriggerWorkflow={triggerWorkflow} activeRole={activeRole} />}
           {section === 'workflow' && workflowShipment
             ? <WorkflowSection shipment={workflowShipment} vehicles={vehicles} drivers={drivers} hubs={hubs} addAudit={addAudit} onDone={() => setSection('shipments')} />

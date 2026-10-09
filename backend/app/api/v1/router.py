@@ -5,6 +5,7 @@ from app.api.v1.fleet import router as fleet_router
 from app.api.v1.shipments import router as shipments_router
 from app.api.v1.audit import router as audit_router
 from app.api.v1.rag import router as rag_router
+from app.api.v1.copilot import router as copilot_router
 
 api_router = APIRouter()
 
@@ -27,7 +28,6 @@ api_router.include_router(rag_router, prefix="/rag", tags=["RAG Compliance Engin
 api_router.include_router(auth_router, prefix="/auth", tags=["Authentication & RBAC"])
 api_router.include_router(shipments_router, prefix="/shipments", tags=["Shipment Orders & Ingestion"])
 api_router.include_router(audit_router, prefix="/audit", tags=["Immutable Audit Trail"])
-# from app.api.v1.copilot import router as copilot_router
+api_router.include_router(copilot_router, prefix="/copilot", tags=["LangGraph AI Copilot"])
 # from app.api.v1.analytics import router as analytics_router
-# api_router.include_router(copilot_router, prefix="/copilot", tags=["LangGraph AI Copilot"])
 # api_router.include_router(analytics_router, prefix="/analytics", tags=["Operational Analytics"])

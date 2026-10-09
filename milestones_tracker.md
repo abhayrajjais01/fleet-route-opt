@@ -12,13 +12,13 @@
 | :--- | :--- |
 | **Overall Roadmap Progress** | **25.0% Completed** (Month 1: Weeks 1, 2, 3, 4 Completed) |
 | **Current Active Month** | **Month 1: Foundation, Governance, Assets & Shipment Ingestion (100% COMPLETE)** |
-| **Current Active Week** | **Week 4: Completed (Ready for Month 2 Transition)** |
-| **Next Immediate Milestone** | **Month 2, Week 5: Spatial Graph & LangGraph Router (Oct 5 – Oct 9, 2026)** |
+| **Current Active Week** | **Week 5: LangGraph Multi-Agent Router & Spatial Graph (Oct 5 – Oct 9, 2026)** |
+| **Next Immediate Milestone** | **Month 2, Week 6: Deterministic VRPTW Solver Core & In-Transit FSM (Oct 12 – Oct 16, 2026)** |
 
 ```
-Overall Progress: [█████░░░░░░░░░░░░░░░] 25.0% (Month 1 Completed: 4 / 16 Weeks Done)
+Overall Progress: [██████░░░░░░░░░░░░░░] 31.2% (Month 1 Done, Week 5 Delivered: 5 / 16 Weeks)
 Month 1 Progress: [████████████████████] 100.0% (Weeks 1, 2, 3, and 4 COMPLETED)
-Month 2 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0% (Starting Next)
+Month 2 Progress: [█████░░░░░░░░░░░░░░░] 25.0% (Week 5 Delivered, Week 6 Up Next)
 Month 3 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
 Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
 ```
@@ -33,7 +33,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 | | **Week 2** | Assets & Authentication | Fleet Asset Backend Models & APIs | Full-Stack RBAC Auth & Route Guards | `COMPLETED` ✅ |
 | | **Week 3** | RAG Store & Shipments | RAG Knowledge Base & Vector Store | Shipment Ingestion & Audit Logging | `COMPLETED` ✅ |
 | | **Week 4** | Compliance UI & Ingestion | RAG Compliance Inspector Search UI | Batch Order Uploader & Regression Tests| `COMPLETED` ✅ |
-| **Month 2** | **Week 5** | Spatial Map & LangGraph | Haversine Matrix & Leaflet Map Shell| LangGraph StateGraph & Router Agent| `UPCOMING` |
+| **Month 2** | **Week 5** | Spatial Map & LangGraph | Haversine Matrix & Leaflet Map Shell| LangGraph StateGraph & Router Agent| `COMPLETED` ✅ |
 | | **Week 6** | VRPTW Solver & FSM | Deterministic VRPTW Solver Core | In-Transit FSM & Telemetry Tracking| `PLANNED` |
 | | **Week 7** | Map Polylines & Guardrails | Route Visualizer & Split Manifest | RAG Similarity Guardrails & Scores | `PLANNED` |
 | | **Week 8** | Resequencing & Policy Agent | Drag-and-Drop Resequencing UI/API | Policy & Compliance Agent + RAG Check| `PLANNED` |
@@ -108,3 +108,21 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - [x] Automatic batch audit trail recording
   - [x] Frontend Drag-and-Drop Batch Upload modal with live Delivery Cluster Preview, template downloader, and API integration
   - [x] Month 1 Full Regression Test Suite (`backend/tests/test_batch_ingestion.py` — 10/10 passed, **49/49 Full Suite Passing**)
+### Month 2: Optimization & Map vs. Multi-Agent Router & FSM
+
+#### Week 5: Spatial Map & LangGraph Multi-Agent Router (US-003, US-004, US-005)
+- **Status**: `COMPLETED` ✅ (Oct 5 – Oct 9, 2026)
+- **Manthan Nimodiya (Track A: RAG & Optimization Lead)**:
+  - [x] Haversine distance & travel duration engine with road detour circuity factors (`backend/app/services/optimizer/distance_matrix.py`)
+  - [x] Multi-point distance matrix computation with LRU caching (`POST /api/v1/routes/distance-matrix`)
+  - [x] Leaflet map integration with OpenStreetMap tiles and custom SVG markers (`frontend/src/components/map/LeafletMap.tsx`)
+  - [x] Automated distance matrix unit tests (`backend/tests/test_distance_matrix.py`)
+- **Abhayraj Jaiswal (Track B: Multi-Agent & Platform Lead)**:
+  - [x] LangGraph `StateGraph` foundation with session state, immutable execution tracing, and dual execution engine (`backend/app/services/copilot/state_graph.py`)
+  - [x] High-precision **Router Agent** (`backend/app/services/copilot/router_agent.py`) classifying natural language queries across 6 categories: `VEHICLE_BREAKDOWN`, `TRAFFIC_DELAY`, `POLICY_QUERY`, `REROUTE_REQUEST`, `GENERAL_INQUIRY`, `OFF_TOPIC`
+  - [x] High-precision Entity Extraction: Vehicle IDs (`V-101`), Stop IDs (`Stop #4`), Delay durations (`45 mins`, `1.5 hours`), Corridors/Locations (`NH-48`, `Eastern Express`), Severity (`LOW` to `CRITICAL`), and Regulatory topics
+  - [x] Zero-Dependency & Zero-Hallucination Deterministic Fallback Engine guaranteeing 100% offline testability (sub-millisecond execution, zero API keys required)
+  - [x] Real-time RAG Knowledge Base delegation for `POLICY_QUERY` intent retrieving verified SOP citations and section excerpts from logistics manuals
+  - [x] RESTful Copilot APIs: `POST /api/v1/copilot/query`, `GET /api/v1/copilot/intents`, `GET /api/v1/copilot/health` with full RBAC authentication
+  - [x] Automated Router & StateGraph Test Suite (`backend/tests/test_copilot_router.py`: 16/16 passed, **72/72 full test suite passing**)
+  - [x] Frontend AI Copilot Command Center (`frontend/src/components/copilot/CopilotCommandCenter.tsx`) with real-time query bar, colored intent badges, confidence meter, entity chips, suggested action trigger, and interactive StateGraph multi-agent execution trace accordion
