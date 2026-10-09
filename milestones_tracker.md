@@ -10,15 +10,15 @@
 
 | Metric | Status |
 | :--- | :--- |
-| **Overall Roadmap Progress** | **25.0% Completed** (Month 1: Weeks 1, 2, 3, 4 Completed) |
-| **Current Active Month** | **Month 1: Foundation, Governance, Assets & Shipment Ingestion (100% COMPLETE)** |
-| **Current Active Week** | **Week 4: Completed (Ready for Month 2 Transition)** |
-| **Next Immediate Milestone** | **Month 2, Week 5: Spatial Graph & LangGraph Router (Oct 5 – Oct 9, 2026)** |
+| **Overall Roadmap Progress** | **28.1% Completed** (Weeks 1–4 Done, Week 5 Track A Delivered) |
+| **Current Active Month** | **Month 2: Optimization & Map vs. LangGraph Router & FSM** |
+| **Current Active Week** | **Week 5: In Progress (Track A Delivered, Track B Active)** |
+| **Next Immediate Milestone** | **Week 6: VRPTW Solver Core & In-Transit FSM (Oct 12 – Oct 16, 2026)** |
 
 ```
-Overall Progress: [█████░░░░░░░░░░░░░░░] 25.0% (Month 1 Completed: 4 / 16 Weeks Done)
+Overall Progress: [██████░░░░░░░░░░░░░░] 28.1% (Weeks 1–4 Done, Week 5 Track A Delivered)
 Month 1 Progress: [████████████████████] 100.0% (Weeks 1, 2, 3, and 4 COMPLETED)
-Month 2 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0% (Starting Next)
+Month 2 Progress: [███░░░░░░░░░░░░░░░░░] 12.5% (Week 5 Track A Delivered)
 Month 3 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
 Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
 ```
@@ -33,7 +33,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 | | **Week 2** | Assets & Authentication | Fleet Asset Backend Models & APIs | Full-Stack RBAC Auth & Route Guards | `COMPLETED` ✅ |
 | | **Week 3** | RAG Store & Shipments | RAG Knowledge Base & Vector Store | Shipment Ingestion & Audit Logging | `COMPLETED` ✅ |
 | | **Week 4** | Compliance UI & Ingestion | RAG Compliance Inspector Search UI | Batch Order Uploader & Regression Tests| `COMPLETED` ✅ |
-| **Month 2** | **Week 5** | Spatial Map & LangGraph | Haversine Matrix & Leaflet Map Shell| LangGraph StateGraph & Router Agent| `UPCOMING` |
+| **Month 2** | **Week 5** | Spatial Map & LangGraph | Haversine Matrix & Leaflet Map Shell| LangGraph StateGraph & Router Agent| `IN PROGRESS` ⏳ |
 | | **Week 6** | VRPTW Solver & FSM | Deterministic VRPTW Solver Core | In-Transit FSM & Telemetry Tracking| `PLANNED` |
 | | **Week 7** | Map Polylines & Guardrails | Route Visualizer & Split Manifest | RAG Similarity Guardrails & Scores | `PLANNED` |
 | | **Week 8** | Resequencing & Policy Agent | Drag-and-Drop Resequencing UI/API | Policy & Compliance Agent + RAG Check| `PLANNED` |
@@ -108,3 +108,21 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - [x] Automatic batch audit trail recording
   - [x] Frontend Drag-and-Drop Batch Upload modal with live Delivery Cluster Preview, template downloader, and API integration
   - [x] Month 1 Full Regression Test Suite (`backend/tests/test_batch_ingestion.py` — 10/10 passed, **49/49 Full Suite Passing**)
+
+### Month 2: Optimization & Map vs. LangGraph Router & FSM
+
+#### Week 5: Spatial Graph & LangGraph Foundation (US-003, US-004, US-005)
+- **Status**: `IN PROGRESS` ⏳ (Active: Oct 5 – Oct 9, 2026; Track A Delivered)
+- **Manthan Nimodiya (Track A)**:
+  - [x] Haversine distance & travel duration engine with road detour (circuity) correction (`backend/app/services/optimizer/distance_matrix.py`)
+  - [x] Vectorised multi-point distance matrix generator with LRU caching (200 × 200 matrix in ~4 ms, cached repeat in < 1 ms)
+  - [x] `POST /api/v1/routes/distance-matrix` returning straight-line km, road km and vehicle-specific drive minutes
+  - [x] Leaflet map integration with OpenStreetMap tiles, no API key (`frontend/src/components/map/LeafletMap.tsx`)
+  - [x] Custom SVG markers for hubs and priority-coloured delivery waypoints with interactive popups (`markers.ts`)
+  - [x] Network Map page: per-hub stop ranking by road distance & drive time, hub-to-hub matrix, vehicle-type selector
+  - [x] `backend/tests/test_distance_matrix.py` (20 tests) — **76/76 full suite passing**
+- **Abhayraj Jaiswal (Track B)**:
+  - [ ] LangGraph `StateGraph` foundation with session state
+  - [ ] Router Agent: natural language intent classification (breakdown, delay, policy query, re-route)
+  - [ ] Offline deterministic fallback agent
+  - [ ] Router agent unit tests

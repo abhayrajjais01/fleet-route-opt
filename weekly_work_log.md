@@ -121,6 +121,27 @@
 
 ---
 
-### Week 5: Spatial Graph & LangGraph Foundation (Oct 5 – Oct 9, 2026) — UPCOMING
-- **Track A (Manthan Nimodiya)**: Haversine Distance Matrix Engine & Leaflet Map Shell (US-004).
-- **Track B (Abhayraj Jaiswal)**: LangGraph Multi-Agent StateGraph Architecture & Router Agent Intent Classifier (US-005).\n
+### Week 5: Spatial Graph & LangGraph Foundation (Oct 5 – Oct 9, 2026)
+- **Status**: `IN PROGRESS` ⏳ (Track A Delivered, Track B In Progress)
+- **Focus Area**: Haversine Distance Matrix Engine & Leaflet Map Shell (US-003, US-004) vs. LangGraph StateGraph & Router Agent (US-005).
+
+#### Track A (Manthan Nimodiya):
+1. **Distance & Duration Engine (`backend/app/services/optimizer/distance_matrix.py`)**:
+   - Haversine great-circle distance on a spherical Earth (mean radius 6371.0088 km); verified against reference values (1° latitude = 111.195 km, London–Paris 343.6 km).
+   - Road detour (circuity) correction: 1.45× for short city hops falling to 1.18× for long highway legs, linearly interpolated between anchor distances.
+   - Drive time from distance-dependent average speeds (20 km/h city → 56 km/h expressway), scaled down for box trucks and semi trucks.
+   - Interpolation instead of stepped bands, so a longer leg can never get a shorter drive time (bug caught on the map, now covered by a regression test).
+2. **Distance Matrix Generator & Cache**:
+   - Fully vectorised NumPy all-pairs computation: 200 × 200 matrix in ~4 ms (well inside the < 5 s solver budget).
+   - LRU cache keyed by rounded coordinates + vehicle type; cached matrices are read-only and a repeat request returns in < 1 ms.
+3. **REST API (`backend/app/api/v1/routes.py`)**: `POST /api/v1/routes/distance-matrix` for 2–250 points, returning straight-line km, road km, drive minutes and cache stats. This is the cost input for the Week 6 VRPTW solver.
+4. **Leaflet Map (`frontend/src/components/map/`)**:
+   - OpenStreetMap tiles (free, no API key) via a small imperative Leaflet wrapper.
+   - Custom SVG markers: dark hub tiles with the hub code, and teardrop stop pins coloured by priority (EXPRESS / HIGH / STANDARD / LOW) and numbered by distance from the hub.
+   - Interactive popups (customer, address, time window, weight, status, road km and ETA from hub), with all user-supplied text HTML-escaped.
+5. **Network Map Page**: hub selector, vehicle-type selector, stops ranked by road distance with drive times, detour ratio, hub-to-hub distance/time matrix, click-to-focus on the map, and an offline banner if the distance API is down.
+6. **Fixes**: added coordinates to the frontend `Shipment` type and demo shipments, which also cleared the existing TypeScript errors in the batch upload code.
+7. **Testing**: `backend/tests/test_distance_matrix.py` with 20 tests (accuracy, symmetry, triangle inequality, monotonic drive time, caching, performance, API validation). **Full suite: 76/76 passing.**
+
+#### Track B Focus (Abhayraj Jaiswal - Active):
+- LangGraph Multi-Agent StateGraph Architecture & Router Agent Intent Classifier (US-005).
