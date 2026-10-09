@@ -42,3 +42,20 @@ export function stopIcon(priority: string, label: string | number | null, dimmed
     </svg>`
   return L.divIcon({ className: 'fleet-marker', html: svg, iconSize: [28, 38], iconAnchor: [14, 37], popupAnchor: [0, -32] })
 }
+
+/** Vehicle: rounded tile with a truck glyph in the trip colour; pulses while moving. */
+export function vehicleIcon(color: string, plate: string, moving: boolean, selected: boolean): L.DivIcon {
+  const pulse = moving ? `<span class="fleet-pulse" style="background:${color}"></span>` : ''
+  return L.divIcon({
+    className: 'fleet-marker',
+    html: `<div style="position:relative;display:flex;flex-direction:column;align-items:center">
+      ${pulse}
+      <div style="position:relative;width:30px;height:30px;border-radius:9px;background:${color};border:${selected ? 3 : 2}px solid #fff;box-shadow:0 4px 12px rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="17.5" r="1.6" fill="#fff"/><circle cx="17" cy="17.5" r="1.6" fill="#fff"/></svg>
+      </div>
+      <span style="margin-top:3px;padding:1px 5px;border-radius:5px;background:#0f172a;color:#fff;font:600 9px 'JetBrains Mono',monospace;white-space:nowrap">${escapeHtml(plate)}</span>
+    </div>`,
+    iconSize: [70, 50],
+    iconAnchor: [35, 15],
+  })
+}
