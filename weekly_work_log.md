@@ -78,9 +78,15 @@
 - **Focus Area**: Batch Order Ingestion Pipeline (CSV & JSON format parser), Template Generator, Delivery Cluster Preview, Codex Reviews Hardening, and Month 1 Full Regression Test Suite.
 
 #### Track A (Manthan Nimodiya):
-1. **RAG Compliance Inspector UI**:
-   - Dedicated Compliance search interface with real-time semantic query bar.
-   - Document citation preview cards with confidence scores and groundness indicators.
+1. **Compliance & SOP Inspector (`frontend/src/components/compliance/ComplianceInspector.tsx`)**:
+   - Replaced the hardcoded mock with live semantic search against `/api/v1/rag/search`.
+   - Multi-select category filters with document counts; example query shortcuts.
+   - Citation cards: best-match highlight, doc id + `§` section, version/effective date, similarity confidence meter (High / Medium / Weak bands calibrated on the benchmark), query terms highlighted in the excerpt.
+   - SOP Library sidebar and full-document viewer that scrolls to and highlights the cited section.
+   - Zero-hallucination UX: results are verbatim SOP text only; an empty result shows "No policy found in the verified knowledge base".
+2. **Typed API Client (`frontend/src/lib/api.ts`, `frontend/src/lib/ragApi.ts`)**: TypeScript contracts mirroring `backend/app/schemas/rag.py`; `VITE_API_URL` override for the Render deployment.
+3. **Bug Fix**: The header backend probe was calling `/health` instead of `/api/v1/health`, so the UI always showed "Local Fast Mode". It now correctly shows "API :8000 Online".
+4. **Verification**: Typecheck and production build clean; manually verified search, filters, document viewer, empty state and offline banner against the running backend.
 
 #### Track B (Abhayraj Jaiswal):
 1. **High-Throughput Batch Ingestion Engine (`backend/app/services/batch_ingestion.py`)**:

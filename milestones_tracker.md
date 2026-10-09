@@ -96,8 +96,11 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 #### Week 4: RAG Compliance Inspector Portal vs. Batch Ingestion (US-002, US-006, US-008)
 - **Status**: `COMPLETED` ✅ (Sep 28 – Oct 2, 2026)
 - **Manthan Nimodiya (Track A)**:
-  - [x] Dedicated Compliance & SOP search UI page with real-time semantic query bar
-  - [x] Source document citation cards with confidence scores
+  - [x] Compliance & SOP Inspector page (`frontend/src/components/compliance/ComplianceInspector.tsx`) wired to the live `/api/v1/rag` API
+  - [x] Real-time semantic query search bar with example queries and highlighted matching terms
+  - [x] Multi-select category filters (Hazmat, Driver Rest, Cold Chain, Vehicle Safety, Operations)
+  - [x] Source citation cards with doc id, § section, version and similarity confidence meter; SOP library and full-document viewer that jumps to the cited section
+  - [x] "No policy found in the verified knowledge base" empty state and backend-offline banner
 - **Abhayraj Jaiswal (Track B)**:
   - [x] High-throughput Batch Order Ingestion API (`POST /api/v1/shipments/batch/upload` & `POST /api/v1/shipments/batch`)
   - [x] RFC 4180 standard CSV template generator endpoint (`GET /api/v1/shipments/batch/template`)

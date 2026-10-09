@@ -186,12 +186,15 @@ Manthan owns the **Backend Scaffolding, Fleet Database Layer, VRPTW Mathematical
 #### 4. Interactive Workflow Canvas & Node Graph (`Week 2/3`)
 - Built `frontend/src/App.tsx` featuring an interactive node canvas visualizer, live backend probing, and role-based permissions switcher.
 
-#### 5. RAG Vector Knowledge Base & Compliance Inspector (`Week 3/4`)
+#### 5. RAG Vector Knowledge Base (`Week 3`)
 - **Curated corpus (`backend/app/services/rag/corpus/`)**: 8 versioned SOPs across Hazmat, Driver Rest, Cold Chain, Vehicle Safety and Operations, citing 49 CFR, ADR, CMVR, the Motor Transport Workers Act 1961, EU 561/2006 and FMCSA.
 - **Pipeline**: section-aware chunking (41 citable chunks) → TF-IDF unigram + bigram embeddings → in-memory cosine-similarity vector store with category filters.
 - **API Endpoints**: `/api/v1/rag/search`, `/categories`, `/documents`, `/documents/{id}`, `/stats`, `/benchmark`.
 - **WikiQA-style benchmark**: Recall@3 1.00, MRR 0.98, p95 latency < 1 ms; off-topic questions score 0 (basis for the Week 7 guardrail threshold). `backend/tests/test_rag.py`: 22 tests.
-- **RAG Compliance Inspector UI**: Dedicated compliance search interface with real-time semantic query bar, source citations, and confidence scores.
+
+#### 6. RAG Compliance Inspector UI (`Week 4`)
+- `frontend/src/components/compliance/ComplianceInspector.tsx`: live semantic search, category filters, citation cards with confidence meters and highlighted terms, SOP library and document viewer that jumps to the cited section.
+- Fixed the header backend health probe (`/api/v1/health`) and added a `VITE_API_URL` override for deployed builds.
 
 ---
 
