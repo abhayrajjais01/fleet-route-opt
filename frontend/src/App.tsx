@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { API_BASE, checkApiHealth } from './lib/api'
 import ComplianceInspector from './components/compliance/ComplianceInspector'
+import { CopilotCommandCenter } from './components/copilot/CopilotCommandCenter'
 import LiveTrackingSection from './components/tracking/LiveTrackingSection'
 import DispatchPlanner, { type DispatchDecision } from './components/workflow/DispatchPlanner'
 import NetworkMapSection from './components/map/NetworkMapSection'
@@ -1135,6 +1136,11 @@ export default function App() {
   const [users, setUsers] = useState<User[]>(INIT_USERS)
   const [audit, setAudit] = useState<AuditEntry[]>(INIT_AUDIT)
   const [workflowShipment, setWorkflowShipment] = useState<Shipment | null>(null)
+  const [authToken, setAuthToken] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchAuthToken(activeRole).then(token => setAuthToken(token))
+  }, [activeRole])
 
   // Live Backend Probing
   useEffect(() => {
@@ -1271,8 +1277,8 @@ export default function App() {
         </header>
 
         {/* Main content */}
-        <main className="flex-1 min-h-0 overflow-hidden">
-          {section === 'dashboard' && <CopilotDashboard vehicles={vehicles} drivers={drivers} shipments={shipments} hubs={hubs} audit={audit} setSection={setSection} />}
+        <main className="flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50/30">
+          {section === 'dashboard' && <CopilotCommandCenter vehicles={vehicles} drivers={drivers} shipments={shipments} hubs={hubs} audit={audit} setSection={setSection} activeRole={activeRole} authToken={authToken} />}
           {section === 'shipments' && <ShipmentsSection shipments={shipments} setShipments={setShipments} hubs={hubs} addAudit={addAudit} onTriggerWorkflow={triggerWorkflow} activeRole={activeRole} />}
           {section === 'workflow' && <DispatchPlanner shipments={shipments} hubs={hubs} vehicles={vehicles} drivers={drivers} initialShipmentId={workflowShipment?.id ?? null} onDispatch={dispatch} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
           {section === 'fleet' && <FleetSection vehicles={vehicles} setVehicles={setVehicles} drivers={drivers} setDrivers={setDrivers} hubs={hubs} setHubs={setHubs} addAudit={addAudit} />}
