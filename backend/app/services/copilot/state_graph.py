@@ -13,7 +13,7 @@ Implements:
    - General Logistics Copilot Node: Dispatcher overview & capabilities
    - Off-topic Filter: Friendly conversational redirection
 4. Dual Execution Engine:
-   - Native LangGraph StateGraph compiled workflow
+   - Native LangGraph StateGraph compiled workflow with executable conditional edges
    - Zero-dependency Deterministic Fallback workflow runner
 """
 
@@ -43,6 +43,8 @@ except Exception as e:
 class CopilotStateGraph:
     """
     StateGraph workflow coordinator managing multi-agent dispatch routing.
+    Compiles and executes native LangGraph StateGraph when available,
+    falling back to deterministic execution when not installed.
     """
 
     def __init__(self, router: Optional[RouterAgent] = None):
@@ -51,47 +53,135 @@ class CopilotStateGraph:
 
     def _build_langgraph(self) -> Optional[Any]:
         """
-        Attempts to construct and compile a native LangGraph StateGraph.
-        Falls back cleanly to the built-in deterministic engine if unavailable.
+        Attempts to construct and compile a native LangGraph StateGraph with
+        executable conditional edges and specialized sub-agent handler nodes.
         """
         try:
             from langgraph.graph import StateGraph, START, END
 
             graph = StateGraph(dict)
 
-            def input_parser(state: dict) -> dict:
+            # Node 1: Input Parser Node
+            def input_parser_node(state: dict) -> dict:
+                t1 = time.perf_counter()
+                query = state.get("query", "")
+                session_id = state.get("session_id", "")
+                trace = state.setdefault("trace", [])
+                trace.append(
+                    TraceStep(
+                        step=1,
+                        node="input_parser",
+                        action="Sanitized input and initialized session state",
+                        details={"query_length": len(query), "session_id": session_id},
+                        latency_ms=round((time.perf_counter() - t1) * 1000, 2),
+                    )
+                )
                 return state
 
-            def router_node(state: dict) -> dict:
+            # Node 2: Router Intent Classifier Node
+            def router_intent_classifier_node(state: dict) -> dict:
+                t2 = time.perf_counter()
                 query = state.get("query", "")
                 intent, confidence, scores = self.router.classify_intent(query)
                 entities = self.router.extract_entities(query)
-                state["intent"] = intent.value
+                state["intent"] = intent
                 state["confidence"] = confidence
-                state["entities"] = entities.model_dump()
-                state["scores"] = {k.value: v for k, v in scores.items()}
+                state["entities"] = entities
+                state["candidate_scores"] = scores
+
+                trace = state.setdefault("trace", [])
+                trace.append(
+                    TraceStep(
+                        step=2,
+                        node="router_intent_classifier",
+                        action=f"Classified intent as {intent.value} ({confidence * 100:.1f}% confidence)",
+                        details={
+                            "intent": intent.value,
+                            "confidence": confidence,
+                            "extracted_entities": entities.model_dump(),
+                            "candidate_scores": {k.value: v for k, v in scores.items() if v > 0},
+                        },
+                        latency_ms=round((time.perf_counter() - t2) * 1000, 2),
+                    )
+                )
                 return state
 
+            # Conditional Router Edge Function
             def route_conditional(state: dict) -> str:
-                return state.get("intent", AgentIntent.GENERAL_INQUIRY.value)
+                intent: AgentIntent = state.get("intent", AgentIntent.GENERAL_INQUIRY)
+                return f"handler_{intent.value.lower()}"
 
-            graph.add_node("input_parser", input_parser)
-            graph.add_node("router", router_node)
+            # Register Nodes 1 & 2
+            graph.add_node("input_parser", input_parser_node)
+            graph.add_node("router_intent_classifier", router_intent_classifier_node)
             graph.add_edge(START, "input_parser")
-            graph.add_edge("input_parser", "router")
+            graph.add_edge("input_parser", "router_intent_classifier")
 
-            for intent in AgentIntent:
-                def make_handler(target_intent=intent):
+            # Node 3: Specialized Sub-Agent Handler Nodes
+            for target_intent in AgentIntent:
+                node_name = f"handler_{target_intent.value.lower()}"
+
+                def make_handler(bound_intent: AgentIntent):
                     def handler_node(state: dict) -> dict:
-                        state["handled_by"] = target_intent.value
+                        t3 = time.perf_counter()
+                        query = state.get("query", "")
+                        entities: AgentEntities = state.get("entities", AgentEntities())
+                        context = state.get("context", {})
+
+                        narrative, action, details = self._dispatch_intent_handler(
+                            query=query,
+                            intent=bound_intent,
+                            entities=entities,
+                            context=context,
+                        )
+                        state["response_text"] = narrative
+                        state["suggested_action"] = action
+                        state["node_details"] = details
+
+                        trace = state.setdefault("trace", [])
+                        trace.append(
+                            TraceStep(
+                                step=3,
+                                node=f"handler_{bound_intent.value.lower()}",
+                                action=f"Executed specialized {bound_intent.value} operational evaluation",
+                                details=details,
+                                latency_ms=round((time.perf_counter() - t3) * 1000, 2),
+                            )
+                        )
                         return state
                     return handler_node
-                graph.add_node(intent.value, make_handler(intent))
-                graph.add_edge(intent.value, END)
 
-            graph.add_conditional_edges("router", route_conditional)
+                graph.add_node(node_name, make_handler(target_intent))
+                graph.add_edge(node_name, "action_synthesizer")
+
+            # Conditional routing from router to specific handler
+            graph.add_conditional_edges("router_intent_classifier", route_conditional)
+
+            # Node 4: Action Synthesizer Node
+            def action_synthesizer_node(state: dict) -> dict:
+                t4 = time.perf_counter()
+                start_time = state.get("start_time", t4)
+                entities: AgentEntities = state.get("entities", AgentEntities())
+                total_latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+                state["total_latency_ms"] = total_latency_ms
+
+                trace = state.setdefault("trace", [])
+                trace.append(
+                    TraceStep(
+                        step=4,
+                        node="action_synthesizer",
+                        action="Synthesized operational directives and formatted response payload",
+                        details={"status": "READY_FOR_DISPATCHER", "severity": entities.severity.value},
+                        latency_ms=round((time.perf_counter() - t4) * 1000, 2),
+                    )
+                )
+                return state
+
+            graph.add_node("action_synthesizer", action_synthesizer_node)
+            graph.add_edge("action_synthesizer", END)
+
             compiled = graph.compile()
-            logger.info("LangGraph StateGraph successfully compiled.")
+            logger.info("LangGraph StateGraph successfully compiled with native conditional routing.")
             return compiled
         except Exception as err:
             logger.warning(f"Native LangGraph compile skipped ({err}), using built-in deterministic engine.")
@@ -109,10 +199,55 @@ class CopilotStateGraph:
     ) -> CopilotQueryResponse:
         """
         Executes the StateGraph multi-agent pipeline and returns a structured response.
+        Executes via compiled LangGraph StateGraph when available, with clean fallback.
         """
-        start_time = time.perf_counter()
         session_id = session_id or f"sess_{uuid.uuid4().hex[:10]}"
         context = context or {}
+
+        if self._langgraph_app is not None:
+            try:
+                return self._execute_langgraph(query, session_id, context)
+            except Exception as exc:
+                logger.error(f"LangGraph execution encountered an error: {exc}. Falling back to deterministic engine.")
+                return self._execute_deterministic(query, session_id, context)
+
+        return self._execute_deterministic(query, session_id, context)
+
+    def _execute_langgraph(
+        self,
+        query: str,
+        session_id: str,
+        context: Dict[str, Any],
+    ) -> CopilotQueryResponse:
+        start_time = time.perf_counter()
+        initial_state = {
+            "query": query,
+            "session_id": session_id,
+            "context": context,
+            "trace": [],
+            "start_time": start_time,
+        }
+        output_state = self._langgraph_app.invoke(initial_state)
+
+        return CopilotQueryResponse(
+            session_id=session_id,
+            query=query,
+            intent=output_state["intent"],
+            confidence=output_state["confidence"],
+            entities=output_state["entities"],
+            response=output_state["response_text"],
+            suggested_action=output_state.get("suggested_action"),
+            execution_trace=output_state["trace"],
+            latency_ms=output_state.get("total_latency_ms", round((time.perf_counter() - start_time) * 1000, 2)),
+        )
+
+    def _execute_deterministic(
+        self,
+        query: str,
+        session_id: str,
+        context: Dict[str, Any],
+    ) -> CopilotQueryResponse:
+        start_time = time.perf_counter()
         trace: List[TraceStep] = []
 
         # Node 1: Input Parser

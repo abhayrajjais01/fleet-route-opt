@@ -181,7 +181,7 @@
    - Expandable **StateGraph Multi-Agent Execution Trace** accordion displaying node-by-node sequence and millisecond latencies.
 6. **Automated Test Suite & Regression Verification**:
    - 16 comprehensive automated unit and integration tests (`backend/tests/test_copilot_router.py`) covering intent classification, entity extraction, confidence thresholds, RAG citation retrieval, execution trace validity, and RBAC authentication.
-   - **Combined Test Suite: 92 / 92 automated backend tests passing (100% pass rate)**:
+   - **Combined Test Suite: 94 / 94 automated backend tests passing (100% pass rate)**:
      - `test_distance_matrix.py` (20 passed)
      - `test_copilot_router.py` (16 passed)
      - `test_rag.py` (22 passed)

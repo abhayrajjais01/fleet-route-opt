@@ -252,3 +252,32 @@ def test_api_copilot_query_authorized(client: TestClient, dispatcher_token: str)
     assert data["entities"]["delay_minutes"] == 45
     assert len(data["execution_trace"]) == 4
     assert data["latency_ms"] >= 0
+def test_api_copilot_query_forbidden_for_driver(client: TestClient):
+    """Verifies that driver tokens are rejected with 403 Forbidden on the copilot query endpoint."""
+    client.post("/api/v1/auth/seed-demo-users")
+    login_res = client.post(
+        "/api/v1/auth/login",
+        json={"email": "driver@fleetopt.io", "password": "password123"},
+    )
+    assert login_res.status_code == 200
+    driver_token = login_res.json()["access_token"]
+
+    headers = {"Authorization": f"Bearer {driver_token}"}
+    payload = {"query": "Vehicle V-101 breakdown on NH-48"}
+    res = client.post("/api/v1/copilot/query", json=payload, headers=headers)
+    assert res.status_code == 403
+    assert "not permitted" in res.json()["detail"].lower()
+
+
+def test_stategraph_native_compiled_execution(graph: CopilotStateGraph):
+    """Verifies that the compiled LangGraph StateGraph is native, runnable, and yields structured traces."""
+    assert graph.is_langgraph_native is True
+    assert graph._langgraph_app is not None
+
+    res = graph.execute("Vehicle V-103 breakdown on Highway 48", session_id="lg_test_sess")
+    assert res.session_id == "lg_test_sess"
+    assert res.intent == AgentIntent.VEHICLE_BREAKDOWN
+    assert len(res.execution_trace) == 4
+    nodes = [s.node for s in res.execution_trace]
+    assert nodes == ["input_parser", "router_intent_classifier", "handler_vehicle_breakdown", "action_synthesizer"]
+    assert all(s.latency_ms >= 0 for s in res.execution_trace)

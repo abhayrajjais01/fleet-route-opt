@@ -6,8 +6,9 @@ Track B (Abhayraj Jaiswal) Week 5 Deliverable
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.core.security import get_current_user
-from app.models.user import User
+from app.core.logging import logger
+from app.core.security import require_roles
+from app.models.user import User, UserRole
 from app.schemas.copilot import (
     AgentIntent,
     CopilotHealthResponse,
@@ -97,7 +98,7 @@ INTENT_CATALOG: List[IntentCatalogItem] = [
 )
 def execute_query(
     payload: CopilotQueryRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FLEET_MANAGER, UserRole.DISPATCHER])),
 ) -> CopilotQueryResponse:
     if not payload.query or not payload.query.strip():
         raise HTTPException(
@@ -135,10 +136,22 @@ def get_intent_catalog() -> List[IntentCatalogItem]:
 )
 def get_copilot_health() -> CopilotHealthResponse:
     graph = get_copilot_graph()
+
+    rag_ready = False
+    try:
+        from app.services.rag.knowledge_base import get_knowledge_base
+        kb = get_knowledge_base()
+        rag_ready = bool(kb and len(kb.chunks) > 0)
+    except Exception as exc:
+        logger.warning(f"RAG knowledge base unavailable during health check: {exc}")
+        rag_ready = False
+
+    health_status = "healthy" if rag_ready else "degraded"
+
     return CopilotHealthResponse(
-        status="healthy",
+        status=health_status,
         engine="LangGraph StateGraph" if graph.is_langgraph_native else "Deterministic StateGraph Fallback",
         langgraph_available=graph.is_langgraph_native,
         supported_intents_count=len(INTENT_CATALOG),
-        rag_corpus_indexed=True,
+        rag_corpus_indexed=rag_ready,
     )
