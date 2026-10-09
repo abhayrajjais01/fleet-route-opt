@@ -205,7 +205,7 @@ Manthan owns the **Backend Scaffolding, Fleet Database Layer, VRPTW Mathematical
 
 ### Upcoming in Month 2 (Optimization & Multi-Agent AI):
 - **Week 5 (Oct 5 – Oct 9, 2026)**:
-  - **Manthan (Track A)**: Haversine Distance Matrix & Leaflet Map Shell.
+  - **Manthan (Track A)**: Haversine Distance Matrix & Leaflet Map Shell. *(Delivered: `/api/v1/routes/distance-matrix` with detour-corrected road km & drive times, LRU cache, Leaflet Network Map with custom SVG hub/stop markers.)*
   - **Abhayraj (Track B)**: LangGraph Multi-Agent StateGraph Architecture & Router Agent (Intent Classifier).
 - **Week 6 (Oct 12 – Oct 16, 2026)**:
   - **Manthan (Track A)**: Deterministic VRPTW Solver Core with Clarke-Wright Savings algorithm.
