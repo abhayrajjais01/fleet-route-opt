@@ -281,3 +281,96 @@ def test_stategraph_native_compiled_execution(graph: CopilotStateGraph):
     nodes = [s.node for s in res.execution_trace]
     assert nodes == ["input_parser", "router_intent_classifier", "handler_vehicle_breakdown", "action_synthesizer"]
     assert all(s.latency_ms >= 0 for s in res.execution_trace)
+def test_copilot_query_unassigned_shipments_with_context(graph: CopilotStateGraph):
+    """Verifies that queries regarding unassigned parcels/shipments dynamically report pending shipments."""
+    context = {
+        "shipments": [
+            {
+                "tracking_number": "SHP-001-MUM",
+                "customer_name": "Reliance Industries",
+                "status": "IN_TRANSIT",
+            },
+            {
+                "tracking_number": "SHP-003-NV",
+                "customer_name": "Flipkart Supply Chain",
+                "destination_address": "Belapur, Navi Mumbai",
+                "weight_kg": 920,
+                "priority": "EXPRESS",
+                "status": "UNASSIGNED",
+                "time_window_start": "08:00",
+                "time_window_end": "11:00",
+            },
+        ]
+    }
+    resp = graph.execute("Which shipments are unassigned and need routing?", context=context)
+    assert resp.intent == AgentIntent.GENERAL_INQUIRY
+    assert resp.confidence >= 0.8
+    assert "SHP-003-NV" in resp.response
+    assert "Flipkart Supply Chain" in resp.response
+    assert "Dispatch Planner" in resp.suggested_action
+
+
+def test_copilot_query_zero_unassigned_shipments(graph: CopilotStateGraph):
+    """Verifies that copilot accurately reports zero pending shipments when all are assigned."""
+    context = {
+        "shipments": [
+            {"tracking_number": "SHP-001-MUM", "status": "ASSIGNED"},
+            {"tracking_number": "SHP-002-MUM", "status": "IN_TRANSIT"},
+        ]
+    }
+    resp = graph.execute("Which shipments are unassigned and need routing?", context=context)
+    assert resp.intent == AgentIntent.GENERAL_INQUIRY
+    assert "Zero unassigned parcels" in resp.response
+
+
+def test_copilot_query_todays_kpis(graph: CopilotStateGraph):
+    """Verifies that copilot returns executive operational KPI telemetry."""
+    context = {"vehicles_count": 4, "drivers_count": 4, "unassigned_shipments_count": 1}
+    resp = graph.execute("Give me a performance summary for today", context=context)
+    assert resp.intent == AgentIntent.GENERAL_INQUIRY
+    assert "OTIF" in resp.response
+    assert "Active Vehicles: 4" in resp.response
+def test_copilot_query_pending_routing_phrase(graph: CopilotStateGraph):
+    """Verifies that asking specifically for 'pending routing' returns the shipment report, not generic help."""
+    context = {
+        "shipments": [
+            {
+                "tracking_number": "SHP-003-NV",
+                "customer_name": "Flipkart Supply Chain",
+                "destination_address": "Belapur, Navi Mumbai",
+                "weight_kg": 920,
+                "priority": "EXPRESS",
+                "status": "UNASSIGNED",
+                "time_window_start": "08:00",
+                "time_window_end": "11:00",
+            },
+        ]
+    }
+    resp = graph.execute("What shipments are pending routing?", context=context)
+    assert resp.intent == AgentIntent.GENERAL_INQUIRY
+    assert "Unassigned Shipments Report" in resp.response
+    assert "SHP-003-NV" in resp.response
+    assert "Dispatch Planner" in resp.suggested_action
+
+
+def test_copilot_kpi_dynamic_operational_state(graph: CopilotStateGraph):
+    """Verifies that daily KPI summaries dynamically derive values from the supplied client state."""
+    context = {
+        "shipments": [
+            {"status": "IN_TRANSIT"},
+            {"status": "IN_TRANSIT"},
+            {"status": "IN_TRANSIT"},
+            {"status": "ASSIGNED"},
+            {"status": "UNASSIGNED"},
+        ],
+        "active_vehicles_count": 6,
+        "on_duty_drivers_count": 5,
+        "otif_rate": "97.8%",
+    }
+    resp = graph.execute("Give me today's performance metrics and KPIs", context=context)
+    assert resp.intent == AgentIntent.GENERAL_INQUIRY
+    assert "Active Vehicles: 6" in resp.response
+    assert "In-Transit Shipments: 3" in resp.response
+    assert "Unassigned Consignments: 1" in resp.response
+    assert "On-Duty Drivers: 5" in resp.response
+    assert "97.8%" in resp.response

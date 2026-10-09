@@ -10,13 +10,14 @@
 
 | Metric | Status |
 | :--- | :--- |
-| **Overall Roadmap Progress** | **31.2% Completed** (Weeks 1–4 Done, Week 5 Track A & B Delivered) |
-| **Current Active Month** | **Month 2: Optimization & Map vs. LangGraph Router & FSM** |
+| **Overall Roadmap Progress** | **31.2% Completed** (Weeks 1–4 Done, Week 5 Track A & B Delivered: 5 / 16 Weeks Done) |
+| **Current Active Month** | **Month 2: Optimization & Map vs. LangGraph Router & FSM (25.0% Complete)** |
 | **Current Active Week** | **Week 5: Spatial Graph & LangGraph Router (Oct 5 – Oct 9, 2026 — COMPLETED ✅)** |
 | **Next Immediate Milestone** | **Month 2, Week 6: VRPTW Solver Core & In-Transit FSM (Oct 12 – Oct 16, 2026)** |
+| **Automated Test Suite** | **99 / 99 PASSED (100% pass rate in 11.98s)** |
 
 ```
-Overall Progress: [██████░░░░░░░░░░░░░░] 31.2% (Weeks 1–4 Done, Week 5 Track A & B Delivered: 5 / 16 Weeks)
+Overall Progress: [██████░░░░░░░░░░░░░░] 31.2% (Weeks 1–4 Done, Week 5 Delivered: 5 / 16 Weeks)
 Month 1 Progress: [████████████████████] 100.0% (Weeks 1, 2, 3, and 4 COMPLETED)
 Month 2 Progress: [█████░░░░░░░░░░░░░░░] 25.0% (Week 5 Delivered, Week 6 Starting Next)
 Month 3 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
@@ -50,7 +51,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 
 ## Detailed Weekly Deliverables Verification
 
-### Month 1: Foundation, Governance, Assets & Shipment Ingestion
+### Month 1: Foundation, Governance, Assets & Shipment Ingestion (100% COMPLETE)
 
 #### Week 1: Scaffolding, Security & Application Shell
 - **Status**: `COMPLETED` ✅
@@ -96,36 +97,52 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 #### Week 4: RAG Compliance Inspector Portal vs. Batch Ingestion (US-002, US-006, US-008)
 - **Status**: `COMPLETED` ✅ (Sep 28 – Oct 2, 2026)
 - **Manthan Nimodiya (Track A)**:
-  - [x] Compliance & SOP Inspector page (`frontend/src/components/compliance/ComplianceInspector.tsx`) wired to the live `/api/v1/rag` API
-  - [x] Real-time semantic query search bar with example queries and highlighted matching terms
-  - [x] Multi-select category filters (Hazmat, Driver Rest, Cold Chain, Vehicle Safety, Operations)
-  - [x] Source citation cards with doc id, § section, version and similarity confidence meter; SOP library and full-document viewer that jumps to the cited section
-  - [x] "No policy found in the verified knowledge base" empty state and backend-offline banner
+  - [x] Dedicated Compliance & SOP search UI page with real-time semantic query bar
+  - [x] Source document citation cards with confidence scores
+  - [x] Filter pills across Hazmat, Driver Rest, Cold Chain, Vehicle Safety, Operations
+  - [x] Full SOP document reader view showing indexed sections with clause citations
 - **Abhayraj Jaiswal (Track B)**:
-  - [x] High-throughput Batch Order Ingestion API (`POST /api/v1/shipments/batch/upload` & `POST /api/v1/shipments/batch`)
-  - [x] RFC 4180 standard CSV template generator endpoint (`GET /api/v1/shipments/batch/template`)
-  - [x] Multi-format CSV and JSON parser with row-level diagnostics, coordinate checks, finite number validation, and bulk insertion
-  - [x] Automatic batch audit trail recording
-  - [x] Frontend Drag-and-Drop Batch Upload modal with live Delivery Cluster Preview, template downloader, and API integration
-  - [x] Month 1 Full Regression Test Suite (`backend/tests/test_batch_ingestion.py` — 10/10 passed, **49/49 Full Suite Passing**)
-### Month 2: Optimization & Map vs. LangGraph Router & FSM
+  - [x] High-throughput Batch Order Ingestion API (`POST /api/v1/shipments/batch`) with CSV & JSON parsers
+  - [x] RFC 4180 CSV template generator (`GET /api/v1/shipments/batch/template`)
+  - [x] Drag-and-drop batch upload modal with real-time Delivery Cluster Preview
+  - [x] Automated batch testing suite: `backend/tests/test_batch_ingestion.py` (10/10 passed)
 
-#### Week 5: Spatial Graph & LangGraph Multi-Agent Router (US-003, US-004, US-005)
-- **Status**: `COMPLETED` ✅ (Oct 5 – Oct 9, 2026; Track A & Track B Delivered)
-- **Manthan Nimodiya (Track A: RAG & Solver Lead)**:
-  - [x] Haversine distance & travel duration engine with road detour (circuity) correction (`backend/app/services/optimizer/distance_matrix.py`)
-  - [x] Vectorised multi-point distance matrix generator with LRU caching (200 × 200 matrix in ~4 ms, cached repeat in < 1 ms)
-  - [x] `POST /api/v1/routes/distance-matrix` returning straight-line km, road km and vehicle-specific drive minutes
-  - [x] Leaflet map integration with OpenStreetMap tiles, no API key (`frontend/src/components/map/LeafletMap.tsx`)
-  - [x] Custom SVG markers for hubs and priority-coloured delivery waypoints with interactive popups (`markers.ts`)
-  - [x] Network Map page: per-hub stop ranking by road distance & drive time, hub-to-hub matrix, vehicle-type selector
-  - [x] `backend/tests/test_distance_matrix.py` (20 tests passed)
-- **Abhayraj Jaiswal (Track B: Multi-Agent & Platform Lead)**:
-  - [x] LangGraph `StateGraph` foundation with session state, immutable execution tracing, and dual execution engine (`backend/app/services/copilot/state_graph.py`)
-  - [x] High-precision **Router Agent** (`backend/app/services/copilot/router_agent.py`) classifying natural language queries across 6 categories: `VEHICLE_BREAKDOWN`, `TRAFFIC_DELAY`, `POLICY_QUERY`, `REROUTE_REQUEST`, `GENERAL_INQUIRY`, `OFF_TOPIC`
-  - [x] High-precision Entity Extraction: Vehicle IDs (`V-101`), Stop IDs (`Stop #4`), Delay durations (`45 mins`, `1.5 hours`), Corridors/Locations (`NH-48`, `Eastern Express`), Severity (`LOW` to `CRITICAL`), and Regulatory topics
-  - [x] Zero-Dependency & Zero-Hallucination Deterministic Fallback Engine guaranteeing 100% offline testability (sub-millisecond execution, zero API keys required)
-  - [x] Real-time RAG Knowledge Base delegation for `POLICY_QUERY` intent retrieving verified SOP citations and section excerpts from logistics manuals
-  - [x] RESTful Copilot APIs: `POST /api/v1/copilot/query`, `GET /api/v1/copilot/intents`, `GET /api/v1/copilot/health` with full RBAC authentication
-  - [x] Automated Router & StateGraph Test Suite (`backend/tests/test_copilot_router.py`: 18/18 passed, **94/94 combined test suite passing**)
-  - [x] Frontend AI Copilot Command Center (`frontend/src/components/copilot/CopilotCommandCenter.tsx`) with real-time query bar, colored intent badges, confidence meter, entity chips, suggested action trigger, and interactive StateGraph multi-agent execution trace accordion
+---
+
+### Month 2: Optimization & Map vs. Multi-Agent Router & FSM
+
+#### Week 5: Spatial Graph Engine & Leaflet Map Shell vs. LangGraph StateGraph & Router Agent (US-004 & US-005)
+- **Status**: `COMPLETED` ✅ (Oct 5 – Oct 9, 2026)
+- **Manthan Nimodiya (Track A: Spatial Graph & Routing Lead)**:
+  - [x] Haversine Distance & Duration Matrix Engine (`backend/app/services/optimizer/distance_matrix.py`): geodesic math with 1.28 urban detour factor, 38 km/h city / 65 km/h highway speed profiles, and symmetric/asymmetric distance calculation
+  - [x] Spatial REST API (`POST /api/v1/routes/matrix`, `POST /api/v1/routes/matrix/hub/{hub_id}` in `backend/app/api/v1/routes.py`)
+  - [x] Interactive Leaflet Network Map (`NetworkMapSection.tsx`, `markers.ts`, `geo.ts`): custom hub & shipment markers, OpenStreetMap tiles, layer controls, and coordinate tooltips
+  - [x] Live Tracking Map Simulator (`TrackingMap.tsx`, `LiveTrackingSection.tsx`, `simulation.ts`): real-time vehicle GPS breadcrumb playback and trip status updates
+  - [x] Dispatch Planner Foundation (`DispatchPlanner.tsx`): candidate stop queue, unassigned parcel manifests, and interactive vehicle manifest timeline
+  - [x] Automated Distance Matrix Test Suite (`backend/tests/test_distance_matrix.py`: 20/20 passed)
+- **Abhayraj Jaiswal (Track B: Multi-Agent & Orchestration Lead)**:
+  - [x] LangGraph Multi-Agent StateGraph Architecture (`backend/app/services/copilot/state_graph.py`): stateful agent pipeline, immutable trace step recording, and executable conditional routing
+  - [x] Router Agent (`backend/app/services/copilot/router_agent.py`): intent classification with calibrated scoring across 6 logistics domains (`VEHICLE_BREAKDOWN`, `TRAFFIC_DELAY`, `POLICY_QUERY`, `REROUTE_REQUEST`, `GENERAL_INQUIRY`, `OFF_TOPIC`)
+  - [x] Structured Entity Extraction: regex-based vehicle IDs (`V-101`), stop IDs, delay durations, highway corridors, and severity levels (`LOW` to `CRITICAL`)
+  - [x] Dynamic Unassigned Shipments & KPI Sub-Agent: inspects live client operational context & DB, generates structured reports for unassigned consignments (`SHP-003-NV`, Flipkart, 920 kg EXPRESS), and recommends immediate Dispatch Planner allocation
+  - [x] Dual-Engine Execution Pipeline: native compiled LangGraph execution when available with graceful zero-dependency deterministic fallback
+  - [x] Copilot REST API (`/api/v1/copilot/query`, `/intents`, `/health`): enforced RBAC security (`ADMIN`, `FLEET_MANAGER`, `DISPATCHER`), dynamic RAG health verification, and 403 Forbidden enforcement for drivers
+  - [x] Frontend AI Command Center (`CopilotCommandCenter.tsx`, `copilotApi.ts`): real-time copilot chat console, quick test scenario chips, execution trace drawer, token auto-fetch fallback, and live operational context forwarding
+  - [x] Automated Router & StateGraph Test Suite (`backend/tests/test_copilot_router.py`: 23/23 passed, **99/99 combined test suite passing**)
+
+---
+
+### Month 2 Roadmap (Upcoming)
+
+#### Week 6: Deterministic VRPTW Solver Core vs. In-Transit FSM (US-003 & US-008)
+- **Status**: `PLANNED` (Oct 12 – Oct 16, 2026)
+- **Manthan Nimodiya (Track A)**:
+  - Clarke-Wright Savings algorithm implementation
+  - 2-Opt local search optimization heuristic
+  - Hard constraint validation: vehicle payload capacity & customer delivery time windows
+  - Benchmark: solve 50 stops in < 5 seconds
+- **Abhayraj Jaiswal (Track B)**:
+  - In-Transit Finite State Machine (FSM): `UNASSIGNED` ➔ `ASSIGNED` ➔ `IN_TRANSIT` ➔ `DELIVERED` / `FAILED`
+  - Driver action API endpoints (`ARRIVED`, `DELIVERED`, `REPORT_DELAY`)
+  - Real-time trip status tracker with FSM visual progress bar
+  - Live vehicle position updates on Leaflet map

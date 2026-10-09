@@ -146,10 +146,32 @@ export const CopilotCommandCenter: React.FC<CopilotCommandCenterProps> = ({
     setLoading(true)
 
     try {
+      const operationalContext = {
+        shipments: shipments.map((s) => ({
+          id: s.id,
+          tracking_number: s.tracking_number,
+          customer_name: s.customer_name,
+          destination_address: s.destination_address,
+          weight_kg: s.weight_kg,
+          priority: s.priority,
+          status: s.status,
+          time_window_start: s.time_window_start,
+          time_window_end: s.time_window_end,
+        })),
+        total_vehicles_count: vehicles.length,
+        active_vehicles_count: vehicles.filter((v) => v.current_status !== 'AVAILABLE' && v.current_status !== 'DECOMMISSIONED').length,
+        total_drivers_count: drivers.length,
+        on_duty_drivers_count: drivers.filter((d) => d.status === 'ON_DUTY' || d.status === 'ON_TRIP').length,
+        in_transit_shipments_count: shipments.filter((s) => s.status === 'IN_TRANSIT').length,
+        unassigned_shipments_count: shipments.filter((s) => s.status === 'UNASSIGNED').length,
+        otif_rate: '99.2%',
+        active_role: activeRole,
+      }
+
       const resp: CopilotQueryResponse = await copilotApi.query(
         text,
         undefined,
-        undefined,
+        operationalContext,
         authToken || undefined
       )
       const assistantMsgId = (Date.now() + 1).toString()
