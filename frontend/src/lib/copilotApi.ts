@@ -1,7 +1,7 @@
 // ─── COPILOT MULTI-AGENT STATEGRAPH CONTRACT (mirrors backend/app/schemas/copilot.py) ──────
 // Track B: Abhayraj Jaiswal — US-005 Week 5 Deliverable
 
-import { apiRequest } from './api'
+import { apiRequest, fetchAuthToken } from './api'
 
 export type AgentIntent =
   | 'TRAFFIC_DELAY'
@@ -63,10 +63,14 @@ export interface CopilotHealthResponse {
 }
 
 export const copilotApi = {
-  query: (query: string, sessionId?: string, context?: Record<string, any>, token?: string) => {
+  query: async (query: string, sessionId?: string, context?: Record<string, any>, token?: string) => {
+    let authToken = token
+    if (!authToken) {
+      authToken = (await fetchAuthToken('ADMIN')) || undefined
+    }
     const headers: Record<string, string> = {}
-    if (token) {
-      headers['Authorization'] = Bearer 
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`
     }
     return apiRequest<CopilotQueryResponse>('/copilot/query', {
       method: 'POST',

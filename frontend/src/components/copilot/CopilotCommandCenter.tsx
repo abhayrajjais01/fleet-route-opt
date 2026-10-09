@@ -168,20 +168,18 @@ export const CopilotCommandCenter: React.FC<CopilotCommandCenterProps> = ({
           latencyMs: resp.latency_ms,
         },
       ])
-    } catch {
-      // Local fallback in case backend is completely offline
+    } catch (err: any) {
+      const errMsg = err?.message || 'Could not reach backend API server.'
       const assistantMsgId = (Date.now() + 1).toString()
       setMessages((prev) => [
         ...prev,
         {
           id: assistantMsgId,
           sender: 'assistant',
-          content:
-            "⚡ Local Fallback: Could not reach backend API server. " +
-            "Please ensure the FastAPI backend is running on :8000.",
+          content: `⚠️ Error executing query: ${errMsg}`,
           timestamp: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
           intent: 'OFF_TOPIC',
-          confidence: 0.5,
+          confidence: 0.0,
         },
       ])
     } finally {
