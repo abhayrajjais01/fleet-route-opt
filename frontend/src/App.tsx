@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { API_BASE, checkApiHealth } from './lib/api'
 import ComplianceInspector from './components/compliance/ComplianceInspector'
+import NetworkMapSection from './components/map/NetworkMapSection'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 type UserRole = 'ADMIN' | 'FLEET_MANAGER' | 'DISPATCHER' | 'DRIVER'
@@ -11,14 +12,14 @@ type LicenseType = 'CLASS_A' | 'CLASS_B' | 'COMMERCIAL'
 type ShipmentStatus = 'UNASSIGNED' | 'CLUSTERED' | 'ASSIGNED' | 'IN_TRANSIT' | 'DELIVERED' | 'FAILED'
 type ShipmentPriority = 'LOW' | 'STANDARD' | 'HIGH' | 'EXPRESS'
 type AuditAction = 'ROUTE_MODIFIED' | 'STATUS_CHANGE' | 'COPILOT_OVERRIDE' | 'DISPATCH_APPROVED' | 'ASSET_CREATED' | 'ASSET_DELETED'
-type AdminSection = 'dashboard' | 'fleet' | 'shipments' | 'workflow' | 'tracking' | 'compliance' | 'audit' | 'users'
+type AdminSection = 'dashboard' | 'fleet' | 'shipments' | 'workflow' | 'map' | 'tracking' | 'compliance' | 'audit' | 'users'
 type NodeStatus = 'ok' | 'warning' | 'error' | 'pending'
 type WorkflowPhase = 'analyzing' | 'canvas' | 'route'
 
 interface Vehicle { id: number; name: string; plate_number: string; vehicle_type: VehicleType; max_payload_kg: number; max_volume_m3: number; fuel_efficiency_kpl: number; current_status: VehicleStatus; assigned_hub_id: number; fuel_pct: number }
 interface Driver { id: number; full_name: string; license_number: string; license_type: LicenseType; phone_number: string; status: DriverStatus; max_driving_hours_per_day: number; assigned_hub_id: number; current_vehicle_id: number | null; rating: number }
 interface Hub { id: number; name: string; code: string; address: string; latitude: number; longitude: number; contact_phone: string; operating_hours: string }
-interface Shipment { id: number; tracking_number: string; customer_name: string; destination_address: string; weight_kg: number; volume_m3: number; time_window_start: string; time_window_end: string; priority: ShipmentPriority; status: ShipmentStatus; hub_id: number }
+interface Shipment { id: number; tracking_number: string; customer_name: string; destination_address: string; weight_kg: number; volume_m3: number; time_window_start: string; time_window_end: string; priority: ShipmentPriority; status: ShipmentStatus; hub_id: number; latitude?: number; longitude?: number }
 interface User { id: number; email: string; full_name: string; role: UserRole; is_active: boolean }
 interface AuditEntry { id: number; timestamp: string; actor_name: string; action_type: AuditAction; entity_type: string; entity_id: number; details: string }
 interface CopilotMsg { id: string; sender: 'user' | 'assistant'; content: string; timestamp: string; trace?: string; proposal?: { title: string; description: string; status: 'PROPOSED' | 'APPROVED' | 'REJECTED' } }
@@ -45,11 +46,11 @@ const INIT_DRIVERS: Driver[] = [
   { id: 5, full_name: 'Priya Mehta', license_number: 'GJ01-2022-12345', license_type: 'CLASS_B', phone_number: '+91-97200-55678', status: 'ON_DUTY', max_driving_hours_per_day: 8, assigned_hub_id: 2, current_vehicle_id: 3, rating: 4.9 },
 ]
 const INIT_SHIPMENTS: Shipment[] = [
-  { id: 1, tracking_number: 'SHP-001-MUM', customer_name: 'Reliance Industries', destination_address: 'BKC, Mumbai', weight_kg: 450, volume_m3: 3.2, time_window_start: '09:00', time_window_end: '12:00', priority: 'HIGH', status: 'IN_TRANSIT', hub_id: 1 },
-  { id: 2, tracking_number: 'SHP-002-MUM', customer_name: 'TCS Logistics', destination_address: 'Powai, Mumbai', weight_kg: 180, volume_m3: 1.5, time_window_start: '10:00', time_window_end: '14:00', priority: 'STANDARD', status: 'ASSIGNED', hub_id: 1 },
-  { id: 3, tracking_number: 'SHP-003-NV', customer_name: 'Flipkart Supply Chain', destination_address: 'Belapur, Navi Mumbai', weight_kg: 920, volume_m3: 7.8, time_window_start: '08:00', time_window_end: '11:00', priority: 'EXPRESS', status: 'UNASSIGNED', hub_id: 2 },
-  { id: 4, tracking_number: 'SHP-004-PNQ', customer_name: 'Amazon India', destination_address: 'Kothrud, Pune', weight_kg: 640, volume_m3: 5.1, time_window_start: '11:00', time_window_end: '15:00', priority: 'STANDARD', status: 'DELIVERED', hub_id: 3 },
-  { id: 5, tracking_number: 'SHP-005-MUM', customer_name: 'HDFC Bank', destination_address: 'Nariman Point, Mumbai', weight_kg: 120, volume_m3: 0.8, time_window_start: '09:30', time_window_end: '11:00', priority: 'EXPRESS', status: 'IN_TRANSIT', hub_id: 1 },
+  { id: 1, tracking_number: 'SHP-001-MUM', customer_name: 'Reliance Industries', destination_address: 'BKC, Mumbai', weight_kg: 450, volume_m3: 3.2, time_window_start: '09:00', time_window_end: '12:00', priority: 'HIGH', status: 'IN_TRANSIT', hub_id: 1, latitude: 19.066, longitude: 72.865 },
+  { id: 2, tracking_number: 'SHP-002-MUM', customer_name: 'TCS Logistics', destination_address: 'Powai, Mumbai', weight_kg: 180, volume_m3: 1.5, time_window_start: '10:00', time_window_end: '14:00', priority: 'STANDARD', status: 'ASSIGNED', hub_id: 1, latitude: 19.1176, longitude: 72.906 },
+  { id: 3, tracking_number: 'SHP-003-NV', customer_name: 'Flipkart Supply Chain', destination_address: 'Belapur, Navi Mumbai', weight_kg: 920, volume_m3: 7.8, time_window_start: '08:00', time_window_end: '11:00', priority: 'EXPRESS', status: 'UNASSIGNED', hub_id: 2, latitude: 19.0235, longitude: 73.04 },
+  { id: 4, tracking_number: 'SHP-004-PNQ', customer_name: 'Amazon India', destination_address: 'Kothrud, Pune', weight_kg: 640, volume_m3: 5.1, time_window_start: '11:00', time_window_end: '15:00', priority: 'STANDARD', status: 'DELIVERED', hub_id: 3, latitude: 18.5074, longitude: 73.8077 },
+  { id: 5, tracking_number: 'SHP-005-MUM', customer_name: 'HDFC Bank', destination_address: 'Nariman Point, Mumbai', weight_kg: 120, volume_m3: 0.8, time_window_start: '09:30', time_window_end: '11:00', priority: 'EXPRESS', status: 'IN_TRANSIT', hub_id: 1, latitude: 18.9256, longitude: 72.8242 },
 ]
 const INIT_USERS: User[] = [
   { id: 1, email: 'admin@fleetops.in', full_name: 'Abhayraj Jaiswal', role: 'ADMIN', is_active: true },
@@ -1063,7 +1064,7 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
 
 // ─── SHIPMENTS SECTION ────────────────────────────────────────────────────────
 function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWorkflow, activeRole }: {
-  shipments: Shipment[]; setShipments: (s: Shipment[]) => void
+  shipments: Shipment[]; setShipments: React.Dispatch<React.SetStateAction<Shipment[]>>
   hubs: Hub[]; addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
   onTriggerWorkflow: (s: Shipment) => void
   activeRole?: UserRole
@@ -1814,6 +1815,7 @@ const ALL_NAV: { id: AdminSection; label: string; path: string; roles: UserRole[
   { id: 'dashboard', label: 'AI Command', path: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
   { id: 'shipments', label: 'Shipments', path: 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z', roles: ['ADMIN', 'DISPATCHER'] },
   { id: 'workflow', label: 'Workflow', path: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', roles: ['ADMIN', 'DISPATCHER'] },
+  { id: 'map', label: 'Network Map', path: 'M9 20l-5.447-2.724A1 1 0 0 1 3 16.382V5.618a1 1 0 0 1 1.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0 0 21 18.382V7.618a1 1 0 0 0-.553-.894L15 4m0 13V4m0 0L9 7', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
   { id: 'fleet', label: 'Fleet Assets', path: 'M1 3h15v13H1zM16 8h4l3 3v5h-7V8z', roles: ['ADMIN', 'FLEET_MANAGER'] },
   { id: 'tracking', label: 'Live Tracking', path: 'M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] },
   { id: 'compliance', label: 'Compliance', path: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
@@ -1965,6 +1967,7 @@ export default function App() {
               </div>
             )}
           {section === 'fleet' && <FleetSection vehicles={vehicles} setVehicles={setVehicles} drivers={drivers} setDrivers={setDrivers} hubs={hubs} setHubs={setHubs} addAudit={addAudit} />}
+          {section === 'map' && <NetworkMapSection hubs={hubs} shipments={shipments} />}
           {section === 'tracking' && <TrackingSection vehicles={vehicles} drivers={drivers} activeRole={activeRole} />}
           {section === 'compliance' && <ComplianceInspector />}
           {section === 'audit' && <AuditSection entries={audit} />}
