@@ -1,11 +1,7 @@
-// ─── DISPATCH PLANNER (replaces the Week 2 mock workflow canvas) ─────────────
-// Plans one shipment end to end with real, explainable checks instead of a scripted animation:
-//   1. origin hub      — road distance from every hub (distance-matrix API)
-//   2. vehicle         — best-fit by payload/volume, status and fuel
-//   3. driver          — on duty at the hub, enough driving hours left for the round trip
-//   4. schedule & SLA  — departure → ETA vs. the customer's delivery window
-//   5. policy checks   — each verdict cites the governing SOP clause from the RAG knowledge base
-// Approving dispatches the trip, which then appears in Live Tracking.
+// ─── DISPATCH PLANNER ─────────────────────────────────────────────────────────
+// Map-first planning for one shipment. A floating plan card shows the four decisions (origin hub, vehicle,
+// driver, departure) as rows you click to change, a short checklist whose rows expand into the governing SOP
+// clause from the RAG knowledge base, and a single Approve button. The system proposes; the dispatcher decides.
 import { useEffect, useMemo, useState } from 'react'
 import type { AuditEntry, Driver, Hub, Shipment, Vehicle } from '../../lib/types'
 import { clock, estimateLeg, legsAlong, toMinutes, type Leg } from '../../lib/geo'
@@ -17,13 +13,13 @@ import { PRIORITY_COLOR } from '../map/markers'
 type Verdict = 'pass' | 'warn' | 'fail'
 export interface DispatchDecision { shipmentId: number; vehicleId: number; driverId: number; departure: string }
 
-const VERDICT_STYLE: Record<Verdict, { icon: string; ring: string; text: string; bg: string }> = {
-  pass: { icon: '✓', ring: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
-  warn: { icon: '!', ring: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50' },
-  fail: { icon: '✕', ring: 'bg-red-500', text: 'text-red-700', bg: 'bg-red-50' },
+const TONE: Record<Verdict, { text: string; dot: string; soft: string }> = {
+  pass: { text: 'text-emerald-700', dot: 'bg-emerald-500', soft: 'bg-emerald-50' },
+  warn: { text: 'text-amber-700', dot: 'bg-amber-500', soft: 'bg-amber-50' },
+  fail: { text: 'text-red-700', dot: 'bg-red-500', soft: 'bg-red-50' },
 }
 const worst = (vs: Verdict[]): Verdict => (vs.includes('fail') ? 'fail' : vs.includes('warn') ? 'warn' : 'pass')
-const fmtDur = (min: number) => { const m = Math.round(min); return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min` : `${m} min` }
+const fmtDur = (min: number) => { const m = Math.round(min); return m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m} min` }
 
 const POLICY_QUERIES = {
   capacity: 'vehicle payload and volume capacity limits overloading',
@@ -33,6 +29,13 @@ const POLICY_QUERIES = {
 } as const
 type PolicyKey = keyof typeof POLICY_QUERIES
 
+const ICONS = {
+  hub: 'M3 21V9l9-6 9 6v12h-6v-7H9v7z',
+  vehicle: 'M3 7h11v9H3zM14 10h4l3 3v3h-7zM7 19.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM17 19.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z',
+  driver: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
+  clock: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
+}
+
 export default function DispatchPlanner({ shipments, hubs, vehicles, drivers, initialShipmentId, onDispatch, addAudit, onOpenTracking }: {
   shipments: Shipment[]; hubs: Hub[]; vehicles: Vehicle[]; drivers: Driver[]
   initialShipmentId: number | null
@@ -40,35 +43,45 @@ export default function DispatchPlanner({ shipments, hubs, vehicles, drivers, in
   addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
   onOpenTracking: () => void
 }) {
-  const queue = useMemo(() => [...shipments].sort((a, b) => Number(b.status === 'UNASSIGNED') - Number(a.status === 'UNASSIGNED')), [shipments])
-  const [shipmentId, setShipmentId] = useState<number | null>(initialShipmentId ?? queue.find(s => s.status === 'UNASSIGNED')?.id ?? queue[0]?.id ?? null)
+  const groups = useMemo(() => ([
+    { key: 'plan', title: 'To plan', items: shipments.filter(s => s.status === 'UNASSIGNED' || s.status === 'CLUSTERED') },
+    { key: 'live', title: 'Scheduled & on the road', items: shipments.filter(s => s.status === 'ASSIGNED' || s.status === 'IN_TRANSIT') },
+    { key: 'done', title: 'Completed', items: shipments.filter(s => s.status === 'DELIVERED' || s.status === 'FAILED') },
+  ]), [shipments])
+  const [shipmentId, setShipmentId] = useState<number | null>(initialShipmentId ?? groups[0].items[0]?.id ?? shipments[0]?.id ?? null)
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ plan: true, live: false, done: false })
   useEffect(() => { if (initialShipmentId) setShipmentId(initialShipmentId) }, [initialShipmentId])
   const shipment = shipments.find(s => s.id === shipmentId) ?? null
 
   return (
-    <div className="flex h-full overflow-hidden bg-slate-50">
-      <aside className="w-60 xl:w-72 flex-shrink-0 border-r border-slate-200 bg-white overflow-y-auto">
-        <div className="px-4 pt-4 pb-2">
-          <p className="text-[15px] font-bold text-slate-900">Dispatch Planner</p>
-          <p className="text-[11px] text-slate-500">Pick a shipment to plan its trip</p>
-        </div>
-        {queue.map(s => {
-          const on = s.id === shipmentId
-          return (
-            <button key={s.id} onClick={() => setShipmentId(s.id)} className={`w-full text-left px-4 py-2.5 border-l-[3px] transition-colors ${on ? 'bg-violet-50/70 border-violet-600' : 'border-transparent hover:bg-slate-50'}`}>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[11px] font-bold text-slate-800">{s.tracking_number}</span>
-                <span className="text-[9px] font-bold" style={{ color: PRIORITY_COLOR[s.priority] }}>{s.priority}</span>
-                <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded ${s.status === 'UNASSIGNED' ? 'bg-red-50 text-red-600' : s.status === 'DELIVERED' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{s.status}</span>
-              </div>
-              <p className="text-[11px] text-slate-500 truncate mt-0.5">{s.customer_name} · {s.weight_kg} kg · {s.time_window_start}–{s.time_window_end}</p>
+    <div className="flex h-full overflow-hidden">
+      <aside className="w-[280px] flex-shrink-0 border-r border-slate-200 bg-white overflow-y-auto p-3">
+        {groups.map(g => (
+          <div key={g.key} className="mb-2">
+            <button onClick={() => setOpenGroups(o => ({ ...o, [g.key]: !o[g.key] }))} className="w-full flex items-center gap-2 px-2 py-2 text-xs font-semibold text-slate-500 hover:text-slate-800">
+              <svg viewBox="0 0 24 24" className={`w-3.5 h-3.5 transition-transform ${openGroups[g.key] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 6l6 6-6 6" /></svg>
+              {g.title}<span className="ml-auto font-normal text-slate-400">{g.items.length}</span>
             </button>
-          )
-        })}
+            {openGroups[g.key] && g.items.map(s => {
+              const on = s.id === shipmentId
+              const urgent = s.priority === 'EXPRESS' || s.priority === 'HIGH'
+              return (
+                <button key={s.id} onClick={() => setShipmentId(s.id)} className={`w-full text-left rounded-xl px-3 py-2.5 transition-colors ${on ? 'bg-violet-50 ring-1 ring-violet-200' : 'hover:bg-slate-50'}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-slate-900 truncate flex-1">{s.customer_name}</span>
+                    {urgent && <span className="text-[11px] font-semibold" style={{ color: PRIORITY_COLOR[s.priority] }}>{s.priority.toLowerCase()}</span>}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">{s.weight_kg} kg · {s.time_window_start}–{s.time_window_end}</p>
+                </button>
+              )
+            })}
+            {openGroups[g.key] && g.items.length === 0 && <p className="px-3 pb-2 text-xs text-slate-400">Nothing here.</p>}
+          </div>
+        ))}
       </aside>
       {shipment
         ? <PlanView key={shipment.id} shipment={shipment} hubs={hubs} vehicles={vehicles} drivers={drivers} onDispatch={onDispatch} addAudit={addAudit} onOpenTracking={onOpenTracking} />
-        : <div className="flex-1 flex items-center justify-center text-sm text-slate-400">No shipments to plan yet. Add one in Shipments.</div>}
+        : <div className="flex-1 flex items-center justify-center text-sm text-slate-500">Add a shipment to start planning.</div>}
     </div>
   )
 }
@@ -81,74 +94,68 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
 }) {
   const hasCoords = Number.isFinite(shipment.latitude) && Number.isFinite(shipment.longitude)
   const hub = hubs.find(h => h.id === shipment.hub_id) ?? null
-  const alreadyDispatched = shipment.status !== 'UNASSIGNED' && shipment.status !== 'CLUSTERED'
+  const locked = shipment.status !== 'UNASSIGNED' && shipment.status !== 'CLUSTERED'
   const [departure, setDeparture] = useState(shipment.dispatch_time ?? '08:30')
-  const [vehicleOverride, setVehicleOverride] = useState<number | null>(null)
-  const [driverOverride, setDriverOverride] = useState<number | null>(null)
-  const [hubKm, setHubKm] = useState<Record<number, Leg>>({})
+  const [vehicleId, setVehicleId] = useState<number | null>(shipment.assigned_vehicle_id ?? null)
+  const [driverId, setDriverId] = useState<number | null>(null)
+  const [open, setOpen] = useState<null | 'hub' | 'vehicle' | 'driver'>(null)
+  const [openCheck, setOpenCheck] = useState<PolicyKey | null>(null)
+  const [hubLegs, setHubLegs] = useState<Record<number, Leg>>({})
   const [routeLegs, setRouteLegs] = useState<Leg[] | null>(null)
-  const [legSource, setLegSource] = useState<'api' | 'estimate'>('api')
   const [policies, setPolicies] = useState<Partial<Record<PolicyKey, PolicyCitation | null>>>({})
   const [justDispatched, setJustDispatched] = useState(false)
 
-  // 1. Origin hub distances.
   useEffect(() => {
     if (!hasCoords || !hubs.length) return
     const stop = { id: 'stop', latitude: shipment.latitude!, longitude: shipment.longitude! }
     routesApi.distanceMatrix([stop, ...hubs.map(h => ({ id: `hub-${h.id}`, latitude: h.latitude, longitude: h.longitude }))])
-      .then(m => setHubKm(Object.fromEntries(hubs.map((h, j) => [h.id, { km: m.distance_km[0][j + 1], minutes: m.duration_min[0][j + 1] }]))))
-      .catch(() => setHubKm(Object.fromEntries(hubs.map(h => [h.id, estimateLeg([shipment.latitude!, shipment.longitude!], [h.latitude, h.longitude])]))))
+      .then(m => setHubLegs(Object.fromEntries(hubs.map((h, j) => [h.id, { km: m.distance_km[0][j + 1], minutes: m.duration_min[0][j + 1] }]))))
+      .catch(() => setHubLegs(Object.fromEntries(hubs.map(h => [h.id, estimateLeg([shipment.latitude!, shipment.longitude!], [h.latitude, h.longitude])]))))
   }, [shipment.id, hasCoords, hubs])
 
-  // 2. Vehicle candidates (best-fit: eligible vehicle with the highest payload utilisation).
+  // Vehicles: best fit = eligible vehicle with the highest payload utilisation.
   const vehicleRows = vehicles.filter(v => v.assigned_hub_id === shipment.hub_id).map(v => {
     const wPct = (shipment.weight_kg / v.max_payload_kg) * 100
     const vPct = (shipment.volume_m3 / v.max_volume_m3) * 100
-    const reasons: string[] = []
     let verdict: Verdict = 'pass'
-    if (v.current_status !== 'AVAILABLE') { verdict = 'fail'; reasons.push(v.current_status === 'IN_TRANSIT' ? 'already on a trip' : v.current_status.toLowerCase()) }
-    if (wPct > 100) { verdict = 'fail'; reasons.push(`over payload by ${Math.round(shipment.weight_kg - v.max_payload_kg)} kg`) }
-    if (vPct > 100) { verdict = 'fail'; reasons.push('not enough cargo volume') }
-    if (verdict === 'pass' && v.fuel_pct < 25) { verdict = 'warn'; reasons.push(`low fuel ${v.fuel_pct}%`) }
-    return { v, wPct, vPct, verdict, reasons }
+    let note = `${Math.round(wPct)}% of payload`
+    if (v.id !== shipment.assigned_vehicle_id && v.current_status !== 'AVAILABLE') { verdict = 'fail'; note = v.current_status === 'IN_TRANSIT' ? 'Already on a trip' : 'In maintenance' }
+    else if (wPct > 100 || vPct > 100) { verdict = 'fail'; note = wPct > 100 ? `Over payload by ${Math.round(shipment.weight_kg - v.max_payload_kg)} kg` : 'Not enough cargo space' }
+    else if (v.fuel_pct < 25) { verdict = 'warn'; note = `${Math.round(wPct)}% of payload · fuel ${v.fuel_pct}%` }
+    return { v, wPct, vPct, verdict, note }
   })
-  const autoVehicle = [...vehicleRows].filter(r => r.verdict !== 'fail').sort((a, b) => b.wPct - a.wPct)[0]?.v ?? null
-  const vehicle = vehicles.find(v => v.id === vehicleOverride) ?? autoVehicle
+  const bestVehicle = [...vehicleRows].filter(r => r.verdict !== 'fail').sort((a, b) => b.wPct - a.wPct)[0]?.v ?? null
+  const vehicle = vehicles.find(v => v.id === vehicleId) ?? bestVehicle
 
-  // Round-trip legs for the chosen vehicle type.
   useEffect(() => {
     if (!hasCoords || !hub) return
     let cancelled = false
-    const pts: [number, number][] = [[hub.latitude, hub.longitude], [shipment.latitude!, shipment.longitude!], [hub.latitude, hub.longitude]]
-    legsAlong(pts, vehicle?.vehicle_type ?? 'VAN').then(r => { if (!cancelled) { setRouteLegs(r.legs); setLegSource(r.source) } })
+    legsAlong([[hub.latitude, hub.longitude], [shipment.latitude!, shipment.longitude!], [hub.latitude, hub.longitude]], vehicle?.vehicle_type ?? 'VAN')
+      .then(r => { if (!cancelled) setRouteLegs(r.legs) })
     return () => { cancelled = true }
   }, [shipment.id, hub?.id, vehicle?.vehicle_type, hasCoords])
-
   const tripMinutes = routeLegs ? routeLegs[0].minutes + routeLegs[1].minutes : 0
   const tripKm = routeLegs ? routeLegs[0].km + routeLegs[1].km : 0
 
-  // 3. Driver candidates.
   const driverRows = drivers.filter(d => d.assigned_hub_id === shipment.hub_id).map(d => {
-    const reasons: string[] = []
     let verdict: Verdict = 'pass'
-    if (d.status !== 'ON_DUTY') { verdict = 'fail'; reasons.push(d.status === 'ON_TRIP' ? 'on another trip' : d.status.replace('_', ' ').toLowerCase()) }
-    const limit = d.max_driving_hours_per_day * 60
-    if (verdict === 'pass' && tripMinutes > limit) { verdict = 'fail'; reasons.push(`trip needs ${fmtDur(tripMinutes)}, limit ${d.max_driving_hours_per_day} h`) }
-    else if (verdict === 'pass' && tripMinutes > limit * 0.8) { verdict = 'warn'; reasons.push('uses >80% of daily driving limit') }
-    return { d, verdict, reasons, limit }
+    let note = `★ ${d.rating} · ${d.max_driving_hours_per_day}h/day`
+    const assignedHere = vehicle && d.current_vehicle_id === vehicle.id
+    if (!assignedHere && d.status !== 'ON_DUTY') { verdict = 'fail'; note = d.status === 'ON_TRIP' ? 'On another trip' : d.status === 'RESTING' ? 'Resting' : 'Off duty' }
+    else if (tripMinutes > d.max_driving_hours_per_day * 60) { verdict = 'fail'; note = `Trip needs ${fmtDur(tripMinutes)}, limit ${d.max_driving_hours_per_day}h` }
+    else if (tripMinutes > d.max_driving_hours_per_day * 60 * 0.8) { verdict = 'warn'; note = 'Uses most of today\'s driving hours' }
+    return { d, verdict, note }
   })
-  const autoDriver = [...driverRows].filter(r => r.verdict !== 'fail').sort((a, b) => b.d.rating - a.d.rating)[0]?.d ?? null
-  const driver = drivers.find(d => d.id === driverOverride) ?? autoDriver
+  const bestDriver = [...driverRows].filter(r => r.verdict !== 'fail').sort((a, b) => b.d.rating - a.d.rating)[0]?.d ?? null
+  const driver = drivers.find(d => d.id === driverId) ?? (locked && vehicle ? drivers.find(d => d.current_vehicle_id === vehicle.id) : null) ?? bestDriver
 
-  // 4. Schedule.
   const departMin = toMinutes(departure)
   const eta = routeLegs ? departMin + routeLegs[0].minutes : NaN
-  const open = toMinutes(shipment.time_window_start), close = toMinutes(shipment.time_window_end)
-  const waitMin = Math.max(0, open - eta)
+  const open_ = toMinutes(shipment.time_window_start), close = toMinutes(shipment.time_window_end)
   const lateMin = Math.max(0, eta - close)
-  const returnMin = routeLegs ? Math.max(eta, open) + 10 + routeLegs[1].minutes : NaN
+  const waitMin = Math.max(0, open_ - eta)
+  const backMin = routeLegs ? Math.max(eta, open_) + 10 + routeLegs[1].minutes : NaN
 
-  // 5. Policy citations (one RAG lookup per rule).
   useEffect(() => {
     let cancelled = false
     ;(Object.keys(POLICY_QUERIES) as PolicyKey[]).forEach(k => {
@@ -162,236 +169,204 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
   const vRow = vehicleRows.find(r => r.v.id === vehicle?.id)
   const dRow = driverRows.find(r => r.d.id === driver?.id)
   const checks: { key: PolicyKey; title: string; verdict: Verdict; detail: string }[] = [
-    { key: 'capacity', title: 'Payload & volume', verdict: !vRow ? 'fail' : vRow.wPct > 100 || vRow.vPct > 100 ? 'fail' : vRow.wPct > 90 ? 'warn' : 'pass',
-      detail: vRow ? `${shipment.weight_kg} kg of ${vRow.v.max_payload_kg} kg (${Math.round(vRow.wPct)}%) · ${shipment.volume_m3} m³ of ${vRow.v.max_volume_m3} m³ (${Math.round(vRow.vPct)}%)` : 'No vehicle selected' },
-    { key: 'hours', title: 'Driver hours of service', verdict: !dRow ? 'fail' : dRow.verdict,
-      detail: dRow ? `Round trip ${fmtDur(tripMinutes)} of ${dRow.d.max_driving_hours_per_day} h daily limit` : 'No eligible driver on duty at this hub' },
-    { key: 'window', title: 'Delivery window', verdict: !routeLegs ? 'warn' : lateMin > 0 ? (shipment.priority === 'EXPRESS' || shipment.priority === 'HIGH' ? 'fail' : 'warn') : 'pass',
-      detail: routeLegs ? (lateMin > 0 ? `ETA ${clock(eta)} misses ${shipment.time_window_end} by ${fmtDur(lateMin)}; leave earlier` : `ETA ${clock(eta)} within ${shipment.time_window_start}–${shipment.time_window_end}${waitMin > 0 ? ` (waits ${fmtDur(waitMin)})` : ''}`) : 'Computing route…' },
-    { key: 'readiness', title: 'Vehicle readiness', verdict: !vehicle ? 'fail' : vehicle.current_status === 'MAINTENANCE' ? 'fail' : vehicle.fuel_pct < 25 ? 'warn' : 'pass',
-      detail: vehicle ? `${vehicle.current_status.replace('_', ' ')} · fuel ${vehicle.fuel_pct}% · est. ${(tripKm / vehicle.fuel_efficiency_kpl).toFixed(1)} L for this trip` : '—' },
+    { key: 'capacity', title: 'Fits the vehicle', verdict: !vRow ? 'fail' : vRow.wPct > 100 || vRow.vPct > 100 ? 'fail' : vRow.wPct > 90 ? 'warn' : 'pass',
+      detail: vRow ? `${shipment.weight_kg} of ${vRow.v.max_payload_kg} kg, ${shipment.volume_m3} of ${vRow.v.max_volume_m3} m³` : 'No vehicle selected' },
+    { key: 'hours', title: 'Driver has the hours', verdict: !dRow ? 'fail' : dRow.verdict,
+      detail: dRow ? `${fmtDur(tripMinutes)} round trip, limit ${dRow.d.max_driving_hours_per_day}h a day` : 'No driver on duty at this hub' },
+    { key: 'window', title: 'Arrives in the window', verdict: !routeLegs ? 'warn' : lateMin > 0 ? (shipment.priority === 'EXPRESS' || shipment.priority === 'HIGH' ? 'fail' : 'warn') : 'pass',
+      detail: routeLegs ? (lateMin > 0 ? `${fmtDur(lateMin)} late: leave earlier` : `Arrives ${clock(eta)}${waitMin > 0 ? `, waits ${fmtDur(waitMin)}` : ''}`) : 'Calculating route…' },
+    { key: 'readiness', title: 'Vehicle is ready', verdict: !vehicle ? 'fail' : vehicle.current_status === 'MAINTENANCE' ? 'fail' : vehicle.fuel_pct < 25 ? 'warn' : 'pass',
+      detail: vehicle ? `Fuel ${vehicle.fuel_pct}%, needs about ${(tripKm / vehicle.fuel_efficiency_kpl).toFixed(1)} L` : '—' },
   ]
   const overall = worst(checks.map(c => c.verdict))
-  const canDispatch = !alreadyDispatched && hasCoords && !!vehicle && !!driver && overall !== 'fail'
+  const canDispatch = !locked && hasCoords && !!vehicle && !!driver && overall !== 'fail'
 
   function approve() {
     if (!vehicle || !driver) return
     onDispatch({ shipmentId: shipment.id, vehicleId: vehicle.id, driverId: driver.id, departure })
     addAudit({ actor_name: 'Dispatcher', action_type: 'DISPATCH_APPROVED', entity_type: 'SHIPMENT', entity_id: shipment.id,
-      details: `${shipment.tracking_number} dispatched on ${vehicle.plate_number} with ${driver.full_name}, departs ${departure}, ETA ${clock(eta)} (${tripKm.toFixed(1)} km round trip)` })
+      details: `${shipment.tracking_number} dispatched on ${vehicle.plate_number} with ${driver.full_name}, departs ${departure}, ETA ${clock(eta)}` })
     setJustDispatched(true)
   }
 
   if (!hasCoords || !hub) {
-    return <div className="flex-1 flex items-center justify-center p-10 text-center"><div><p className="font-semibold text-slate-700">{shipment.tracking_number} has no {hub ? 'coordinates' : 'origin hub'}</p><p className="text-xs text-slate-400 mt-1">Add latitude/longitude in Shipments before planning.</p></div></div>
+    return <div className="flex-1 flex items-center justify-center p-10 text-center"><div><p className="font-medium text-slate-800">This shipment has no location yet</p><p className="text-sm text-slate-500 mt-1">Add its coordinates in Shipments to plan a route.</p></div></div>
   }
 
-  const nearestHub = Object.entries(hubKm).sort((a, b) => a[1].km - b[1].km)[0]
+  const closest = Object.entries(hubLegs).sort((a, b) => a[1].km - b[1].km)[0]
+  const closerHub = closest && Number(closest[0]) !== hub.id && hubLegs[hub.id] && hubLegs[hub.id].km - closest[1].km > 5 ? hubs.find(h => h.id === Number(closest[0])) : null
+  const toggle = (k: 'hub' | 'vehicle' | 'driver') => setOpen(o => (o === k ? null : k))
+
   return (
-    <div className="flex-1 flex min-w-0">
-      {/* ── Steps ── */}
-      <div className="flex-1 min-w-0 overflow-y-auto p-5 space-y-3">
-        <div className="rounded-2xl bg-white border border-slate-200 p-4 flex flex-wrap items-center gap-4">
-          <div className="flex-1 min-w-[220px]">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-sm font-bold text-slate-900">{shipment.tracking_number}</span>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${PRIORITY_COLOR[shipment.priority]}18`, color: PRIORITY_COLOR[shipment.priority] }}>{shipment.priority}</span>
+    <div className="flex-1 relative min-w-0">
+      <LeafletMap hubs={hubs} stops={[{ ...shipment, latitude: shipment.latitude!, longitude: shipment.longitude! }]} selectedHubId={hub.id}
+        metrics={routeLegs ? { [shipment.id]: { rank: 1, roadKm: routeLegs[0].km, minutes: routeLegs[0].minutes } } : {}} onSelectHub={() => {}}
+        fitPadding={{ topLeft: [60, 60], bottomRight: [460, 60] }} />
+
+      <div className="absolute top-4 right-4 bottom-4 w-[400px] rounded-2xl bg-white shadow-xl shadow-slate-900/15 ring-1 ring-slate-900/5 flex flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto">
+          {/* Shipment */}
+          <div className="px-5 pt-5 pb-4 border-b border-slate-100">
+            <div className="flex items-center gap-2 text-xs">
+              <span className="w-2 h-2 rounded-full" style={{ background: PRIORITY_COLOR[shipment.priority] }} />
+              <span className="font-medium" style={{ color: PRIORITY_COLOR[shipment.priority] }}>{shipment.priority.charAt(0) + shipment.priority.slice(1).toLowerCase()}</span>
+              <span className="text-slate-300">·</span>
+              <span className="font-mono text-slate-500">{shipment.tracking_number}</span>
             </div>
-            <p className="text-base font-semibold text-slate-900 mt-0.5">{shipment.customer_name}</p>
-            <p className="text-xs text-slate-500">{shipment.destination_address}</p>
+            <p className="text-lg font-semibold text-slate-900 mt-1.5">{shipment.customer_name}</p>
+            <p className="text-sm text-slate-500">{shipment.destination_address}</p>
+            <div className="flex gap-2 mt-3 text-xs">
+              {[`${shipment.weight_kg} kg`, `${shipment.volume_m3} m³`, `${shipment.time_window_start}–${shipment.time_window_end}`].map(t => <span key={t} className="px-2 py-1 rounded-md bg-slate-100 text-slate-700">{t}</span>)}
+            </div>
           </div>
-          <Fact label="Weight" value={`${shipment.weight_kg} kg`} />
-          <Fact label="Volume" value={`${shipment.volume_m3} m³`} />
-          <Fact label="Window" value={`${shipment.time_window_start}–${shipment.time_window_end}`} />
+
+          {/* Decisions */}
+          <div className="px-3 py-2">
+            <Decision icon={ICONS.hub} label="From" value={hub.name} sub={hubLegs[hub.id] ? `${hubLegs[hub.id].km.toFixed(1)} km · ${fmtDur(hubLegs[hub.id].minutes)} to the customer` : 'Measuring distance…'}
+              verdict={closerHub ? 'warn' : 'pass'} open={open === 'hub'} onToggle={() => toggle('hub')}>
+              {hubs.map(h => (
+                <Option key={h.id} selected={h.id === hub.id} disabled title={h.name} note={hubLegs[h.id] ? `${hubLegs[h.id].km.toFixed(1)} km · ${fmtDur(hubLegs[h.id].minutes)}` : '…'} />
+              ))}
+              {closerHub && <p className="px-3 pt-1 text-xs text-amber-700">{closerHub.name} is closer. Consider moving this order there.</p>}
+            </Decision>
+
+            <Decision icon={ICONS.vehicle} label="Vehicle" value={vehicle?.name ?? 'No vehicle free'} sub={vRow ? `${vRow.v.plate_number} · ${vRow.note}` : 'Every vehicle at this hub is busy'}
+              verdict={vRow?.verdict ?? 'fail'} open={open === 'vehicle'} onToggle={() => !locked && toggle('vehicle')} locked={locked}>
+              {vehicleRows.map(r => (
+                <Option key={r.v.id} selected={r.v.id === vehicle?.id} disabled={r.verdict === 'fail'} title={r.v.name} note={r.note} badge={r.v.id === bestVehicle?.id ? 'Best fit' : undefined}
+                  onClick={() => { setVehicleId(r.v.id); setOpen(null) }} meter={Math.min(100, r.wPct)} />
+              ))}
+            </Decision>
+
+            <Decision icon={ICONS.driver} label="Driver" value={driver?.full_name ?? 'No driver free'} sub={dRow?.note ?? 'Nobody on duty at this hub'}
+              verdict={dRow?.verdict ?? 'fail'} open={open === 'driver'} onToggle={() => !locked && toggle('driver')} locked={locked}>
+              {driverRows.map(r => (
+                <Option key={r.d.id} selected={r.d.id === driver?.id} disabled={r.verdict === 'fail'} title={r.d.full_name} note={r.note} badge={r.d.id === bestDriver?.id ? 'Suggested' : undefined}
+                  onClick={() => { setDriverId(r.d.id); setOpen(null) }} />
+              ))}
+            </Decision>
+
+            <div className="flex items-center gap-3 px-2 py-3">
+              <RowIcon d={ICONS.clock} />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-slate-500">Leaves at</p>
+                <p className="text-sm text-slate-500 mt-0.5">{routeLegs ? <>Arrives <span className={`font-medium ${lateMin > 0 ? 'text-red-600' : 'text-slate-900'}`}>{clock(eta)}</span> · back {clock(backMin)}</> : 'Calculating…'}</p>
+              </div>
+              <input type="time" value={departure} disabled={locked} onChange={e => setDeparture(e.target.value)}
+                className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-200 disabled:bg-slate-50" />
+            </div>
+            {routeLegs && <WindowStrip depart={departMin} eta={eta} open={open_} close={close} back={backMin} />}
+          </div>
+
+          {/* Checks */}
+          <div className="px-5 pt-3 pb-5 border-t border-slate-100">
+            <p className="text-xs font-medium text-slate-500 mb-2">Checks · {checks.filter(c => c.verdict === 'pass').length} of {checks.length} passed</p>
+            <div className="space-y-1">
+              {checks.map(c => {
+                const cite = policies[c.key]
+                const isOpen = openCheck === c.key
+                return (
+                  <div key={c.key} className={`rounded-lg ${isOpen ? 'bg-slate-50' : ''}`}>
+                    <button onClick={() => setOpenCheck(isOpen ? null : c.key)} className="w-full flex items-center gap-3 px-2 py-2 text-left rounded-lg hover:bg-slate-50">
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${TONE[c.verdict].soft}`}><span className={`w-2 h-2 rounded-full ${TONE[c.verdict].dot}`} /></span>
+                      <span className="text-sm text-slate-800 flex-1">{c.title}</span>
+                      <span className={`text-xs font-medium ${TONE[c.verdict].text}`}>{c.verdict === 'pass' ? 'OK' : c.verdict === 'warn' ? 'Review' : 'Blocked'}</span>
+                      <svg viewBox="0 0 24 24" className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                    </button>
+                    {isOpen && (
+                      <div className="px-10 pb-3 text-xs">
+                        <p className={TONE[c.verdict].text}>{c.detail}</p>
+                        {cite ? <p className="text-slate-500 mt-2 leading-relaxed"><span className="font-mono text-violet-700">{cite.doc_id} {cite.section}</span> · {cite.excerpt}</p>
+                          : <p className="text-slate-400 mt-2">{cite === null ? 'Policy text unavailable (knowledge base offline).' : 'Looking up the policy…'}</p>}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
 
-        <Step n={1} title="Origin hub" verdict={nearestHub && Number(nearestHub[0]) !== hub.id && hubKm[hub.id] && hubKm[hub.id].km - nearestHub[1].km > 5 ? 'warn' : 'pass'}
-          summary={hubKm[hub.id] ? `${hub.code} · ${hubKm[hub.id].km.toFixed(1)} km by road` : hub.code}>
-          <div className="grid gap-2">
-            {hubs.map(h => {
-              const leg = hubKm[h.id]
-              const isOrigin = h.id === hub.id
-              return (
-                <div key={h.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${isOrigin ? 'border-violet-300 bg-violet-50/60' : 'border-slate-200'}`}>
-                  <span className="font-mono text-[11px] font-bold text-slate-700 w-24">{h.code}</span>
-                  <span className="text-xs text-slate-600 flex-1 truncate">{h.name}</span>
-                  <span className="text-xs font-semibold text-slate-800 tabular-nums">{leg ? `${leg.km.toFixed(1)} km` : '…'}</span>
-                  <span className="text-[11px] text-slate-400 w-16 text-right tabular-nums">{leg ? fmtDur(leg.minutes) : ''}</span>
-                  {isOrigin && <span className="text-[9px] font-bold text-violet-700">ORIGIN</span>}
-                </div>
-              )
-            })}
-          </div>
-          {nearestHub && Number(nearestHub[0]) !== hub.id && <p className="text-[11px] text-amber-700 mt-2">{hubs.find(h => h.id === Number(nearestHub[0]))?.code} is closer to this customer; consider re-homing the order.</p>}
-        </Step>
-
-        <Step n={2} title="Vehicle" verdict={vRow ? vRow.verdict : 'fail'} summary={vehicle ? `${vehicle.name} · ${vehicle.plate_number}` : 'No eligible vehicle at this hub'}>
-          <div className="grid gap-2">
-            {vehicleRows.map(r => {
-              const on = r.v.id === vehicle?.id
-              return (
-                <button key={r.v.id} disabled={r.verdict === 'fail' || alreadyDispatched} onClick={() => setVehicleOverride(r.v.id)} className={`text-left px-3 py-2 rounded-lg border transition-colors ${on ? 'border-violet-400 bg-violet-50/60' : 'border-slate-200 hover:border-slate-300'} disabled:opacity-55 disabled:cursor-not-allowed`}>
-                  <div className="flex items-center gap-2">
-                    <span className={`w-4 h-4 rounded-full border-2 ${on ? 'border-violet-600 bg-violet-600' : 'border-slate-300'}`} />
-                    <span className="text-xs font-semibold text-slate-800">{r.v.name}</span>
-                    <span className="font-mono text-[10px] text-slate-400">{r.v.plate_number} · {r.v.vehicle_type.replace('_', ' ')}</span>
-                    {r.v.id === autoVehicle?.id && <span className="ml-auto text-[9px] font-bold text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded">BEST FIT</span>}
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 mt-2 pl-6">
-                    <Meter label="Payload" pct={r.wPct} />
-                    <Meter label="Volume" pct={r.vPct} />
-                  </div>
-                  {r.reasons.length > 0 && <p className={`text-[11px] mt-1 pl-6 ${VERDICT_STYLE[r.verdict].text}`}>{r.reasons.join(' · ')}</p>}
-                </button>
-              )
-            })}
-            {!vehicleRows.length && <p className="text-xs text-slate-400">No vehicles registered at {hub.code}.</p>}
-          </div>
-        </Step>
-
-        <Step n={3} title="Driver" verdict={dRow ? dRow.verdict : 'fail'} summary={driver ? `${driver.full_name} · ${driver.license_type.replace('_', ' ')} · ★ ${driver.rating}` : 'No eligible driver on duty'}>
-          <div className="grid gap-2">
-            {driverRows.map(r => {
-              const on = r.d.id === driver?.id
-              return (
-                <button key={r.d.id} disabled={r.verdict === 'fail' || alreadyDispatched} onClick={() => setDriverOverride(r.d.id)} className={`text-left px-3 py-2 rounded-lg border transition-colors ${on ? 'border-violet-400 bg-violet-50/60' : 'border-slate-200 hover:border-slate-300'} disabled:opacity-55 disabled:cursor-not-allowed`}>
-                  <div className="flex items-center gap-2">
-                    <span className={`w-4 h-4 rounded-full border-2 ${on ? 'border-violet-600 bg-violet-600' : 'border-slate-300'}`} />
-                    <span className="text-xs font-semibold text-slate-800">{r.d.full_name}</span>
-                    <span className="text-[10px] text-slate-400">{r.d.license_type.replace('_', ' ')} · ★ {r.d.rating} · {r.d.max_driving_hours_per_day} h/day</span>
-                    <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{r.d.status.replace('_', ' ')}</span>
-                  </div>
-                  {r.reasons.length > 0 && <p className={`text-[11px] mt-1 pl-6 ${VERDICT_STYLE[r.verdict].text}`}>{r.reasons.join(' · ')}</p>}
-                </button>
-              )
-            })}
-          </div>
-        </Step>
-
-        <Step n={4} title="Schedule & SLA" verdict={checks[2].verdict} summary={routeLegs ? `Depart ${departure} → ETA ${clock(eta)} → back ${clock(returnMin)}` : 'Computing…'}>
-          <div className="flex flex-wrap items-end gap-4">
-            <label className="text-[11px] text-slate-500">Departure<br />
-              <input type="time" value={departure} disabled={alreadyDispatched} onChange={e => setDeparture(e.target.value)} className="mt-1 border border-slate-200 rounded-lg px-2 py-1 text-sm text-slate-800" />
-            </label>
-            <Fact label="Outbound" value={routeLegs ? `${routeLegs[0].km.toFixed(1)} km · ${fmtDur(routeLegs[0].minutes)}` : '…'} />
-            <Fact label="ETA" value={routeLegs ? clock(eta) : '…'} tone={lateMin > 0 ? 'bad' : 'good'} />
-            <Fact label="Window" value={`${shipment.time_window_start}–${shipment.time_window_end}`} />
-            {waitMin > 0 && <Fact label="Wait on site" value={fmtDur(waitMin)} />}
-          </div>
-          {routeLegs && <TimelineBar depart={departMin} eta={eta} open={open} close={close} back={returnMin} />}
-          <p className="text-[10px] text-slate-400 mt-2">Drive times from {legSource === 'api' ? 'the backend distance engine' : 'the offline estimate (API unreachable)'} · 10 min service time on site</p>
-        </Step>
-
-        <Step n={5} title="Policy checks" verdict={overall} summary={`${checks.filter(c => c.verdict === 'pass').length}/${checks.length} passed`}>
-          <div className="grid gap-2">
-            {checks.map(c => {
-              const cite = policies[c.key]
-              return (
-                <div key={c.key} className={`rounded-lg border border-slate-200 p-3 ${VERDICT_STYLE[c.verdict].bg}`}>
-                  <div className="flex items-center gap-2">
-                    <span className={`w-4 h-4 rounded-full text-[10px] font-bold text-white flex items-center justify-center ${VERDICT_STYLE[c.verdict].ring}`}>{VERDICT_STYLE[c.verdict].icon}</span>
-                    <span className="text-xs font-semibold text-slate-800">{c.title}</span>
-                    {cite && <span className="ml-auto font-mono text-[10px] text-violet-700">{cite.doc_id} {cite.section}</span>}
-                  </div>
-                  <p className={`text-[11px] mt-1 pl-6 ${VERDICT_STYLE[c.verdict].text}`}>{c.detail}</p>
-                  {cite && <p className="text-[11px] text-slate-500 mt-1 pl-6 italic line-clamp-2">“{cite.excerpt}”</p>}
-                  {cite === null && <p className="text-[10px] text-slate-400 mt-1 pl-6">Policy citation unavailable (knowledge base offline)</p>}
-                </div>
-              )
-            })}
-          </div>
-        </Step>
-      </div>
-
-      {/* ── Route preview & decision ── */}
-      <aside className="w-[320px] xl:w-[360px] flex-shrink-0 border-l border-slate-200 bg-white flex flex-col">
-        <div className="h-64 flex-shrink-0 border-b border-slate-200">
-          <LeafletMap hubs={[hub]} stops={[{ ...shipment, latitude: shipment.latitude!, longitude: shipment.longitude! }]} selectedHubId={hub.id}
-            metrics={routeLegs ? { [shipment.id]: { rank: 1, roadKm: routeLegs[0].km, minutes: routeLegs[0].minutes } } : {}} onSelectHub={() => {}} />
-        </div>
-        <div className="p-4 space-y-3 overflow-y-auto">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Trip summary</p>
-          <div className="grid grid-cols-2 gap-2">
-            <Fact label="Round trip" value={routeLegs ? `${tripKm.toFixed(1)} km` : '…'} boxed />
-            <Fact label="Drive time" value={routeLegs ? fmtDur(tripMinutes) : '…'} boxed />
-            <Fact label="Fuel" value={vehicle && routeLegs ? `${(tripKm / vehicle.fuel_efficiency_kpl).toFixed(1)} L` : '—'} boxed />
-            <Fact label="Back at hub" value={routeLegs ? clock(returnMin) : '…'} boxed />
-          </div>
-          <div className={`rounded-xl p-3 ${VERDICT_STYLE[overall].bg}`}>
-            <p className={`text-xs font-bold ${VERDICT_STYLE[overall].text}`}>
-              {overall === 'pass' ? 'All checks passed: ready to dispatch' : overall === 'warn' ? 'Dispatchable with warnings' : 'Blocked: resolve the failed checks'}
-            </p>
-            <ul className="mt-1 space-y-0.5">
-              {checks.filter(c => c.verdict !== 'pass').map(c => <li key={c.key} className="text-[11px] text-slate-600">• {c.title}: {c.detail}</li>)}
-            </ul>
-          </div>
-          {alreadyDispatched || justDispatched ? (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-              <p className="text-xs font-bold text-emerald-700">✓ {justDispatched ? 'Dispatched' : `Already ${shipment.status.toLowerCase().replace('_', ' ')}`}</p>
-              <button onClick={onOpenTracking} className="mt-2 w-full py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800">Open in Live Tracking →</button>
+        {/* Decision footer */}
+        <div className="border-t border-slate-100 px-5 py-4 bg-white">
+          {locked || justDispatched ? (
+            <div className="flex items-center gap-3">
+              <span className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">✓</span>
+              <div className="flex-1"><p className="text-sm font-medium text-slate-900">{justDispatched ? 'Dispatched' : 'Already scheduled'}</p><p className="text-xs text-slate-500">{vehicle?.plate_number} leaves at {departure}</p></div>
+              <button onClick={onOpenTracking} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700">Track it</button>
             </div>
           ) : (
-            <button onClick={approve} disabled={!canDispatch} className="w-full py-2.5 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed shadow-sm">
-              Approve & Dispatch
-            </button>
+            <>
+              <div className="flex justify-between text-xs text-slate-500 mb-3">
+                <span>{routeLegs ? `${tripKm.toFixed(1)} km round trip` : '—'}</span>
+                <span>{routeLegs ? `${fmtDur(tripMinutes)} driving` : ''}</span>
+                <span>{vehicle && routeLegs ? `${(tripKm / vehicle.fuel_efficiency_kpl).toFixed(1)} L fuel` : ''}</span>
+              </div>
+              <button onClick={approve} disabled={!canDispatch} className="w-full py-3 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed">
+                {overall === 'fail' ? 'Fix the failed checks to dispatch' : 'Approve & dispatch'}
+              </button>
+            </>
           )}
-          <p className="text-[10px] text-slate-400">Human-in-the-loop: nothing changes until you approve. Every dispatch is written to the audit log.</p>
         </div>
-      </aside>
+      </div>
     </div>
   )
 }
 
-function Step({ n, title, verdict, summary, children }: { n: number; title: string; verdict: Verdict; summary: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(true)
-  const st = VERDICT_STYLE[verdict]
+function RowIcon({ d }: { d: string }) {
   return (
-    <section className="rounded-2xl bg-white border border-slate-200 overflow-hidden">
-      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-3 px-4 py-3 text-left">
-        <span className={`w-6 h-6 rounded-full text-[11px] font-bold text-white flex items-center justify-center ${st.ring}`}>{verdict === 'pass' ? n : st.icon}</span>
-        <span className="text-sm font-semibold text-slate-900">{title}</span>
-        <span className="text-xs text-slate-500 truncate flex-1">{summary}</span>
-        <span className="text-slate-300 text-xs">{open ? '▾' : '▸'}</span>
+    <span className="w-9 h-9 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center flex-shrink-0">
+      <svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
+    </span>
+  )
+}
+
+function Decision({ icon, label, value, sub, verdict, open, onToggle, locked, children }: {
+  icon: string; label: string; value: string; sub: string; verdict: Verdict; open: boolean; onToggle: () => void; locked?: boolean; children: React.ReactNode
+}) {
+  return (
+    <div className={`rounded-xl ${open ? 'bg-slate-50' : ''}`}>
+      <button onClick={onToggle} className={`w-full flex items-center gap-3 px-2 py-3 text-left rounded-xl ${locked ? 'cursor-default' : 'hover:bg-slate-50'}`}>
+        <RowIcon d={icon} />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-slate-500">{label}</p>
+          <p className="text-sm font-medium text-slate-900 truncate">{value}</p>
+          <p className={`text-xs truncate ${verdict === 'pass' ? 'text-slate-500' : TONE[verdict].text}`}>{sub}</p>
+        </div>
+        {!locked && <svg viewBox="0 0 24 24" className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>}
       </button>
-      {open && <div className="px-4 pb-4 pl-[52px]">{children}</div>}
-    </section>
-  )
-}
-
-function Fact({ label, value, tone, boxed }: { label: string; value: string; tone?: 'good' | 'bad'; boxed?: boolean }) {
-  return (
-    <div className={boxed ? 'rounded-lg border border-slate-200 px-2.5 py-1.5' : ''}>
-      <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">{label}</p>
-      <p className={`text-sm font-semibold tabular-nums ${tone === 'bad' ? 'text-red-600' : tone === 'good' ? 'text-emerald-700' : 'text-slate-900'}`}>{value}</p>
+      {open && <div className="pb-2 px-1">{children}</div>}
     </div>
   )
 }
 
-function Meter({ label, pct }: { label: string; pct: number }) {
-  const c = pct > 100 ? '#dc2626' : pct > 90 ? '#d97706' : '#7c3aed'
+function Option({ title, note, selected, disabled, badge, meter, onClick }: { title: string; note: string; selected: boolean; disabled?: boolean; badge?: string; meter?: number; onClick?: () => void }) {
   return (
-    <div>
-      <div className="flex justify-between text-[10px] text-slate-500"><span>{label}</span><span className="tabular-nums" style={{ color: c }}>{Math.round(pct)}%</span></div>
-      <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden mt-0.5"><div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, background: c }} /></div>
-    </div>
+    <button onClick={onClick} disabled={disabled && !selected} className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg ${selected ? 'bg-white ring-1 ring-violet-300' : 'hover:bg-white'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+      <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${selected ? 'border-violet-600 bg-violet-600 shadow-[inset_0_0_0_2px_white]' : 'border-slate-300'}`} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2"><span className="text-sm text-slate-900 truncate">{title}</span>{badge && <span className="text-[11px] font-medium text-violet-700 bg-violet-50 px-1.5 rounded">{badge}</span>}</div>
+        <p className="text-xs text-slate-500 truncate">{note}</p>
+        {meter !== undefined && <div className="mt-1 h-1 rounded-full bg-slate-200 overflow-hidden"><div className="h-full rounded-full bg-violet-500" style={{ width: `${meter}%` }} /></div>}
+      </div>
+    </button>
   )
 }
 
-/** Horizontal day strip: delivery window band, departure, ETA and return markers. */
-function TimelineBar({ depart, eta, open, close, back }: { depart: number; eta: number; open: number; close: number; back: number }) {
-  const from = Math.min(depart, open) - 30, to = Math.max(back, close) + 30
+/** Day strip: green delivery window, the trip span, and departure / arrival / return markers. */
+function WindowStrip({ depart, eta, open, close, back }: { depart: number; eta: number; open: number; close: number; back: number }) {
+  const from = Math.min(depart, open) - 20, to = Math.max(back, close) + 20
   const x = (m: number) => `${((m - from) / (to - from)) * 100}%`
   return (
-    <div className="relative h-14 mt-3 rounded-lg bg-slate-50 border border-slate-200">
-      <div className="absolute top-2 bottom-5 bg-emerald-100 border-x border-emerald-300" style={{ left: x(open), width: `calc(${x(close)} - ${x(open)})` }} />
-      <div className="absolute top-[18px] h-1 bg-violet-300 rounded" style={{ left: x(depart), width: `calc(${x(back)} - ${x(depart)})` }} />
-      {[{ m: depart, l: 'Depart', c: '#0f172a' }, { m: eta, l: 'ETA', c: eta > close ? '#dc2626' : '#7c3aed' }, { m: back, l: 'Back', c: '#64748b' }].map(p => (
-        <div key={p.l} className="absolute top-1 -translate-x-1/2 flex flex-col items-center" style={{ left: x(p.m) }}>
-          <span className="w-3 h-3 rounded-full border-2 border-white shadow" style={{ background: p.c, marginTop: 12 }} />
-          <span className="text-[9px] font-semibold mt-1 whitespace-nowrap" style={{ color: p.c }}>{p.l} {clock(p.m)}</span>
-        </div>
-      ))}
-      <span className="absolute bottom-1 text-[9px] text-emerald-700 font-semibold" style={{ left: x(open) }}>&nbsp;window</span>
+    <div className="mx-2 mb-2">
+      <div className="relative h-8">
+        <div className="absolute top-2.5 h-3 rounded bg-emerald-100" style={{ left: x(open), width: `calc(${x(close)} - ${x(open)})` }} />
+        <div className="absolute top-[15px] h-0.5 bg-slate-300" style={{ left: x(depart), width: `calc(${x(back)} - ${x(depart)})` }} />
+        {[{ m: depart, c: '#0f172a' }, { m: eta, c: eta > close ? '#dc2626' : '#7c3aed' }, { m: back, c: '#94a3b8' }].map((p, i) => (
+          <span key={i} className="absolute top-[10px] w-3 h-3 -ml-1.5 rounded-full border-2 border-white shadow" style={{ left: x(p.m), background: p.c }} />
+        ))}
+      </div>
+      <div className="flex justify-between text-[11px] text-slate-400"><span>leave {clock(depart)}</span><span className="text-emerald-700">window {clock(open)}–{clock(close)}</span><span>back {clock(back)}</span></div>
     </div>
   )
 }
