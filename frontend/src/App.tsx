@@ -3,6 +3,7 @@ import { API_BASE, checkApiHealth } from './lib/api'
 import ComplianceInspector from './components/compliance/ComplianceInspector'
 import { CopilotCommandCenter } from './components/copilot/CopilotCommandCenter'
 import LiveTrackingSection from './components/tracking/LiveTrackingSection'
+import ErrorBoundary from './components/ErrorBoundary'
 import DispatchPlanner, { type DispatchDecision } from './components/workflow/DispatchPlanner'
 import NetworkMapSection from './components/map/NetworkMapSection'
 import type { UserRole, VehicleType, VehicleStatus, DriverStatus, LicenseType, ShipmentStatus, ShipmentPriority, AuditAction, AdminSection, Vehicle, Driver, Hub, Shipment, User, AuditEntry } from './lib/types'
@@ -1278,6 +1279,7 @@ export default function App() {
 
         {/* Main content */}
         <main className="flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50/30">
+          <ErrorBoundary resetKey={`${section}|${activeRole}`}>
           {section === 'dashboard' && <CopilotCommandCenter vehicles={vehicles} drivers={drivers} shipments={shipments} hubs={hubs} audit={audit} setSection={setSection} activeRole={activeRole} authToken={authToken} />}
           {section === 'shipments' && <ShipmentsSection shipments={shipments} setShipments={setShipments} hubs={hubs} addAudit={addAudit} onTriggerWorkflow={triggerWorkflow} activeRole={activeRole} />}
           {section === 'workflow' && <DispatchPlanner shipments={shipments} hubs={hubs} vehicles={vehicles} drivers={drivers} initialShipmentId={workflowShipment?.id ?? null} onDispatch={dispatch} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
@@ -1285,11 +1287,12 @@ export default function App() {
           {section === 'map' && <NetworkMapSection hubs={hubs} shipments={shipments} />}
           {/* Kept mounted so the simulation clock and reported events survive page switches */}
           <div className={section === 'tracking' ? 'h-full' : 'hidden'}>
-            <LiveTrackingSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments} activeRole={activeRole} driverId={1} addAudit={addAudit} authToken={authToken} setShipments={setShipments} />
+            <LiveTrackingSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments} activeRole={activeRole} driverId={1} active={section === 'tracking'} addAudit={addAudit} onOpenPlanner={() => setSection('workflow')} authToken={authToken} setShipments={setShipments} />
           </div>
           {section === 'compliance' && <ComplianceInspector />}
           {section === 'audit' && <AuditSection entries={audit} />}
           {section === 'users' && <UsersSection users={users} setUsers={setUsers} />}
+          </ErrorBoundary>
         </main>
       </div>
     </div>

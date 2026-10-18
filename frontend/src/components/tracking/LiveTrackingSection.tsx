@@ -1,45 +1,44 @@
 // ─── LIVE TRACKING (US-008 telemetry view & In-Transit FSM) ───────────────────
-// Every dispatched vehicle runs its stop sequence on a shared simulation clock. Positions, ETAs, SLA risk
-// and the event feed are all derived from the clock + reported events (see simulation.ts), so a reported
-// delay immediately shifts every downstream ETA and a breakdown freezes the trip as ROUTE_BLOCKED.
+// Map-first: the map fills the page, a floating trip list sits on the left, a playback bar (play/pause,
+// draggable time slider, speed) sits at the bottom, and a tabbed drawer opens only for the selected trip.
+// Positions, ETAs and SLA risk are derived from the clock + reported events (see simulation.ts), so dragging
+// the slider or reporting a delay instantly re-plays the day.
+// Integrates Track A's VRPTW solver stop sequencing with Track B's In-Transit FSM lifecycle.
 import React, { useEffect, useMemo, useState } from 'react'
 import type { AuditEntry, Driver, Hub, Shipment, ShipmentStatus, UserRole, Vehicle } from '../../lib/types'
 import { clock, estimateLeg, legsAlong, toMinutes, type LatLng } from '../../lib/geo'
+import { optimizeRoutes } from '../../lib/routesApi'
 import { emptyEvents, feedFor, viewAt, type FeedItem, type StopView, type TripEvents, type TripPlan, type TripState, type TripView } from './simulation'
-import TrackingMap from './TrackingMap'
+import TrackingMap, { STOP_COLOR } from './TrackingMap'
 import { FsmProgressBar } from './FsmProgressBar'
 import {
   arriveAtStop,
   deliverShipment,
   failDelivery,
   reportDelay as apiReportDelay,
-  redispatchShipment,
   type TransitFailureReason,
 } from '../../lib/transitApi'
 
 const TRIP_COLORS = ['#7c3aed', '#0891b2', '#ea580c', '#db2777', '#16a34a']
 const DEFAULT_DEPART = '08:30'
-const SPEEDS = [
-  { label: '❚❚', value: 0 },
-  { label: '1×', value: 1 / 60 },  // sim minutes per real second
-  { label: '30×', value: 0.5 },
-  { label: '120×', value: 2 },
-  { label: '600×', value: 10 },
+const DAY_START = 6 * 60, DAY_END = 21 * 60
+const RATES = [
+  { label: '1×', perSecond: 1 / 60 },  // sim minutes per real second
+  { label: '30×', perSecond: 0.5 },
+  { label: '120×', perSecond: 2 },
+  { label: '600×', perSecond: 10 },
 ]
 
-const TRIP_BADGE: Record<TripState, string> = {
-  SCHEDULED: 'bg-slate-100 text-slate-600',
-  IN_TRANSIT: 'bg-blue-50 text-blue-700',
-  RETURNING: 'bg-violet-50 text-violet-700',
-  COMPLETED: 'bg-emerald-50 text-emerald-700',
-  ROUTE_BLOCKED: 'bg-red-50 text-red-700',
+const TRIP_STATE: Record<TripState, { label: string; color: string }> = {
+  SCHEDULED: { label: 'Scheduled', color: '#64748b' },
+  IN_TRANSIT: { label: 'On the road', color: '#2563eb' },
+  RETURNING: { label: 'Returning', color: '#7c3aed' },
+  COMPLETED: { label: 'Completed', color: '#16a34a' },
+  ROUTE_BLOCKED: { label: 'Blocked', color: '#dc2626' },
 }
-const STOP_DOT: Record<string, string> = {
-  PENDING: 'bg-slate-300', NEXT: 'bg-blue-600 ring-4 ring-blue-100', ARRIVED: 'bg-violet-600 ring-4 ring-violet-100',
-  DELIVERED: 'bg-emerald-500', FAILED: 'bg-red-500', BLOCKED: 'bg-amber-500',
-}
+const STOP_LABEL: Record<string, string> = { PENDING: 'Upcoming', NEXT: 'Heading here', ARRIVED: 'On site', DELIVERED: 'Delivered', FAILED: 'Failed', BLOCKED: 'Needs re-route' }
 
-/** Greedy nearest-neighbour stop order from the hub. Placeholder until the Week 6 VRPTW solver sequences routes. */
+/** Greedy nearest-neighbour order: offline fallback when the VRPTW optimizer API is unreachable. */
 function orderStops(hub: Hub, stops: Shipment[]): Shipment[] {
   const left = [...stops]
   const out: Shipment[] = []
@@ -53,10 +52,7 @@ function orderStops(hub: Hub, stops: Shipment[]): Shipment[] {
   return out
 }
 
-function fmtDur(min: number) {
-  const m = Math.max(0, Math.round(min))
-  return m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m}m`
-}
+const fmtDur = (min: number) => { const m = Math.max(0, Math.round(min)); return m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m} min` }
 
 export interface LiveTrackingSectionProps {
   hubs: Hub[]
@@ -65,7 +61,9 @@ export interface LiveTrackingSectionProps {
   shipments: Shipment[]
   activeRole: UserRole
   driverId: number
+  active?: boolean
   addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
+  onOpenPlanner?: () => void
   authToken?: string | null
   setShipments?: React.Dispatch<React.SetStateAction<Shipment[]>>
 }
@@ -77,15 +75,19 @@ export default function LiveTrackingSection({
   shipments,
   activeRole,
   driverId,
+  active = true,
   addAudit,
+  onOpenPlanner,
   authToken,
   setShipments,
 }: LiveTrackingSectionProps) {
   const [plans, setPlans] = useState<TripPlan[]>([])
   const [events, setEvents] = useState<Record<string, TripEvents>>({})
   const [simMin, setSimMin] = useState(toMinutes('08:20'))
-  const [speed, setSpeed] = useState(SPEEDS[2].value)
+  const [playing, setPlaying] = useState(true)
+  const [rate, setRate] = useState(1)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
 
   // Driver modal state
   const [deliverModal, setDeliverModal] = useState<StopView | null>(null)
@@ -95,7 +97,6 @@ export default function LiveTrackingSection({
   const [failNotes, setFailNotes] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
 
-  // Trips = dispatched shipments grouped by assigned vehicle.
   const tripInputs = useMemo(() => {
     const byVehicle = new Map<number, Shipment[]>()
     for (const s of shipments) {
@@ -114,7 +115,21 @@ export default function LiveTrackingSection({
 
   useEffect(() => {
     let cancelled = false
-    Promise.all(tripInputs.map(async (t): Promise<TripPlan> => {
+    Promise.all(tripInputs.map(async (input): Promise<TripPlan> => {
+      let t = input
+      const departure = t.stops.map(s => s.dispatch_time ?? DEFAULT_DEPART).sort()[0]
+      // Sequence stops with the VRPTW solver (time windows, capacity); fall back to nearest-neighbour offline.
+      try {
+        const res = await optimizeRoutes(
+          { id: `hub-${t.hub.id}`, latitude: t.hub.latitude, longitude: t.hub.longitude },
+          t.stops.map(s => ({ id: String(s.id), latitude: s.latitude!, longitude: s.longitude!, weight_kg: s.weight_kg, volume_m3: s.volume_m3, window_start: s.time_window_start, window_end: s.time_window_end })),
+          [{ id: String(t.vehicle.id), capacity_kg: t.vehicle.max_payload_kg, capacity_m3: t.vehicle.max_volume_m3, vehicle_type: t.vehicle.vehicle_type, max_shift_hours: Math.min(14, t.driver?.max_driving_hours_per_day ?? 10) }],
+          departure,
+        )
+        const order = res.routes[0]?.stop_ids ?? []
+        const rank = (s: Shipment) => { const i = order.indexOf(String(s.id)); return i < 0 ? order.length + 1 : i }
+        t = { ...t, stops: [...t.stops].sort((a, b) => rank(a) - rank(b)) }
+      } catch { /* keep nearest-neighbour order */ }
       const pts: LatLng[] = [[t.hub.latitude, t.hub.longitude], ...t.stops.map(s => [s.latitude!, s.longitude!] as LatLng), [t.hub.latitude, t.hub.longitude]]
       const { legs, source } = await legsAlong(pts, t.vehicle.vehicle_type)
       const depart = Math.min(...t.stops.map(s => toMinutes(s.dispatch_time ?? DEFAULT_DEPART)))
@@ -123,76 +138,82 @@ export default function LiveTrackingSection({
     return () => { cancelled = true }
   }, [inputsKey])
 
-  // Simulation clock.
   useEffect(() => {
-    if (!speed) return
-    const id = setInterval(() => setSimMin(m => Math.min(m + speed * 0.25, 23 * 60 + 59)), 250)
+    if (!playing) return
+    const id = setInterval(() => setSimMin(m => {
+      const next = m + RATES[rate].perSecond * 0.25
+      if (next >= DAY_END) { setPlaying(false); return DAY_END }
+      return next
+    }), 250)
     return () => clearInterval(id)
-  }, [speed])
+  }, [playing, rate])
+
+  // Space toggles play/pause while this page is visible (ignored while typing in a field).
+  useEffect(() => {
+    if (!active) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || (e.target as HTMLElement).closest('input, textarea, select, button')) return
+      e.preventDefault()
+      setPlaying(p => !p)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active])
 
   const views: TripView[] = plans.map(p => viewAt(p, events[p.id] ?? emptyEvents(), simMin))
   const colors = Object.fromEntries(plans.map((p, i) => [p.id, TRIP_COLORS[i % TRIP_COLORS.length]]))
+  const isDriver = activeRole === 'DRIVER'
   const myTrip = views.find(v => v.plan.driver?.id === driverId) ?? null
 
-  const isDriver = activeRole === 'DRIVER'
+  // Drivers see only their vehicle; dispatchers see every dispatched vehicle.
   const visible = isDriver ? (myTrip ? [myTrip] : []) : views
-  const selected = visible.find(v => v.plan.id === selectedId) ?? visible[0] ?? null
-  const feed: FeedItem[] = visible.flatMap(v => feedFor(v, events[v.plan.id] ?? emptyEvents())).sort((a, b) => b.at - a.at)
-
-  const allStops = visible.flatMap(v => v.stops)
-  const delivered = allStops.filter(s => s.state === 'DELIVERED').length
-  const atRisk = visible.reduce((n, v) => n + v.atRisk, 0)
-  const kmToday = visible.reduce((n, v) => n + v.kmDone, 0)
+  const selected = visible.find(v => v.plan.id === (isDriver ? myTrip?.plan.id : selectedId)) ?? null
 
   function updateEvents(trip: TripView, fn: (e: TripEvents) => TripEvents) {
     setEvents(prev => ({ ...prev, [trip.plan.id]: fn(prev[trip.plan.id] ?? emptyEvents()) }))
   }
 
-  const actor = isDriver ? myTrip?.plan.driver?.full_name ?? 'Driver Rajesh' : 'Dispatcher'
+  const actor = isDriver ? myTrip?.plan.driver?.full_name ?? 'Driver' : 'Dispatcher'
 
-  async function handleReportDelay(trip: TripView, minutes: number, reason: string) {
-    updateEvents(trip, e => ({ ...e, delays: [...e.delays, { at: simMin, minutes, reason }] }))
-    addAudit({
-      actor_name: actor,
-      action_type: 'STATUS_CHANGE',
-      entity_type: 'ROUTE',
-      entity_id: trip.plan.vehicle.id,
-      details: `${trip.plan.vehicle.plate_number} DELAYED +${minutes} min (${reason}) at ${clock(simMin)}; downstream ETAs recalculated`,
-    })
-
-    if (trip.nextStop) {
+  const actions = {
+    async delay(trip: TripView, minutes: number, reason: string) {
+      updateEvents(trip, e => ({ ...e, delays: [...e.delays, { at: simMin, minutes, reason }] }))
+      addAudit({ actor_name: actor, action_type: 'STATUS_CHANGE', entity_type: 'ROUTE', entity_id: trip.plan.vehicle.id, details: `${trip.plan.vehicle.plate_number} delayed +${minutes} min (${reason}) at ${clock(simMin)}; downstream ETAs recalculated` })
+      if (trip.nextStop) {
+        try {
+          await apiReportDelay(trip.nextStop.shipment.id, minutes, reason, authToken)
+        } catch { /* offline fallback */ }
+      }
+    },
+    async arrive(trip: TripView) {
+      const s = trip.nextStop
+      if (!s) return
       try {
-        await apiReportDelay(trip.nextStop.shipment.id, minutes, reason, authToken)
-      } catch {
-        // Fallback to local simulation mode
+        if (authToken) {
+          await arriveAtStop(s.shipment.id, s.shipment.latitude, s.shipment.longitude, 'Driver checked in', authToken)
+        }
+      } catch { /* offline fallback */ }
+      if (setShipments) {
+        setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'ARRIVED' } : sh))
       }
-    }
-  }
-
-  async function handleArriveStop(trip: TripView) {
-    const s = trip.nextStop
-    if (!s) return
-    setActionLoading(true)
-    try {
-      if (authToken) {
-        await arriveAtStop(s.shipment.id, s.shipment.latitude, s.shipment.longitude, 'Driver arrived on site', authToken)
-      }
-    } catch {
-      // Offline fallback
-    }
-
-    if (setShipments) {
-      setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'ARRIVED' } : sh))
-    }
-
-    addAudit({
-      actor_name: actor,
-      action_type: 'STATUS_CHANGE',
-      entity_type: 'SHIPMENT',
-      entity_id: s.shipment.id,
-      details: `${s.shipment.tracking_number} → ARRIVED at ${s.shipment.customer_name} (${clock(simMin)})`,
-    })
-    setActionLoading(false)
+      addAudit({ actor_name: actor, action_type: 'STATUS_CHANGE', entity_type: 'SHIPMENT', entity_id: s.shipment.id, details: `${s.shipment.tracking_number} → ARRIVED at ${s.shipment.customer_name} (${clock(simMin)})` })
+    },
+    fail(trip: TripView) {
+      const s = trip.nextStop
+      if (!s) return
+      setFailModal(s)
+      setFailNotes('')
+    },
+    deliver(trip: TripView) {
+      const s = trip.nextStop
+      if (!s) return
+      setDeliverModal(s)
+      setRecipientInput(s.shipment.customer_name)
+    },
+    breakdown(trip: TripView) {
+      updateEvents(trip, e => ({ ...e, blockedAt: simMin }))
+      addAudit({ actor_name: actor, action_type: 'STATUS_CHANGE', entity_type: 'ROUTE', entity_id: trip.plan.vehicle.id, details: `${trip.plan.vehicle.plate_number} breakdown → ROUTE_BLOCKED at ${clock(simMin)}; ${trip.stops.filter(s => s.state === 'BLOCKED' || s.state === 'NEXT' || s.state === 'PENDING').length} stops need another vehicle` })
+    },
   }
 
   async function handleConfirmDelivery() {
@@ -205,18 +226,10 @@ export default function LiveTrackingSection({
       if (authToken) {
         await deliverShipment(s.shipment.id, recipient, 'SIG-VERIFIED', 'Handed over to consignee', authToken)
       }
-    } catch {
-      // Offline fallback
-    }
+    } catch { /* offline fallback */ }
 
     if (setShipments) {
       setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'DELIVERED' } : sh))
-    }
-
-    // Update simulation events
-    const trip = views.find(v => v.stops.some(st => st.shipment.id === s.shipment.id))
-    if (trip) {
-      // advance stop in sim by recording arrival/delivery
     }
 
     addAudit({
@@ -229,7 +242,6 @@ export default function LiveTrackingSection({
 
     setActionLoading(false)
     setDeliverModal(null)
-    setRecipientInput('')
   }
 
   async function handleConfirmFailure() {
@@ -241,9 +253,7 @@ export default function LiveTrackingSection({
       if (authToken) {
         await failDelivery(s.shipment.id, failReason, failNotes || 'Delivery failed', authToken)
       }
-    } catch {
-      // Offline fallback
-    }
+    } catch { /* offline fallback */ }
 
     if (setShipments) {
       setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'FAILED' } : sh))
@@ -264,124 +274,160 @@ export default function LiveTrackingSection({
 
     setActionLoading(false)
     setFailModal(null)
-    setFailNotes('')
   }
 
-  function breakdown(trip: TripView) {
-    updateEvents(trip, e => ({ ...e, blockedAt: simMin }))
-    addAudit({
-      actor_name: actor,
-      action_type: 'STATUS_CHANGE',
-      entity_type: 'ROUTE',
-      entity_id: trip.plan.vehicle.id,
-      details: `${trip.plan.vehicle.plate_number} breakdown → ROUTE_BLOCKED at ${clock(simMin)}; ${trip.stops.filter(s => s.state === 'BLOCKED' || s.state === 'NEXT' || s.state === 'PENDING').length} stops need re-routing`,
-    })
-  }
-
-  function resetSim() {
-    setEvents({})
-    setSimMin(toMinutes('08:20'))
-  }
+  const allStops = visible.flatMap(v => v.stops)
+  const delivered = allStops.filter(s => s.state === 'DELIVERED').length
+  const atRisk = visible.reduce((n, v) => n + v.atRisk, 0)
+  const onTheRoad = visible.filter(v => v.state === 'IN_TRANSIT' || v.state === 'RETURNING').length
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-slate-50">
-      {/* ── Header & KPIs ── */}
-      <div className="flex-shrink-0 px-5 py-3 bg-white border-b border-slate-200 flex flex-wrap items-center gap-4">
-        <div className="mr-auto">
-          <p className="text-[15px] font-bold text-slate-900">{isDriver ? 'Driver Cockpit (In-Transit FSM)' : 'Live Tracking & Telemetry'}</p>
-          <p className="text-[11px] text-slate-500">
-            Real-time FSM execution (UNASSIGNED → ASSIGNED → IN_TRANSIT → ARRIVED → DELIVERED) · Simulated GPS clock · Haversine ETAs
-          </p>
-        </div>
-        {!isDriver && (
-          <div className="flex gap-2">
-            <Kpi label="Active trips" value={String(visible.filter(v => v.state === 'IN_TRANSIT' || v.state === 'RETURNING').length)} sub={`${visible.length} dispatched`} />
-            <Kpi label="Delivered" value={`${delivered}/${allStops.length}`} sub="stops today" />
-            <Kpi label="SLA risk" value={String(atRisk)} sub="late ETAs" tone={atRisk ? 'warn' : 'ok'} />
-            <Kpi label="Fleet km" value={kmToday.toFixed(1)} sub="driven today" />
-          </div>
-        )}
-        <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
-          <div className="text-right">
-            <p className="font-mono text-xl font-bold text-slate-900 leading-none tabular-nums">{clock(simMin)}</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">sim clock</p>
-          </div>
-          <div className="flex bg-slate-100 rounded-lg p-0.5">
-            {SPEEDS.map(s => (
-              <button key={s.label} onClick={() => setSpeed(s.value)} className={`px-2 py-1 text-[10px] font-bold rounded-md ${speed === s.value ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-800'}`}>{s.label}</button>
-            ))}
-          </div>
-          <button onClick={() => setSimMin(m => m + 15)} className="px-2 py-1 text-[10px] font-bold rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">+15m</button>
-          <button onClick={resetSim} className="px-2 py-1 text-[10px] font-bold rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">Reset</button>
-        </div>
-      </div>
+    <div className="relative w-full h-full overflow-hidden bg-slate-900 select-none">
+      {/* ── Background map ── */}
+      <TrackingMap
+        views={visible}
+        colors={colors}
+        selectedId={selected?.plan.id ?? null}
+        hoveredId={hoveredId}
+        onSelect={id => setSelectedId(id)}
+        focusKey={plans.map(p => p.id).join()}
+      />
 
-      <div className="flex-1 flex min-h-0">
-        {/* ── Trip list ── */}
-        {!isDriver && (
-          <aside className="w-64 xl:w-72 flex-shrink-0 border-r border-slate-200 bg-white overflow-y-auto">
-            <p className="px-4 pt-3 pb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Dispatched trips</p>
-            {!views.length && <p className="px-4 text-xs text-slate-400">No dispatched trips. Approve a plan in the Dispatch Planner to see it here.</p>}
-            {views.map(v => {
-              const pct = v.kmTotal ? Math.min(100, (v.kmDone / v.kmTotal) * 100) : 0
-              const on = selectedId === v.plan.id
-              return (
-                <button key={v.plan.id} onClick={() => setSelectedId(on ? null : v.plan.id)} className={`w-full text-left px-4 py-3 border-l-[3px] transition-colors ${on ? 'bg-slate-50' : 'hover:bg-slate-50'}`} style={{ borderLeftColor: on ? colors[v.plan.id] : 'transparent' }}>
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-sm" style={{ background: colors[v.plan.id] }} />
-                    <span className="font-mono text-xs font-bold text-slate-800">{v.plan.vehicle.plate_number}</span>
-                    <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded ${TRIP_BADGE[v.state]}`}>{v.state.replace('_', ' ')}</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1">{v.plan.driver?.full_name ?? 'No driver'} · {v.plan.vehicle.name}</p>
-                  <div className="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: colors[v.plan.id] }} /></div>
-                  <div className="flex items-center justify-between mt-1.5 text-[10px]">
-                    <span className="text-slate-500">{v.stops.filter(s => s.state === 'DELIVERED').length}/{v.stops.length} stops · {v.kmDone.toFixed(1)}/{v.kmTotal.toFixed(1)} km</span>
-                    {v.atRisk > 0 && <span className="font-bold text-amber-600">⚠ {v.atRisk} late</span>}
-                  </div>
-                  {v.nextStop && v.state !== 'ROUTE_BLOCKED' && <p className="text-[10px] text-slate-400 mt-1">{v.nextStop.state === 'ARRIVED' ? 'At stop:' : 'Next:'} <span className="text-slate-600 font-medium">{v.nextStop.shipment.customer_name}</span> · ETA {clock(v.nextStop.eta)}</p>}
-                </button>
-              )
-            })}
-          </aside>
-        )}
-
-        {/* ── Map ── */}
-        <div className="flex-1 min-w-0 relative">
-          <TrackingMap views={visible} colors={colors} selectedId={isDriver ? null : selectedId} onSelect={id => setSelectedId(id)} focusKey={plans.map(p => p.id).join()} />
-        </div>
-
-        {/* ── Detail panel with FSM Visual Stepper & Driver Controls ── */}
-        <aside className="w-[340px] xl:w-[380px] flex-shrink-0 border-l border-slate-200 bg-white flex flex-col min-h-0">
-          {selected ? (
-            <TripDetail
-              trip={selected}
-              color={colors[selected.plan.id]}
-              simMin={simMin}
-              driverMode={isDriver}
-              onDelay={handleReportDelay}
-              onArrive={handleArriveStop}
-              onOpenDeliver={s => { setDeliverModal(s); setRecipientInput(s.shipment.customer_name) }}
-              onOpenFail={s => { setFailModal(s); setFailNotes('') }}
-              onBreakdown={breakdown}
-            />
-          ) : (
-            <div className="p-5 text-xs text-slate-400">
-              {isDriver ? 'No trip assigned to you right now.' : 'Select a trip on the left or click a vehicle on the map to see its stop timeline, telemetry and actions.'}
+      {/* ── Floating trip list (dispatchers only) ── */}
+      {!isDriver && (
+        <div className="absolute top-4 left-4 z-20 w-80 max-h-[calc(100%-110px)] flex flex-col rounded-2xl bg-white/95 backdrop-blur shadow-xl border border-slate-200/80 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-800">Fleet telemetry</p>
+              <p className="text-[11px] text-slate-500">{onTheRoad} on the road · {delivered}/{allStops.length} delivered</p>
             </div>
-          )}
-          <div className="border-t border-slate-200 flex-1 min-h-[140px] overflow-y-auto">
-            <p className="px-4 pt-3 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Event feed</p>
-            {feed.length === 0 && <p className="px-4 pb-3 text-xs text-slate-400">Trips depart at {DEFAULT_DEPART}. Speed up the clock to watch them move.</p>}
-            {feed.map((f, i) => (
-              <div key={i} className="px-4 py-1.5 flex gap-2 text-[11px]">
-                <span className="font-mono text-slate-400 w-10 flex-shrink-0">{clock(f.at)}</span>
-                <span className={`flex-1 ${f.kind === 'blocked' || f.kind === 'failed' ? 'text-red-600 font-semibold' : f.kind === 'delay' ? 'text-amber-700' : 'text-slate-600'}`}>
-                  <span className="font-mono text-slate-400">{f.trip}</span> {f.text}
-                </span>
-              </div>
-            ))}
+            {atRisk > 0 && (
+              <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                {atRisk} at SLA risk
+              </span>
+            )}
           </div>
-        </aside>
+
+          <div className="overflow-y-auto divide-y divide-slate-100">
+            {views.length === 0 ? (
+              <div className="p-4 text-xs text-slate-500 text-center">
+                <p>No trips dispatched yet.</p>
+                {onOpenPlanner && (
+                  <button onClick={onOpenPlanner} className="mt-2 text-xs font-medium text-blue-600 hover:underline">
+                    Open Dispatch Planner
+                  </button>
+                )}
+              </div>
+            ) : (
+              views.map(v => {
+                const isSelected = selected?.plan.id === v.plan.id
+                const pct = v.kmTotal ? Math.min(100, Math.round((v.kmDone / v.kmTotal) * 100)) : 0
+                return (
+                  <button
+                    key={v.plan.id}
+                    onClick={() => setSelectedId(isSelected ? null : v.plan.id)}
+                    onMouseEnter={() => setHoveredId(v.plan.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                    className={`w-full text-left p-3 transition-colors ${isSelected ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ background: colors[v.plan.id] }} />
+                      <span className="font-mono text-xs font-semibold text-slate-900">{v.plan.vehicle.plate_number}</span>
+                      <span className="text-xs text-slate-400">·</span>
+                      <span className="text-xs text-slate-600 truncate flex-1">{v.plan.driver?.full_name ?? 'Unassigned'}</span>
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ color: TRIP_STATE[v.state].color, background: `${TRIP_STATE[v.state].color}15` }}>
+                        {TRIP_STATE[v.state].label}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 flex items-center gap-2">
+                      <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: colors[v.plan.id] }} />
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono tabular-nums">{pct}%</span>
+                    </div>
+
+                    <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+                      <span>{v.stops.filter(s => s.state === 'DELIVERED').length}/{v.stops.length} stops</span>
+                      {v.nextStop && v.state !== 'ROUTE_BLOCKED' && (
+                        <span>Next: {v.nextStop.shipment.customer_name.slice(0, 16)} · {clock(v.nextStop.eta)}</span>
+                      )}
+                    </div>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Driver banner if no trip ── */}
+      {isDriver && !myTrip && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="rounded-2xl bg-white shadow-lg px-6 py-5 text-center pointer-events-auto">
+            <p className="text-sm font-medium text-slate-800">No trip assigned to you right now.</p>
+            <p className="text-xs text-slate-500 mt-1">When a dispatcher assigns you to a route, your live stops will appear here.</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Selected trip drawer (right side) ── */}
+      {selected && (
+        <TripDrawer
+          trip={selected}
+          color={colors[selected.plan.id]}
+          simMin={simMin}
+          actions={actions}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
+
+      {/* ── Playback bar (bottom) ── */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-white/95 backdrop-blur shadow-xl border border-slate-200/80">
+        <button
+          onClick={() => setPlaying(p => !p)}
+          title="Space to play / pause"
+          className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+        >
+          {playing ? (
+            <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+          ) : (
+            <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current translate-x-0.5"><polygon points="6 4 20 12 6 20 6 4" /></svg>
+          )}
+        </button>
+
+        <span className="font-mono text-sm font-semibold text-slate-900 tabular-nums w-12 text-center">
+          {clock(simMin)}
+        </span>
+
+        <input
+          type="range"
+          min={DAY_START}
+          max={DAY_END}
+          value={simMin}
+          onChange={e => setSimMin(Number(e.target.value))}
+          className="w-48 sm:w-64 accent-blue-600 cursor-pointer"
+        />
+
+        <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-0.5">
+          {RATES.map((r, i) => (
+            <button
+              key={r.label}
+              onClick={() => setRate(i)}
+              className={`px-2 py-0.5 text-xs font-semibold rounded-lg transition-colors ${rate === i ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={() => { setEvents({}); setSimMin(toMinutes('08:20')) }}
+          title="Reset reported events and rewind to 08:20"
+          className="text-xs text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
+        >
+          Reset
+        </button>
       </div>
 
       {/* ── Confirm Delivery Modal ── */}
@@ -482,44 +528,85 @@ export default function LiveTrackingSection({
   )
 }
 
-function Kpi({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: 'ok' | 'warn' }) {
+type Actions = {
+  delay: (t: TripView, minutes: number, reason: string) => void
+  arrive: (t: TripView) => void
+  deliver: (t: TripView) => void
+  fail: (t: TripView) => void
+  breakdown: (t: TripView) => void
+}
+
+function TripDrawer({ trip, color, simMin, actions, onClose }: {
+  trip: TripView; color: string; simMin: number; actions: Actions; onClose: () => void
+}) {
+  const [tab, setTab] = useState<'overview' | 'stops' | 'activity'>('overview')
+  const p = trip.plan
+  const feed = feedFor(trip, emptyEvents(), simMin)
+
   return (
-    <div className={`px-3 py-1.5 rounded-xl border ${tone === 'warn' ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-slate-50/60'}`}>
-      <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
-      <p className={`text-base font-bold leading-tight tabular-nums ${tone === 'warn' ? 'text-amber-700' : 'text-slate-900'}`}>{value} <span className="text-[10px] font-medium text-slate-400">{sub}</span></p>
+    <div className="absolute top-4 right-4 z-20 w-96 max-h-[calc(100%-110px)] flex flex-col rounded-2xl bg-white/95 backdrop-blur shadow-2xl border border-slate-200/80 overflow-hidden">
+      {/* ── Drawer header ── */}
+      <div className="p-4 border-b border-slate-100 flex items-start justify-between" style={{ background: `linear-gradient(135deg, ${color}10, transparent)` }}>
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
+            <span className="font-mono text-sm font-semibold text-slate-900">{p.vehicle.plate_number}</span>
+            <span className="text-xs text-slate-500 font-medium">{p.vehicle.name}</span>
+          </div>
+          <p className="text-xs text-slate-500 mt-1">Driver: <span className="font-medium text-slate-700">{p.driver?.full_name ?? 'Unassigned'}</span> · Depot: {p.hub.name}</p>
+        </div>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100">
+          <svg viewBox="0 0 24 24" className="w-4 h-4 fill-none stroke-current" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        </button>
+      </div>
+
+      {/* ── Tabs ── */}
+      <div className="px-4 border-b border-slate-100 flex gap-4 text-xs">
+        {(['overview', 'stops', 'activity'] as const).map(t => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`py-2.5 font-medium border-b-2 capitalize transition-colors ${tab === t ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tab body ── */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {tab === 'overview' && <Overview trip={trip} simMin={simMin} actions={actions} />}
+        {tab === 'stops' && (
+          <ol className="space-y-4">
+            <Row dot={color} title={`Depart from ${p.hub.name}`} time={clock(p.departMin)} sub="Depot origin" />
+            {trip.stops.map(s => <StopRow key={s.shipment.id} s={s} />)}
+            <Row dot={color} title={`Return to ${p.hub.name}`} time={Number.isFinite(trip.endMin) ? clock(trip.endMin) : '—'} sub="Trip completion" last />
+          </ol>
+        )}
+        {tab === 'activity' && (
+          feed.length === 0
+            ? <p className="text-sm text-slate-500">Nothing yet. The trip leaves at {clock(p.departMin)}.</p>
+            : <ul className="space-y-3">{feed.map((f, i) => (
+              <li key={i} className="flex gap-3 text-sm">
+                <span className="font-mono text-xs text-slate-400 pt-0.5 w-11 flex-shrink-0">{clock(f.at)}</span>
+                <span className={f.kind === 'blocked' || f.kind === 'failed' ? 'text-red-600' : f.kind === 'delay' ? 'text-amber-700' : 'text-slate-700'}>{f.text}</span>
+              </li>
+            ))}</ul>
+        )}
+      </div>
     </div>
   )
 }
 
-function TripDetail({
-  trip,
-  color,
-  simMin,
-  driverMode,
-  onDelay,
-  onArrive,
-  onOpenDeliver,
-  onOpenFail,
-  onBreakdown,
-}: {
-  trip: TripView
-  color: string
-  simMin: number
-  driverMode: boolean
-  onDelay: (t: TripView, minutes: number, reason: string) => void
-  onArrive: (t: TripView) => void
-  onOpenDeliver: (s: StopView) => void
-  onOpenFail: (s: StopView) => void
-  onBreakdown: (t: TripView) => void
-}) {
+function Overview({ trip, simMin, actions }: { trip: TripView; simMin: number; actions: Actions }) {
+  const [menu, setMenu] = useState<null | 'delay' | 'breakdown'>(null)
   const p = trip.plan
+  const next = trip.nextStop
   const limit = (p.driver?.max_driving_hours_per_day ?? 10) * 60
-  const fuelL = trip.kmDone / p.vehicle.fuel_efficiency_kpl
   const blocked = trip.state === 'ROUTE_BLOCKED'
   const done = trip.state === 'COMPLETED'
-  const next = trip.nextStop
+  const started = simMin >= p.departMin
 
-  // Determine active status for FsmProgressBar
   const currentFsmStatus: ShipmentStatus = next
     ? (next.state === 'ARRIVED' ? 'ARRIVED' : 'IN_TRANSIT')
     : done
@@ -527,125 +614,140 @@ function TripDetail({
     : 'ASSIGNED'
 
   return (
-    <div className="overflow-y-auto space-y-3 pb-6">
-      <div className="p-4 border-b border-slate-100" style={{ background: `linear-gradient(135deg, ${color}14, transparent 70%)` }}>
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-sm font-bold text-slate-900">{p.vehicle.plate_number}</span>
-          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${TRIP_BADGE[trip.state]}`}>{trip.state.replace('_', ' ')}</span>
-        </div>
-        <p className="text-xs text-slate-500 mt-0.5">{p.vehicle.name} · {p.driver?.full_name ?? 'No driver'} · from {p.hub.code}</p>
-        <div className="grid grid-cols-3 gap-2 mt-3">
-          <Tele label="Speed" value={`${Math.round(trip.speedKmh)}`} unit="km/h" />
-          <Tele label="Driven" value={trip.kmDone.toFixed(1)} unit={`/ ${trip.kmTotal.toFixed(0)} km`} />
-          <Tele label="Fuel used" value={fuelL.toFixed(1)} unit="L" />
-          <Tele label="Drive time" value={fmtDur(trip.driveMinutes)} unit={`/ ${limit / 60}h limit`} warn={trip.driveMinutes > limit * 0.85} />
-          <Tele label="Delays" value={`${trip.delayMinutes}`} unit="min" warn={trip.delayMinutes > 0} />
-          <Tele label="Return ETA" value={Number.isFinite(trip.endMin) ? clock(trip.endMin) : '—'} unit="" />
-        </div>
-      </div>
+    <div className="space-y-4">
+      {/* ── FSM Stepper Lifecycle Component ── */}
+      <FsmProgressBar
+        status={currentFsmStatus}
+        delayMinutes={trip.delayMinutes}
+        stopSequence={next ? next.index + 1 : undefined}
+        timeWindow={next ? `${next.shipment.time_window_start}–${next.shipment.time_window_end}` : undefined}
+      />
 
-      {/* ── FSM Stepper Component for Active Trip Stop ── */}
-      <div className="px-4">
-        <FsmProgressBar
-          status={currentFsmStatus}
-          delayMinutes={trip.delayMinutes}
-          stopSequence={next ? next.index + 1 : undefined}
-          timeWindow={next ? `${next.shipment.time_window_start}–${next.shipment.time_window_end}` : undefined}
-        />
-      </div>
+      {blocked && (
+        <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">
+          <p className="font-semibold">Vehicle broke down</p>
+          <p className="mt-1">{trip.stops.filter(s => s.state === 'BLOCKED').length} remaining stops need another vehicle.</p>
+        </div>
+      )}
 
       {next && !blocked && !done && (
-        <div className="mx-4 rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-2">
+        <div className="rounded-xl border border-slate-200 p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600">
-              {next.state === 'ARRIVED' ? 'At stop (On site)' : 'Next stop'} · {next.index + 1} of {trip.stops.length}
-            </p>
-            <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border border-blue-100 text-blue-800">
-              {next.shipment.tracking_number}
-            </span>
+            <p className="text-xs font-medium text-slate-500">{next.state === 'ARRIVED' ? 'At stop (On site)' : 'Next stop'} · {next.index + 1} of {trip.stops.length}</p>
+            <span className="font-mono text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">{next.shipment.tracking_number}</span>
           </div>
-          <p className="text-sm font-bold text-slate-900">{next.shipment.customer_name}</p>
-          <p className="text-[11px] text-slate-600">{next.shipment.destination_address} · {next.shipment.weight_kg} kg</p>
-          <p className="text-[11px]">
-            {next.state === 'ARRIVED' ? (
-              <span className="font-semibold text-purple-800">On site since {clock(next.eta)} · ready for handover</span>
-            ) : (
-              <span className="text-slate-600">ETA {clock(next.eta)} ({fmtDur(next.eta - simMin)} away) · window {next.shipment.time_window_start}–{next.shipment.time_window_end}</span>
-            )}
-          </p>
-          {next.late && <p className="text-[11px] font-bold text-amber-700">⚠ Will miss window by {fmtDur(next.lateBy)}</p>}
+          <p className="text-base font-semibold text-slate-900">{next.shipment.customer_name}</p>
+          <p className="text-xs text-slate-500">{next.shipment.destination_address} · {next.shipment.weight_kg} kg</p>
+          <div className="flex items-end justify-between pt-1">
+            <div>
+              <p className="text-xl font-bold text-slate-900 tabular-nums leading-none">{next.state === 'ARRIVED' ? 'Arrived' : clock(next.eta)}</p>
+              <p className="text-xs text-slate-500 mt-1">
+                {next.state === 'ARRIVED'
+                  ? simMin < toMinutes(next.shipment.time_window_start) ? `waiting for the ${next.shipment.time_window_start} window` : 'ready for handover'
+                  : `in ${fmtDur(next.eta - simMin)}`}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-slate-500">window</p>
+              <p className="text-xs font-semibold text-slate-800">{next.shipment.time_window_start}–{next.shipment.time_window_end}</p>
+            </div>
+          </div>
+          {next.late && <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-1.5 font-medium">Expected {fmtDur(next.lateBy)} after window closes</p>}
 
           {/* Interactive Driver Action Bar */}
-          <div className="pt-2 border-t border-blue-200/60 flex flex-wrap gap-2">
+          <div className="pt-2 border-t border-slate-100 flex gap-2">
             {next.state !== 'ARRIVED' && (
               <button
-                onClick={() => onArrive(trip)}
+                onClick={() => actions.arrive(trip)}
                 className="flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 shadow-xs"
               >
                 Mark Arrived 📍
               </button>
             )}
             <button
-              onClick={() => onOpenDeliver(next)}
+              onClick={() => actions.deliver(trip)}
               className="flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs"
             >
               Confirm Delivery ✓
             </button>
             <button
-              onClick={() => onOpenFail(next)}
+              onClick={() => actions.fail(trip)}
               className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white border border-rose-300 text-rose-700 hover:bg-rose-50"
             >
-              Report Fail ✕
+              Fail ✕
             </button>
           </div>
         </div>
       )}
+      {done && <div className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-700 font-medium">Trip completed and back at {p.hub.code}.</div>}
 
-      {blocked && (
-        <div className="mx-4 rounded-xl border border-red-200 bg-red-50 p-3 text-[11px] text-red-700">
-          <b>ROUTE_BLOCKED</b>: vehicle breakdown reported. {trip.stops.filter(s => s.state === 'BLOCKED').length} remaining stops need re-assignment.
-        </div>
-      )}
-
-      {!done && !blocked && simMin >= p.departMin && (
-        <div className={`px-4 grid gap-2 ${driverMode ? 'grid-cols-2' : 'grid-cols-2'}`}>
-          <button onClick={() => onDelay(trip, 15, 'heavy traffic congestion')} className="px-3 py-2 rounded-lg text-xs font-semibold border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100">+15m Delay</button>
-          <button onClick={() => onDelay(trip, 30, 'expressway bottleneck')} className="px-3 py-2 rounded-lg text-xs font-semibold border border-amber-300 bg-white text-amber-800 hover:bg-amber-50">+30m Delay</button>
-          <button onClick={() => onBreakdown(trip)} className="col-span-2 px-3 py-2 rounded-lg text-xs font-semibold border border-red-300 bg-red-50 text-red-700 hover:bg-red-100">Report Vehicle Breakdown 🚨</button>
-        </div>
-      )}
-
-      <div className="px-4 pt-1">
-        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Stop timeline & FSM State</p>
-        <ol className="relative">
-          <TimelineRow dot="bg-slate-800" title={`Depart ${p.hub.code}`} time={clock(p.departMin)} sub={p.hub.name} />
-          {trip.stops.map(s => <StopRow key={s.shipment.id} s={s} />)}
-          <TimelineRow dot={done ? 'bg-emerald-500' : 'bg-slate-300'} title={`Return to ${p.hub.code}`} time={Number.isFinite(trip.endMin) ? clock(trip.endMin) : '—'} sub="End of trip" last />
-        </ol>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+        <Metric label="Speed" value={`${Math.round(trip.speedKmh)} km/h`} />
+        <Metric label="Driving today" value={fmtDur(trip.driveMinutes)} hint={`of ${limit / 60}h limit`} warn={trip.driveMinutes > limit * 0.85} />
+        <Metric label="Fuel used" value={`${(trip.kmDone / p.vehicle.fuel_efficiency_kpl).toFixed(1)} L`} />
+        <Metric label="Delays" value={trip.delayMinutes ? `+${trip.delayMinutes} min` : 'None'} warn={trip.delayMinutes > 0} />
       </div>
+
+      {started && !blocked && !done && (
+        <div>
+          <p className="text-xs font-medium text-slate-500 mb-2">Report en-route disruption</p>
+          <div className="grid grid-cols-3 gap-2">
+            <IssueButton active={menu === 'delay'} onClick={() => setMenu(m => m === 'delay' ? null : 'delay')} label="Delay" icon="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
+            <IssueButton disabled={!next} onClick={() => actions.fail(trip)} label="Failed stop" icon="M6 6l12 12M18 6L6 18" />
+            <IssueButton active={menu === 'breakdown'} danger onClick={() => setMenu(m => m === 'breakdown' ? null : 'breakdown')} label="Breakdown" icon="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+          </div>
+          {menu === 'delay' && (
+            <div className="mt-2 flex gap-2">
+              {[{ m: 15, r: 'traffic' }, { m: 30, r: 'road closure' }, { m: 60, r: 'loading issue' }].map(o => (
+                <button key={o.m} onClick={() => { actions.delay(trip, o.m, o.r); setMenu(null) }} className="flex-1 rounded-lg border border-amber-200 bg-amber-50 py-2 text-sm text-amber-800 hover:bg-amber-100">+{o.m} min<span className="block text-xs text-amber-600">{o.r}</span></button>
+              ))}
+            </div>
+          )}
+          {menu === 'breakdown' && (
+            <div className="mt-2 rounded-lg bg-red-50 p-3 flex items-center gap-3">
+              <p className="text-sm text-red-700 flex-1">Stop this trip and flag its remaining stops?</p>
+              <button onClick={() => { actions.breakdown(trip); setMenu(null) }} className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700">Confirm</button>
+            </div>
+          )}
+          <p className="text-xs text-slate-400 mt-2">Later ETAs update immediately and every report is written to the audit log.</p>
+        </div>
+      )}
     </div>
   )
 }
 
-function Tele({ label, value, unit, warn }: { label: string; value: string; unit: string; warn?: boolean }) {
+function Metric({ label, value, hint, warn }: { label: string; value: string; hint?: string; warn?: boolean }) {
   return (
-    <div className="rounded-lg bg-white border border-slate-200 px-2 py-1.5">
-      <p className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">{label}</p>
-      <p className={`text-sm font-bold tabular-nums leading-tight ${warn ? 'text-amber-700' : 'text-slate-900'}`}>{value} <span className="text-[9px] font-medium text-slate-400">{unit}</span></p>
+    <div>
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className={`text-base font-semibold tabular-nums ${warn ? 'text-amber-600' : 'text-slate-900'}`}>{value}</p>
+      {hint && <p className="text-xs text-slate-400">{hint}</p>}
     </div>
   )
 }
 
-function TimelineRow({ dot, title, time, sub, last, children }: { dot: string; title: string; time: string; sub: string; last?: boolean; children?: React.ReactNode }) {
+function IssueButton({ label, icon, onClick, active, danger, disabled }: { label: string; icon: string; onClick: () => void; active?: boolean; danger?: boolean; disabled?: boolean }) {
+  const tone = active
+    ? danger ? 'border-red-300 bg-red-50 text-red-700' : 'border-amber-300 bg-amber-50 text-amber-800'
+    : danger ? 'border-slate-200 text-red-600 hover:bg-red-50' : 'border-slate-200 text-slate-700 hover:bg-slate-50'
   return (
-    <li className="relative pl-6 pb-3">
-      {!last && <span className="absolute left-[5px] top-3 bottom-0 w-px bg-slate-200" />}
-      <span className={`absolute left-0 top-1 w-[11px] h-[11px] rounded-full ${dot}`} />
-      <div className="flex items-baseline gap-2">
-        <p className="text-xs font-semibold text-slate-800 flex-1">{title}</p>
-        <span className="font-mono text-[11px] text-slate-500">{time}</span>
+    <button onClick={onClick} disabled={disabled} className={`flex flex-col items-center gap-1.5 rounded-xl border py-3 text-sm transition-colors disabled:opacity-40 ${tone}`}>
+      <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={icon} /></svg>
+      {label}
+    </button>
+  )
+}
+
+function Row({ dot, title, time, sub, last, children }: { dot: string; title: string; time: string; sub: string; last?: boolean; children?: React.ReactNode }) {
+  return (
+    <li className="relative pl-7 pb-5">
+      {!last && <span className="absolute left-[6px] top-4 bottom-0 w-px bg-slate-200" />}
+      <span className="absolute left-0 top-1 w-[13px] h-[13px] rounded-full border-2 border-white shadow" style={{ background: dot }} />
+      <div className="flex items-baseline gap-3">
+        <p className="text-sm font-medium text-slate-900 flex-1">{title}</p>
+        <span className="font-mono text-sm text-slate-500">{time}</span>
       </div>
-      <p className="text-[11px] text-slate-500">{sub}</p>
+      <p className="text-xs text-slate-500 mt-0.5">{sub}</p>
       {children}
     </li>
   )
@@ -667,20 +769,16 @@ function mapStopStateToStatus(st: string): ShipmentStatus {
 }
 
 function StopRow({ s }: { s: StopView }) {
-  const label: Record<string, string> = { PENDING: 'Pending', NEXT: 'En route', ARRIVED: 'On site', DELIVERED: 'Delivered', FAILED: 'Failed', BLOCKED: 'Blocked' }
-  const mappedStatus = mapStopStateToStatus(s.state)
-
   return (
-    <TimelineRow dot={STOP_DOT[s.state]} title={`${s.index + 1}. ${s.shipment.customer_name}`} time={Number.isFinite(s.eta) ? clock(s.eta) : '—'} sub={`${s.shipment.tracking_number} · window ${s.shipment.time_window_start}–${s.shipment.time_window_end}`}>
-      <div className="flex items-center justify-between gap-1.5 mt-1 flex-wrap">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{label[s.state]}</span>
-          {s.late && s.state !== 'DELIVERED' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">SLA risk +{fmtDur(s.lateBy)}</span>}
-          {s.late && s.state === 'DELIVERED' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">SLA breached</span>}
-          {s.shipment.priority === 'EXPRESS' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-50 text-red-600">EXPRESS</span>}
-        </div>
-        <FsmProgressBar compact status={mappedStatus} />
+    <Row dot={STOP_COLOR[s.state]} title={s.shipment.customer_name} time={Number.isFinite(s.eta) ? clock(s.eta) : '—'} sub={`${STOP_LABEL[s.state]} · window ${s.shipment.time_window_start}–${s.shipment.time_window_end}`}>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        {s.late && s.state !== 'FAILED' ? (
+          <p className={`text-xs ${s.state === 'DELIVERED' ? 'text-red-600' : 'text-amber-700'}`}>
+            {s.state === 'DELIVERED' ? `Delivered ${fmtDur(s.lateBy)} late` : `Expected ${fmtDur(s.lateBy)} late`}
+          </p>
+        ) : <span />}
+        <FsmProgressBar compact status={mapStopStateToStatus(s.state)} />
       </div>
-    </TimelineRow>
+    </Row>
   )
 }

@@ -5,6 +5,7 @@ import { useEffect, useImperativeHandle, useRef, type Ref } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { PRIORITY_COLOR, escapeHtml, hubIcon, stopIcon } from './markers'
+import { addBasemap } from './tiles'
 
 export interface MapHub { id: number; name: string; code: string; address: string; latitude: number; longitude: number; operating_hours?: string }
 export interface MapStop {
@@ -24,8 +25,6 @@ export interface MapStop {
 export interface StopMetric { rank: number; roadKm: number; minutes: number }
 export interface MapHandle { focusStop: (id: number) => void; focusHub: (id: number) => void }
 
-const OSM_TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 
 function hubPopup(h: MapHub, stopCount: number): string {
   return `<div style="font-family:'DM Sans',sans-serif;min-width:190px">
@@ -54,12 +53,13 @@ function stopPopup(s: MapStop, metric?: StopMetric): string {
   </div>`
 }
 
-export default function LeafletMap({ hubs, stops, selectedHubId, metrics, onSelectHub, ref }: {
+export default function LeafletMap({ hubs, stops, selectedHubId, metrics, onSelectHub, fitPadding, ref }: {
   hubs: MapHub[]
   stops: MapStop[]
   selectedHubId: number | null
   metrics: Record<number, StopMetric>
   onSelectHub: (id: number) => void
+  fitPadding?: { topLeft: [number, number]; bottomRight: [number, number] } // keep routes clear of floating panels
   ref?: Ref<MapHandle>
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -72,8 +72,9 @@ export default function LeafletMap({ hubs, stops, selectedHubId, metrics, onSele
   // Create the map once.
   useEffect(() => {
     if (!containerRef.current) return
-    const map = L.map(containerRef.current, { zoomControl: true, attributionControl: true }).setView([19.07, 72.88], 10)
-    L.tileLayer(OSM_TILES, { maxZoom: 19, attribution: OSM_ATTRIBUTION }).addTo(map)
+    const map = L.map(containerRef.current, { zoomControl: false }).setView([19.07, 72.88], 10)
+    L.control.zoom({ position: 'bottomleft' }).addTo(map)
+    addBasemap(map)
     layerRef.current = L.layerGroup().addTo(map)
     mapRef.current = map
     // Leaflet measures its container once; re-measure whenever the flex layout resizes it.
@@ -121,7 +122,7 @@ export default function LeafletMap({ hubs, stops, selectedHubId, metrics, onSele
     const scopedHubs = selectedHubId === null ? hubs : hubs.filter(h => h.id === selectedHubId)
     const pts: L.LatLngExpression[] = [...scopedHubs.map(h => [h.latitude, h.longitude] as [number, number]), ...scoped.map(s => [s.latitude, s.longitude] as [number, number])]
     if (pts.length === 1) map.setView(pts[0], 13)
-    else if (pts.length > 1) map.fitBounds(L.latLngBounds(pts), { padding: [48, 48], maxZoom: 14 })
+    else if (pts.length > 1) map.fitBounds(L.latLngBounds(pts), fitPadding ? { paddingTopLeft: fitPadding.topLeft, paddingBottomRight: fitPadding.bottomRight, maxZoom: 13 } : { padding: [48, 48], maxZoom: 14 })
     // Deliberately keyed on counts, not array identity, so editing a stop does not reset the user's zoom.
   }, [selectedHubId, hubs.length, stops.length])
 

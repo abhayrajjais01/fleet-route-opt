@@ -1,3 +1,4 @@
+import type { AdminSection } from '../../lib/types'
 import React, { useState, useEffect, useRef } from 'react'
 import {
   copilotApi,
@@ -27,7 +28,7 @@ interface CopilotCommandCenterProps {
   shipments: any[]
   hubs: any[]
   audit: any[]
-  setSection: (section: string) => void
+  setSection: (section: AdminSection) => void
   activeRole: string
   authToken: string | null
 }
@@ -86,6 +87,7 @@ export const CopilotCommandCenter: React.FC<CopilotCommandCenterProps> = ({
   shipments,
   hubs,
   setSection,
+  activeRole,
   authToken,
 }) => {
   const [messages, setMessages] = useState<CopilotMsg[]>([

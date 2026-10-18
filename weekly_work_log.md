@@ -181,7 +181,7 @@
    - Expandable **StateGraph Multi-Agent Execution Trace** accordion displaying node-by-node sequence and millisecond latencies.
 6. **Automated Test Suite & Regression Verification**:
    - 16 comprehensive automated unit and integration tests (`backend/tests/test_copilot_router.py`) covering intent classification, entity extraction, confidence thresholds, RAG citation retrieval, execution trace validity, and RBAC authentication.
-   - **Combined Test Suite: 110 / 110 automated backend tests passing (100% pass rate)**:
+   - **Combined Test Suite: 122 / 122 automated backend tests passing (100% pass rate)**:
      - `test_distance_matrix.py` (20 passed)
      - `test_copilot_router.py` (16 passed)
      - `test_rag.py` (22 passed)
@@ -195,9 +195,20 @@
 
 ---
 
-### Week 6: Deterministic VRPTW Solver Core vs. In-Transit FSM (Oct 12 – Oct 16, 2026) — TRACK B DELIVERED ✅
-- **Status**: `TRACK B COMPLETED` ✅ (In-Transit FSM & Telemetry Tracking Delivered)
-- **Focus Area**: In-Transit Finite State Machine (FSM), Driver Action API Endpoints, FSM Visual Stepper Component, Telemetry Synchronization, and Automated Regression Suite (US-008).
+### Week 6: Deterministic VRPTW Solver Core vs. In-Transit FSM (Oct 12 – Oct 16, 2026) — COMPLETED ✅
+- **Status**: `COMPLETED` ✅ (Both Track A & Track B Delivered)
+- **Focus Area**: Deterministic VRPTW Solver Core (Clarke-Wright Savings + 2-Opt) vs. In-Transit Finite State Machine (FSM), Driver Action API Endpoints, FSM Visual Stepper Component, Telemetry Synchronization, and Automated Regression Suite (US-003 & US-008).
+
+#### Track A (Manthan Nimodiya):
+1. **VRPTW Solver (`backend/app/services/optimizer/vrptw_solver.py`)**:
+   - Clarke-Wright savings merges routes by largest saving `d(hub,i) + d(hub,j) − d(i,j)` while the merged route stays feasible.
+   - Hard constraints never broken: payload, volume, time windows (early arrival waits), driver shift limit.
+   - Best-fit assignment of routes to the real fleet; leftover stops re-inserted at the cheapest feasible position (or by earliest deadline); anything impossible is returned as unassigned with a reason.
+   - 2-opt improvement using route cost = road km + 0.3 × route minutes, so the solver avoids long idle waits outside closed windows.
+2. **API**: `POST /api/v1/routes/optimize` returns sequenced routes with arrival/service/departure times, utilisation, unassigned reasons, and the saving versus serving every stop separately.
+3. **Results**: 50 stops on 5 trucks solved in milliseconds (PRD target < 5 s), ~80% less distance than separate trips.
+4. **Frontend Integration**: Live Tracking orders each trip with the solver; nearest-neighbour remains as the offline fallback.
+5. **Testing**: `backend/tests/test_vrptw_solver.py` (13 tests) re-simulating every route independently to verify capacity, windows, shift limit and that each stop is served exactly once.
 
 #### Track B (Abhayraj Jaiswal):
 1. **In-Transit Finite State Machine Service (`backend/app/services/transit_fsm.py`)**:
@@ -225,7 +236,6 @@
    - Delivery Failure Incident Reporting modal with standard reason selector.
    - Quick delay logger (+15m, +30m) with audit trail sync.
    - Seamless live API execution with graceful offline simulation fallback.
-6. **Automated Pytest Suite (`backend/tests/test_transit_fsm.py`)**:
-   - 11 comprehensive unit and integration tests covering happy path lifecycle, illegal transition rejection (400 Bad Request), terminal state locking, duty state synchronization, failure reporting, redispatching, delay audit logging, and RBAC authorization.
-   - **Full Repository Test Suite**: **110 / 110 passed (100% pass rate)**.
-   - Frontend production build (`pnpm run build`): **Built cleanly in 713ms with 0 errors**.
+6. **Automated Pytest Suite (`backend/tests/test_transit_fsm.py` & `test_vrptw_solver.py`)**:
+   - **Combined Full Suite**: **122 / 122 passed (100% pass rate)**.
+   - Frontend production build (`pnpm run build`): **Built cleanly in 860ms with 0 errors**.

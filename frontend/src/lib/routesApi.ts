@@ -23,3 +23,21 @@ export const routesApi = {
       body: JSON.stringify({ points, vehicle_type: vehicleType }),
     }),
 }
+
+// ─── VRPTW optimizer (Week 6) ─────────────────────────────────────────────────
+export interface OptimizeStop extends GeoPoint { weight_kg: number; volume_m3: number; window_start: string; window_end: string; service_min?: number }
+export interface OptimizeVehicle { id: string; capacity_kg: number; capacity_m3: number; vehicle_type: MatrixVehicleType; max_shift_hours?: number }
+export interface OptimizeResponse {
+  status: 'ROUTE_PROPOSED' | 'OPTIMIZATION_FAILED'
+  routes: { vehicle_id: string; stop_ids: string[]; distance_km: number; duration_min: number; return_time: string; utilisation: number;
+    visits: { stop_id: string; arrival: string; service_start: string; departure: string; wait_min: number }[] }[]
+  unassigned: Record<string, string>
+  total_distance_km: number
+  separate_trips_km: number
+  saving_pct: number
+  compute_ms: number
+}
+
+export function optimizeRoutes(hub: GeoPoint, stops: OptimizeStop[], vehicles: OptimizeVehicle[], departure: string) {
+  return apiRequest<OptimizeResponse>('/routes/optimize', { method: 'POST', body: JSON.stringify({ hub, stops, vehicles, departure }) })
+}
