@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logging import logger
-from app.core.database import Base, engine, check_database_connection
+from app.core.database import Base, engine, check_database_connection, apply_database_migrations
 from app.api.v1.router import api_router
 
 
@@ -28,6 +28,7 @@ async def lifespan(app: FastAPI):
         
         # Step 2: Auto-create ORM database tables defined in app/models/ if they do not exist
         Base.metadata.create_all(bind=engine)
+        apply_database_migrations()
         logger.info("Database schemas verified & synchronized.")
     except Exception as e:
         logger.error(f"Database startup initialization error: {e}", exc_info=True)

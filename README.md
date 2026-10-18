@@ -7,7 +7,7 @@ An enterprise-grade, end-to-end AI solution for Fleet Route Optimization address
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com)
 [![React 19](https://img.shields.io/badge/React-19.0-61DAFB.svg)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646CFF.svg)](https://vitejs.dev)
-[![Tests](https://img.shields.io/badge/Tests-49%2F49%20Passed%20(100%25)-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-122%2F122%20Passed%20(100%25)-brightgreen.svg)]()
 [![RAG Benchmark](https://img.shields.io/badge/RAG%20Eval-Recall%403%201.00%20%7C%20MRR%200.98-success.svg)]()
 [![Render](https://img.shields.io/badge/Render-Backend%20Live-brightgreen.svg)](https://fleet-route-opt.onrender.com)
 [![Vercel](https://img.shields.io/badge/Vercel-Frontend%20Live-black.svg)](https://fleet-route-opt.vercel.app)
@@ -46,7 +46,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 | **Week 4** | **Batch Ingestion & Compliance UI** | RAG Compliance Inspector Search UI | Batch Order Uploader (CSV/JSON), Cluster Preview & Regression Tests | `COMPLETED` ✅ |
 | **Week 5** | **Spatial Map & LangGraph Foundation** | Haversine Matrix & Leaflet Map Shell | LangGraph StateGraph & Router Agent (Intent Classifier) | `COMPLETED` ✅ |
 
-- **Automated Backend Test Suite**: `python -m pytest` → **111 / 111 PASSED (100%)**
+- **Automated Backend Test Suite**: `python -m pytest` → **122 / 122 PASSED (100%)**
 - **RAG Retrieval Benchmark**: `python -m app.services.rag.evaluation` → **Recall@3 1.00 · MRR 0.98 · p95 < 1 ms** (WikiQA-style eval set)
 - **Database Seeder**: `python scripts/seed_demo_data.py` → **Pre-loads 4 roles, 3 hubs, 4 vehicles, 5 drivers, 5 shipments, and audit logs**
 - **Live Deployments**:

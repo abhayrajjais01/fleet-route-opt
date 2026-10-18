@@ -34,6 +34,7 @@ class ShipmentStatus(str, enum.Enum):
     CLUSTERED = "CLUSTERED"     # Grouped by geographic zone for route optimization
     ASSIGNED = "ASSIGNED"       # Assigned to a specific vehicle/manifest
     IN_TRANSIT = "IN_TRANSIT"   # Currently out for delivery
+    ARRIVED = "ARRIVED"         # Driver arrived at destination stop
     DELIVERED = "DELIVERED"     # Successfully handed over to consignee
     FAILED = "FAILED"           # Delivery attempt failed (e.g. consignee unavailable)
 
