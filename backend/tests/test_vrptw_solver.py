@@ -166,3 +166,14 @@ def test_optimize_endpoint_flags_failures_and_validates(client):
     bad = payload(2, 1)
     bad["stops"][0]["window_end"] = "25:00"
     assert client.post("/api/v1/routes/optimize", json=bad).status_code == 422
+
+
+def test_route_cost_charges_for_idle_time():
+    """Regression (demo trip): distance-only ordering made the van wait 77 min at Powai before its 10:00 window."""
+    powai = Stop("Powai", 19.1176, 72.906, 180, 1.5, 600, 840)
+    bandra = Stop("Bandra", 19.0596, 72.8295, 140, 1.1, 540, 750)
+    ghatkopar = Stop("Ghatkopar", 19.086, 72.9081, 160, 1.0, 690, 960)
+    van = [VehicleSpec("van", 1500, 12, "VAN", 480)]
+    sol = solve(HUB, [powai, bandra, ghatkopar], van, 510)
+    assert sol.routes[0].stops[0] == "Bandra"
+    assert sol.routes[0].visits[0].wait < 30

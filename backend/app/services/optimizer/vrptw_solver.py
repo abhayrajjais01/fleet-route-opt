@@ -13,7 +13,10 @@ Algorithm (classic construction + improvement heuristics; VRPTW is NP-hard, so n
   2. Fleet fitting: routes are matched to vehicles largest-load-first (best-fit). If there are more routes than
      vehicles, stops from leftover routes are re-inserted at their cheapest feasible position; anything that
      still cannot fit is reported as unassigned with a reason (PRD state OPTIMIZATION_FAILED for that stop).
-  3. 2-opt: inside each route, reverse a segment whenever it shortens the route and stays feasible.
+  3. 2-opt: inside each route, reverse a segment whenever it lowers the route cost and stays feasible.
+
+Route cost = road km + TIME_WEIGHT x route minutes (waiting included). Distance alone treats idle time as free,
+so a van would happily wait an hour outside a closed window; charging for driver time prevents that.
 
 Distances and drive times come from the cached distance-matrix engine, so the solver itself only does
 integer index work. The separate-trips baseline (one round trip per stop) is reported for comparison.
@@ -28,6 +31,8 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from app.services.optimizer.distance_matrix import build_distance_matrix
+
+TIME_WEIGHT = 0.3  # km-equivalent cost per route minute (driver time); 1 h idle ≈ 18 km of driving
 
 
 @dataclass(frozen=True)
@@ -125,6 +130,12 @@ class _Problem:
             return None
         return visits, back
 
+    def cost(self, route: Sequence[int], v: "VehicleSpec") -> float:
+        sched = self.schedule(route, v.vehicle_type, v.max_shift_min)
+        if sched is None:
+            return float("inf")
+        return self.length(route) + TIME_WEIGHT * (sched[1] - self.depart)
+
     def fits(self, route: Sequence[int], v: VehicleSpec) -> bool:
         kg, m3 = self.load(route)
         return kg <= v.capacity_kg + 1e-9 and m3 <= v.capacity_m3 + 1e-9 and self.schedule(route, v.vehicle_type, v.max_shift_min) is not None
@@ -161,29 +172,29 @@ def _clarke_wright(p: _Problem, nodes: List[int], cap: VehicleSpec) -> List[List
 
 
 def _two_opt(p: _Problem, route: List[int], v: VehicleSpec) -> List[int]:
-    best, best_len, improved = route, p.length(route), True
+    best, best_cost, improved = route, p.cost(route, v), True
     while improved:
         improved = False
         for i in range(len(best) - 1):
             for k in range(i + 1, len(best)):
                 cand = best[:i] + best[i:k + 1][::-1] + best[k + 1:]
-                cand_len = p.length(cand)
-                if cand_len < best_len - 1e-9 and p.schedule(cand, v.vehicle_type, v.max_shift_min) is not None:
-                    best, best_len, improved = cand, cand_len, True
+                cand_cost = p.cost(cand, v)  # inf when infeasible
+                if cand_cost < best_cost - 1e-9:
+                    best, best_cost, improved = cand, cand_cost, True
     return best
 
 
 def _cheapest_insertion(p: _Problem, node: int, routes: List[Tuple[VehicleSpec, List[int]]]) -> bool:
     best: Optional[Tuple[float, int, List[int]]] = None
     for r_idx, (v, route) in enumerate(routes):
-        base = p.length(route)
+        base = p.cost(route, v)
         options = [route[:pos] + [node] + route[pos:] for pos in range(len(route) + 1)]
         # Also try re-sequencing the whole route by deadline (earliest window close first), which often
         # opens room that no single insertion position can.
         options.append(sorted(route + [node], key=lambda n: (p.stops[n - 1].window_close, p.stops[n - 1].window_open, n)))
         for cand in options:
             if p.fits(cand, v):
-                delta = p.length(cand) - base
+                delta = p.cost(cand, v) - base
                 if best is None or delta < best[0]:
                     best = (delta, r_idx, cand)
     if best is None:

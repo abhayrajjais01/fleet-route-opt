@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AuditEntry, Driver, Hub, Shipment, UserRole, Vehicle } from '../../lib/types'
 import { clock, estimateLeg, legsAlong, toMinutes, type LatLng } from '../../lib/geo'
+import { optimizeRoutes } from '../../lib/routesApi'
 import { emptyEvents, feedFor, viewAt, type FeedItem, type StopView, type TripEvents, type TripPlan, type TripState, type TripView } from './simulation'
 import TrackingMap, { STOP_COLOR } from './TrackingMap'
 
@@ -28,7 +29,7 @@ const TRIP_STATE: Record<TripState, { label: string; color: string }> = {
 }
 const STOP_LABEL: Record<string, string> = { PENDING: 'Upcoming', NEXT: 'Heading here', ARRIVED: 'On site', DELIVERED: 'Delivered', FAILED: 'Failed', BLOCKED: 'Needs re-route' }
 
-/** Greedy nearest-neighbour stop order from the hub. Placeholder until the Week 6 VRPTW solver sequences routes. */
+/** Greedy nearest-neighbour order: offline fallback when the VRPTW optimizer API is unreachable. */
 function orderStops(hub: Hub, stops: Shipment[]): Shipment[] {
   const left = [...stops]
   const out: Shipment[] = []
@@ -76,7 +77,21 @@ export default function LiveTrackingSection({ hubs, vehicles, drivers, shipments
 
   useEffect(() => {
     let cancelled = false
-    Promise.all(tripInputs.map(async (t): Promise<TripPlan> => {
+    Promise.all(tripInputs.map(async (input): Promise<TripPlan> => {
+      let t = input
+      const departure = t.stops.map(s => s.dispatch_time ?? DEFAULT_DEPART).sort()[0]
+      // Sequence stops with the VRPTW solver (time windows, capacity); fall back to nearest-neighbour offline.
+      try {
+        const res = await optimizeRoutes(
+          { id: `hub-${t.hub.id}`, latitude: t.hub.latitude, longitude: t.hub.longitude },
+          t.stops.map(s => ({ id: String(s.id), latitude: s.latitude!, longitude: s.longitude!, weight_kg: s.weight_kg, volume_m3: s.volume_m3, window_start: s.time_window_start, window_end: s.time_window_end })),
+          [{ id: String(t.vehicle.id), capacity_kg: t.vehicle.max_payload_kg, capacity_m3: t.vehicle.max_volume_m3, vehicle_type: t.vehicle.vehicle_type, max_shift_hours: Math.min(14, t.driver?.max_driving_hours_per_day ?? 10) }],
+          departure,
+        )
+        const order = res.routes[0]?.stop_ids ?? []
+        const rank = (s: Shipment) => { const i = order.indexOf(String(s.id)); return i < 0 ? order.length + 1 : i }
+        t = { ...t, stops: [...t.stops].sort((a, b) => rank(a) - rank(b)) }
+      } catch { /* keep nearest-neighbour order */ }
       const pts: LatLng[] = [[t.hub.latitude, t.hub.longitude], ...t.stops.map(s => [s.latitude!, s.longitude!] as LatLng), [t.hub.latitude, t.hub.longitude]]
       const { legs, source } = await legsAlong(pts, t.vehicle.vehicle_type)
       const depart = Math.min(...t.stops.map(s => toMinutes(s.dispatch_time ?? DEFAULT_DEPART)))
