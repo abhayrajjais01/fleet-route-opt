@@ -129,9 +129,14 @@ export default function TrackingMap({ views, colors, selectedId, hoveredId, onSe
     if (!map || !views.length || !containerRef.current?.clientWidth) return
     const scoped = selectedId ? views.filter(v => v.plan.id === selectedId) : views
     const pts = scoped.flatMap(v => v.path)
-    if (pts.length) map.flyToBounds(L.latLngBounds(pts), {
-      paddingTopLeft: [insets.left + 40, insets.top + 40], paddingBottomRight: [insets.right + 40, insets.bottom + 40], maxZoom: 14, duration: 0.6,
-    })
+    if (!pts.length) return
+    // The page may have just become visible (e.g. switching to the Driver role): re-measure first, and skip the
+    // animated flyTo when the map has no size yet, since Leaflet then computes NaN coordinates and throws.
+    map.invalidateSize()
+    const size = map.getSize()
+    const opts = { paddingTopLeft: [insets.left + 40, insets.top + 40] as L.PointTuple, paddingBottomRight: [insets.right + 40, insets.bottom + 40] as L.PointTuple, maxZoom: 14 }
+    if (size.x <= insets.left + insets.right + 80 || size.y <= insets.top + insets.bottom + 80) map.fitBounds(L.latLngBounds(pts), { maxZoom: 14 })
+    else map.flyToBounds(L.latLngBounds(pts), { ...opts, duration: 0.6 })
   }
   useEffect(() => fitRef.current(), [focusKey, selectedId])
 
