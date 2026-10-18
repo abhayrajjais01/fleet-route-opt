@@ -98,16 +98,34 @@ class TransitFSMService:
         """
         Transitions shipment ASSIGNED -> IN_TRANSIT.
         Synchronizes assigned Vehicle status to IN_TRANSIT and Driver to ON_TRIP.
+        Validates dispatcher authority for vehicle reassignment and driver assignment integrity.
+        Preserves true prior vehicle assignment in the immutable audit trail before snapshot.
         """
+        from app.models.user import UserRole
+
         shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
         if not shipment:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shipment not found.")
 
-        # If vehicle_id provided, assign it if unassigned or verify
-        if vehicle_id is not None:
-            vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
-            if not vehicle:
+        old_status = shipment.status
+        old_vehicle_id = shipment.assigned_vehicle_id
+
+        # Restrict reassignment to authorized dispatchers (ADMIN, FLEET_MANAGER, DISPATCHER)
+        if vehicle_id is not None and vehicle_id != old_vehicle_id:
+            if actor.role not in {UserRole.ADMIN, UserRole.FLEET_MANAGER, UserRole.DISPATCHER}:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Drivers cannot reassign shipments to another vehicle during departure. Reassignment requires Dispatcher or Fleet Manager authorization.",
+                )
+
+            new_vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+            if not new_vehicle:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Vehicle {vehicle_id} not found.")
+            if new_vehicle.current_status in {VehicleStatus.MAINTENANCE, VehicleStatus.DECOMMISSIONED}:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot depart shipment with vehicle {new_vehicle.plate_number}: Vehicle is currently in '{new_vehicle.current_status.value}' status.",
+                )
             shipment.assigned_vehicle_id = vehicle_id
 
         if not shipment.assigned_vehicle_id:
@@ -116,33 +134,50 @@ class TransitFSMService:
                 detail="Cannot depart shipment: No vehicle assigned. Assign a vehicle before departing.",
             )
 
+        assigned_veh = db.query(Vehicle).filter(Vehicle.id == shipment.assigned_vehicle_id).first()
+        if not assigned_veh:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Assigned vehicle {shipment.assigned_vehicle_id} not found.")
+        if assigned_veh.current_status in {VehicleStatus.MAINTENANCE, VehicleStatus.DECOMMISSIONED}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot depart shipment: Assigned vehicle {assigned_veh.plate_number} is in '{assigned_veh.current_status.value}' status.",
+            )
+
+        # Validate driver-to-vehicle authorization
+        if actor.role == UserRole.DRIVER:
+            driver_on_veh = db.query(Driver).filter(Driver.current_vehicle_id == shipment.assigned_vehicle_id).first()
+            if driver_on_veh and driver_on_veh.full_name.strip().lower() != actor.full_name.strip().lower():
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Driver '{actor.full_name}' is not authorized to depart vehicle {assigned_veh.plate_number} (assigned to {driver_on_veh.full_name}).",
+                )
+
         target_status = ShipmentStatus.IN_TRANSIT
         cls.validate_transition(shipment.status, target_status)
 
-        old_status = shipment.status
         shipment.status = target_status
 
         # Synchronize vehicle & driver
-        vehicle = db.query(Vehicle).filter(Vehicle.id == shipment.assigned_vehicle_id).first()
-        if vehicle and vehicle.current_status == VehicleStatus.AVAILABLE:
-            vehicle.current_status = VehicleStatus.IN_TRANSIT
+        if assigned_veh.current_status == VehicleStatus.AVAILABLE:
+            assigned_veh.current_status = VehicleStatus.IN_TRANSIT
 
         driver = db.query(Driver).filter(Driver.current_vehicle_id == shipment.assigned_vehicle_id).first()
         if driver and driver.status == DriverStatus.ON_DUTY:
             driver.status = DriverStatus.ON_TRIP
 
-        detail_msg = f"Dispatched for delivery (IN_TRANSIT) with vehicle {vehicle.plate_number if vehicle else shipment.assigned_vehicle_id}"
+        detail_msg = f"Dispatched for delivery (IN_TRANSIT) with vehicle {assigned_veh.plate_number}"
         if notes:
             detail_msg += f". Notes: {notes}"
 
-        audit_entry = record_audit_event(
+        # Preserve the true prior vehicle in before_state
+        record_audit_event(
             db=db,
             actor=actor,
             action_type=AuditAction.STATUS_CHANGE,
             entity_type="Shipment",
             entity_id=shipment.id,
             details=detail_msg,
-            before_state={"status": old_status.value, "vehicle_id": shipment.assigned_vehicle_id},
+            before_state={"status": old_status.value, "vehicle_id": old_vehicle_id},
             after_state={"status": target_status.value, "vehicle_id": shipment.assigned_vehicle_id, "notes": notes},
         )
 
@@ -159,7 +194,7 @@ class TransitFSMService:
             actor_role=actor.role.value,
             timestamp=datetime.now(timezone.utc),
             details=detail_msg,
-            metadata={"notes": notes, "vehicle_id": shipment.assigned_vehicle_id},
+            metadata={"notes": notes, "vehicle_id": shipment.assigned_vehicle_id, "previous_vehicle_id": old_vehicle_id},
         )
 
     @classmethod

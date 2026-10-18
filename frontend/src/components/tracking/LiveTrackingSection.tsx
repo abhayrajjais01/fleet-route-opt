@@ -96,6 +96,7 @@ export default function LiveTrackingSection({
   const [failReason, setFailReason] = useState<TransitFailureReason>('CONSIGNEE_UNAVAILABLE')
   const [failNotes, setFailNotes] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const tripInputs = useMemo(() => {
     const byVehicle = new Map<number, Shipment[]>()
@@ -177,22 +178,30 @@ export default function LiveTrackingSection({
 
   const actions = {
     async delay(trip: TripView, minutes: number, reason: string) {
-      updateEvents(trip, e => ({ ...e, delays: [...e.delays, { at: simMin, minutes, reason }] }))
-      addAudit({ actor_name: actor, action_type: 'STATUS_CHANGE', entity_type: 'ROUTE', entity_id: trip.plan.vehicle.id, details: `${trip.plan.vehicle.plate_number} delayed +${minutes} min (${reason}) at ${clock(simMin)}; downstream ETAs recalculated` })
-      if (trip.nextStop) {
+      if (authToken && trip.nextStop) {
         try {
           await apiReportDelay(trip.nextStop.shipment.id, minutes, reason, authToken)
-        } catch { /* offline fallback */ }
+        } catch (err: any) {
+          setActionError(err.message || 'Server rejected transit delay.')
+          return
+        }
       }
+      setActionError(null)
+      updateEvents(trip, e => ({ ...e, delays: [...e.delays, { at: simMin, minutes, reason }] }))
+      addAudit({ actor_name: actor, action_type: 'STATUS_CHANGE', entity_type: 'ROUTE', entity_id: trip.plan.vehicle.id, details: `${trip.plan.vehicle.plate_number} delayed +${minutes} min (${reason}) at ${clock(simMin)}; downstream ETAs recalculated` })
     },
     async arrive(trip: TripView) {
       const s = trip.nextStop
       if (!s) return
-      try {
-        if (authToken) {
+      if (authToken) {
+        try {
           await arriveAtStop(s.shipment.id, s.shipment.latitude, s.shipment.longitude, 'Driver checked in', authToken)
+        } catch (err: any) {
+          setActionError(err.message || 'Arrival check-in rejected by server.')
+          return
         }
-      } catch { /* offline fallback */ }
+      }
+      setActionError(null)
       if (setShipments) {
         setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'ARRIVED' } : sh))
       }
@@ -201,12 +210,14 @@ export default function LiveTrackingSection({
     fail(trip: TripView) {
       const s = trip.nextStop
       if (!s) return
+      setActionError(null)
       setFailModal(s)
       setFailNotes('')
     },
     deliver(trip: TripView) {
       const s = trip.nextStop
       if (!s) return
+      setActionError(null)
       setDeliverModal(s)
       setRecipientInput(s.shipment.customer_name)
     },
@@ -220,13 +231,18 @@ export default function LiveTrackingSection({
     if (!deliverModal) return
     const s = deliverModal
     setActionLoading(true)
+    setActionError(null)
     const recipient = recipientInput.trim() || s.shipment.customer_name
 
-    try {
-      if (authToken) {
+    if (authToken) {
+      try {
         await deliverShipment(s.shipment.id, recipient, 'SIG-VERIFIED', 'Handed over to consignee', authToken)
+      } catch (err: any) {
+        setActionError(err.message || 'Delivery confirmation rejected by server.')
+        setActionLoading(false)
+        return
       }
-    } catch { /* offline fallback */ }
+    }
 
     if (setShipments) {
       setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'DELIVERED' } : sh))
@@ -248,12 +264,17 @@ export default function LiveTrackingSection({
     if (!failModal) return
     const s = failModal
     setActionLoading(true)
+    setActionError(null)
 
-    try {
-      if (authToken) {
+    if (authToken) {
+      try {
         await failDelivery(s.shipment.id, failReason, failNotes || 'Delivery failed', authToken)
+      } catch (err: any) {
+        setActionError(err.message || 'Failure reporting rejected by server.')
+        setActionLoading(false)
+        return
       }
-    } catch { /* offline fallback */ }
+    }
 
     if (setShipments) {
       setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'FAILED' } : sh))
@@ -378,6 +399,8 @@ export default function LiveTrackingSection({
           color={colors[selected.plan.id]}
           simMin={simMin}
           actions={actions}
+          actionError={actionError}
+          onClearError={() => setActionError(null)}
           onClose={() => setSelectedId(null)}
         />
       )}
@@ -442,6 +465,11 @@ export default function LiveTrackingSection({
               <button onClick={() => setDeliverModal(null)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
             <div className="space-y-3">
+              {actionError && (
+                <div className="rounded-lg bg-rose-50 border border-rose-200 p-2.5 text-xs text-rose-700">
+                  ⚠ {actionError}
+                </div>
+              )}
               <div>
                 <label className="text-xs font-semibold text-slate-600 block mb-1">Customer / Consignee Name</label>
                 <input
@@ -484,6 +512,11 @@ export default function LiveTrackingSection({
               <button onClick={() => setFailModal(null)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
             <div className="space-y-3">
+              {actionError && (
+                <div className="rounded-lg bg-rose-50 border border-rose-200 p-2.5 text-xs text-rose-700">
+                  ⚠ {actionError}
+                </div>
+              )}
               <div>
                 <label className="text-xs font-semibold text-slate-600 block mb-1">Standard Failure Reason</label>
                 <select
@@ -536,8 +569,8 @@ type Actions = {
   breakdown: (t: TripView) => void
 }
 
-function TripDrawer({ trip, color, simMin, actions, onClose }: {
-  trip: TripView; color: string; simMin: number; actions: Actions; onClose: () => void
+function TripDrawer({ trip, color, simMin, actions, actionError, onClearError, onClose }: {
+  trip: TripView; color: string; simMin: number; actions: Actions; actionError?: string | null; onClearError?: () => void; onClose: () => void
 }) {
   const [tab, setTab] = useState<'overview' | 'stops' | 'activity'>('overview')
   const p = trip.plan
@@ -574,7 +607,13 @@ function TripDrawer({ trip, color, simMin, actions, onClose }: {
       </div>
 
       {/* ── Tab body ── */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {actionError && (
+          <div className="rounded-lg bg-rose-50 border border-rose-200 p-2.5 text-xs text-rose-700 flex items-center justify-between">
+            <span>⚠ {actionError}</span>
+            {onClearError && <button onClick={onClearError} className="text-rose-500 hover:text-rose-800 text-xs font-bold">✕</button>}
+          </div>
+        )}
         {tab === 'overview' && <Overview trip={trip} simMin={simMin} actions={actions} />}
         {tab === 'stops' && (
           <ol className="space-y-4">

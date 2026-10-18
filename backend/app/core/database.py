@@ -93,3 +93,20 @@ def check_database_connection() -> dict:
             "database_url": None,
             "error": str(e)
         }
+
+
+def apply_database_migrations() -> None:
+    """
+    Idempotent schema migrations applied on application startup.
+    For PostgreSQL deployments (Render / Supabase), alters existing ENUM types
+    to include newly added Python enum members (such as 'ARRIVED' in shipmentstatus)
+    that SQLAlchemy Base.metadata.create_all() does not modify on existing tables.
+    """
+    if engine.dialect.name == "postgresql":
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TYPE shipmentstatus ADD VALUE IF NOT EXISTS 'ARRIVED';"))
+                conn.commit()
+                logger.info("PostgreSQL enum migration: 'ARRIVED' registered in shipmentstatus enum.")
+        except Exception as e:
+            logger.warning(f"PostgreSQL enum migration notice: {e}")

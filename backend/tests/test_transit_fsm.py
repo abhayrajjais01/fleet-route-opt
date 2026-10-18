@@ -406,3 +406,117 @@ def test_trip_fsm_progress_metrics_and_driver_role(fsm_client, fsm_env):
         headers=fsm_env["driver_headers"],
     )
     assert redispatch_fail.status_code == 403
+
+
+def test_driver_forbidden_to_reassign_vehicle_on_departure(fsm_client, fsm_env):
+    """Driver role cannot reassign a shipment to a different vehicle during departure (403)."""
+    db = fsm_env["db"]
+    veh1 = db.query(Vehicle).filter(Vehicle.id == fsm_env["vehicle_id"]).first()
+    # Seed a second vehicle
+    v2 = Vehicle(
+        name="Mahindra Bolero Pickup",
+        plate_number="MH-02-TR-9999",
+        vehicle_type=VehicleType.VAN,
+        max_payload_kg=900.0,
+        max_volume_m3=6.0,
+        fuel_efficiency_kpl=13.0,
+        current_status=VehicleStatus.AVAILABLE,
+        assigned_hub_id=veh1.assigned_hub_id,
+    )
+    db.add(v2)
+    db.commit()
+
+    s1_id = fsm_env["s1_id"]
+    resp = fsm_client.post(
+        f"/api/v1/transit/shipments/{s1_id}/depart",
+        json={"vehicle_id": v2.id, "notes": "Unauthorized vehicle switch by driver"},
+        headers=fsm_env["driver_headers"],
+    )
+    assert resp.status_code == 403
+    assert "Drivers cannot reassign shipments" in resp.json()["detail"]
+
+
+def test_dispatcher_can_reassign_vehicle_and_prior_vehicle_preserved_in_audit(fsm_client, fsm_env):
+    """Dispatcher can reassign vehicle on departure, and audit trail preserves the true old vehicle ID."""
+    import json
+    db = fsm_env["db"]
+    old_veh_id = fsm_env["vehicle_id"]
+    veh1 = db.query(Vehicle).filter(Vehicle.id == old_veh_id).first()
+    v2 = Vehicle(
+        name="Force Delivery Truck",
+        plate_number="MH-02-TR-8888",
+        vehicle_type=VehicleType.BOX_TRUCK,
+        max_payload_kg=2500.0,
+        max_volume_m3=18.0,
+        fuel_efficiency_kpl=8.5,
+        current_status=VehicleStatus.AVAILABLE,
+        assigned_hub_id=veh1.assigned_hub_id,
+    )
+    db.add(v2)
+    db.commit()
+
+    s1_id = fsm_env["s1_id"]
+    resp = fsm_client.post(
+        f"/api/v1/transit/shipments/{s1_id}/depart",
+        json={"vehicle_id": v2.id, "notes": "Reassigned by dispatch supervisor"},
+        headers=fsm_env["disp_headers"],
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["assigned_vehicle_id"] == v2.id
+    assert data["metadata"]["previous_vehicle_id"] == old_veh_id
+
+    # Verify immutable audit log snapshot captures old_veh_id in before_state and v2.id in after_state
+    audit = db.query(AuditLog).filter(
+        AuditLog.entity_id == s1_id,
+        AuditLog.entity_type == "Shipment",
+        AuditLog.action_type == AuditAction.STATUS_CHANGE,
+    ).first()
+    assert audit is not None
+    before_dict = json.loads(audit.before_state) if isinstance(audit.before_state, str) else audit.before_state
+    after_dict = json.loads(audit.after_state) if isinstance(audit.after_state, str) else audit.after_state
+    assert before_dict["vehicle_id"] == old_veh_id
+    assert after_dict["vehicle_id"] == v2.id
+
+
+def test_depart_fails_when_vehicle_is_maintenance_status(fsm_client, fsm_env):
+    """Departure is blocked if assigned vehicle is in MAINTENANCE status (400)."""
+    db = fsm_env["db"]
+    veh = db.query(Vehicle).filter(Vehicle.id == fsm_env["vehicle_id"]).first()
+    veh.current_status = VehicleStatus.MAINTENANCE
+    db.commit()
+
+    s1_id = fsm_env["s1_id"]
+    resp = fsm_client.post(
+        f"/api/v1/transit/shipments/{s1_id}/depart",
+        json={},
+        headers=fsm_env["disp_headers"],
+    )
+    assert resp.status_code == 400
+    assert "MAINTENANCE" in resp.json()["detail"]
+
+
+def test_driver_cannot_depart_vehicle_assigned_to_different_driver(fsm_client, fsm_env):
+    """Driver A cannot depart a vehicle assigned to Driver B (403)."""
+    db = fsm_env["db"]
+    other_driver_user = User(
+        email="driver_other@fleet.io",
+        hashed_password=hash_password("password123"),
+        full_name="Driver Other",
+        role=UserRole.DRIVER,
+        is_active=True,
+    )
+    db.add(other_driver_user)
+    db.commit()
+
+    other_token = create_access_token(data={"sub": other_driver_user.email, "role": other_driver_user.role.value})
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    s1_id = fsm_env["s1_id"]
+    resp = fsm_client.post(
+        f"/api/v1/transit/shipments/{s1_id}/depart",
+        json={},
+        headers=other_headers,
+    )
+    assert resp.status_code == 403
+    assert "is not authorized to depart vehicle" in resp.json()["detail"]
