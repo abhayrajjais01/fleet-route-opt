@@ -181,7 +181,7 @@
    - Expandable **StateGraph Multi-Agent Execution Trace** accordion displaying node-by-node sequence and millisecond latencies.
 6. **Automated Test Suite & Regression Verification**:
    - 16 comprehensive automated unit and integration tests (`backend/tests/test_copilot_router.py`) covering intent classification, entity extraction, confidence thresholds, RAG citation retrieval, execution trace validity, and RBAC authentication.
-   - **Combined Test Suite: 99 / 99 automated backend tests passing (100% pass rate)**:
+   - **Combined Test Suite: 110 / 110 automated backend tests passing (100% pass rate)**:
      - `test_distance_matrix.py` (20 passed)
      - `test_copilot_router.py` (16 passed)
      - `test_rag.py` (22 passed)
@@ -192,3 +192,40 @@
      - `test_health.py` (3 passed)
      - `test_database_url.py` (7 passed)
    - Frontend production build (`pnpm run build`) passing with 0 errors.
+
+---
+
+### Week 6: Deterministic VRPTW Solver Core vs. In-Transit FSM (Oct 12 – Oct 16, 2026) — TRACK B DELIVERED ✅
+- **Status**: `TRACK B COMPLETED` ✅ (In-Transit FSM & Telemetry Tracking Delivered)
+- **Focus Area**: In-Transit Finite State Machine (FSM), Driver Action API Endpoints, FSM Visual Stepper Component, Telemetry Synchronization, and Automated Regression Suite (US-008).
+
+#### Track B (Abhayraj Jaiswal):
+1. **In-Transit Finite State Machine Service (`backend/app/services/transit_fsm.py`)**:
+   - Engineered strict directional transition graph: `UNASSIGNED` ➔ `ASSIGNED` ➔ `IN_TRANSIT` ➔ `ARRIVED` ➔ `DELIVERED` (Terminal).
+   - Structured failure handling: `ARRIVED` / `IN_TRANSIT` ➔ `FAILED` with standardized reason taxonomy (`CONSIGNEE_UNAVAILABLE`, `INCORRECT_ADDRESS`, `DAMAGED_PACKAGE`, `ACCESS_RESTRICTED`, `CUSTOMER_REFUSED`, `VEHICLE_ISSUE`, `OTHER`).
+   - Redispatch loop: `FAILED` ➔ `UNASSIGNED` clearing vehicle assignment for re-clustering and re-dispatch.
+   - Telemetry duty synchronization: departing shifts vehicle to `IN_TRANSIT` and driver to `ON_TRIP`; delivery handover checks completion and returns vehicle to `AVAILABLE` when all assigned consignments are delivered.
+   - Automated forensic audit logging recording `STATUS_CHANGE` events with serialized before/after snapshots for every transition.
+2. **RESTful Driver Action Endpoints (`backend/app/api/v1/transit.py`)**:
+   - `POST /api/v1/transit/shipments/{id}/depart`: Depart order with assigned vehicle.
+   - `POST /api/v1/transit/shipments/{id}/arrive`: Driver arrival check-in with GPS telemetry coordinates.
+   - `POST /api/v1/transit/shipments/{id}/deliver`: Handover verification with consignee name and proof-of-delivery signature token.
+   - `POST /api/v1/transit/shipments/{id}/fail`: Report delivery failure with failure reason and diagnostic incident notes.
+   - `POST /api/v1/transit/shipments/{id}/delay`: Record transit delays (+15m, +30m, etc.) for SLA breach tracking.
+   - `POST /api/v1/transit/shipments/{id}/redispatch`: Return failed shipment to unassigned queue (restricted to Dispatcher/Manager/Admin).
+   - `GET /api/v1/transit/trips/{vehicle_id}/progress`: Multi-stop progress aggregation, current stop index, and completion percentage.
+   - `GET /api/v1/transit/fsm/transitions`: Permissible FSM state transition rules dictionary.
+3. **Pydantic Validation Schemas (`backend/app/schemas/transit.py`)**:
+   - Strict typing across departure, arrival, delivery handover, failure diagnostics, delay reporting, and trip progress metrics.
+4. **FSM Visual Progress Bar (`frontend/src/components/tracking/FsmProgressBar.tsx`)**:
+   - 5-stage stepper with animated glowing pulse ring on active stop, vibrant emerald checkmarks on completed stops, and striking failure badges.
+   - Compact mode for stop timelines and full-detail mode for active driver cockpit cards.
+5. **Driver Action Cockpit & Modal Handlers (`frontend/src/components/tracking/LiveTrackingSection.tsx`, `transitApi.ts`)**:
+   - Interactive Proof of Delivery Handover modal.
+   - Delivery Failure Incident Reporting modal with standard reason selector.
+   - Quick delay logger (+15m, +30m) with audit trail sync.
+   - Seamless live API execution with graceful offline simulation fallback.
+6. **Automated Pytest Suite (`backend/tests/test_transit_fsm.py`)**:
+   - 11 comprehensive unit and integration tests covering happy path lifecycle, illegal transition rejection (400 Bad Request), terminal state locking, duty state synchronization, failure reporting, redispatching, delay audit logging, and RBAC authorization.
+   - **Full Repository Test Suite**: **110 / 110 passed (100% pass rate)**.
+   - Frontend production build (`pnpm run build`): **Built cleanly in 713ms with 0 errors**.

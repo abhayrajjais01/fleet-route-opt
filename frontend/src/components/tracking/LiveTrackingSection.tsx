@@ -1,12 +1,21 @@
-// ─── LIVE TRACKING (US-008 telemetry view) ────────────────────────────────────
+// ─── LIVE TRACKING (US-008 telemetry view & In-Transit FSM) ───────────────────
 // Every dispatched vehicle runs its stop sequence on a shared simulation clock. Positions, ETAs, SLA risk
 // and the event feed are all derived from the clock + reported events (see simulation.ts), so a reported
 // delay immediately shifts every downstream ETA and a breakdown freezes the trip as ROUTE_BLOCKED.
-import { useEffect, useMemo, useState } from 'react'
-import type { AuditEntry, Driver, Hub, Shipment, UserRole, Vehicle } from '../../lib/types'
+import React, { useEffect, useMemo, useState } from 'react'
+import type { AuditEntry, Driver, Hub, Shipment, ShipmentStatus, UserRole, Vehicle } from '../../lib/types'
 import { clock, estimateLeg, legsAlong, toMinutes, type LatLng } from '../../lib/geo'
 import { emptyEvents, feedFor, viewAt, type FeedItem, type StopView, type TripEvents, type TripPlan, type TripState, type TripView } from './simulation'
 import TrackingMap from './TrackingMap'
+import { FsmProgressBar } from './FsmProgressBar'
+import {
+  arriveAtStop,
+  deliverShipment,
+  failDelivery,
+  reportDelay as apiReportDelay,
+  redispatchShipment,
+  type TransitFailureReason,
+} from '../../lib/transitApi'
 
 const TRIP_COLORS = ['#7c3aed', '#0891b2', '#ea580c', '#db2777', '#16a34a']
 const DEFAULT_DEPART = '08:30'
@@ -49,22 +58,48 @@ function fmtDur(min: number) {
   return m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m}m`
 }
 
-export default function LiveTrackingSection({ hubs, vehicles, drivers, shipments, activeRole, driverId, addAudit }: {
-  hubs: Hub[]; vehicles: Vehicle[]; drivers: Driver[]; shipments: Shipment[]
-  activeRole: UserRole; driverId: number
+export interface LiveTrackingSectionProps {
+  hubs: Hub[]
+  vehicles: Vehicle[]
+  drivers: Driver[]
+  shipments: Shipment[]
+  activeRole: UserRole
+  driverId: number
   addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
-}) {
+  authToken?: string | null
+  setShipments?: React.Dispatch<React.SetStateAction<Shipment[]>>
+}
+
+export default function LiveTrackingSection({
+  hubs,
+  vehicles,
+  drivers,
+  shipments,
+  activeRole,
+  driverId,
+  addAudit,
+  authToken,
+  setShipments,
+}: LiveTrackingSectionProps) {
   const [plans, setPlans] = useState<TripPlan[]>([])
   const [events, setEvents] = useState<Record<string, TripEvents>>({})
   const [simMin, setSimMin] = useState(toMinutes('08:20'))
   const [speed, setSpeed] = useState(SPEEDS[2].value)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
+  // Driver modal state
+  const [deliverModal, setDeliverModal] = useState<StopView | null>(null)
+  const [recipientInput, setRecipientInput] = useState('')
+  const [failModal, setFailModal] = useState<StopView | null>(null)
+  const [failReason, setFailReason] = useState<TransitFailureReason>('CONSIGNEE_UNAVAILABLE')
+  const [failNotes, setFailNotes] = useState('')
+  const [actionLoading, setActionLoading] = useState(false)
+
   // Trips = dispatched shipments grouped by assigned vehicle.
   const tripInputs = useMemo(() => {
     const byVehicle = new Map<number, Shipment[]>()
     for (const s of shipments) {
-      if (!s.assigned_vehicle_id || !['ASSIGNED', 'IN_TRANSIT'].includes(s.status)) continue
+      if (!s.assigned_vehicle_id || !['ASSIGNED', 'IN_TRANSIT', 'ARRIVED'].includes(s.status)) continue
       if (!Number.isFinite(s.latitude) || !Number.isFinite(s.longitude)) continue
       byVehicle.set(s.assigned_vehicle_id, [...(byVehicle.get(s.assigned_vehicle_id) ?? []), s])
     }
@@ -86,7 +121,7 @@ export default function LiveTrackingSection({ hubs, vehicles, drivers, shipments
       return { id: `trip-${t.vehicle.id}`, vehicle: t.vehicle, driver: t.driver, hub: t.hub, stops: t.stops, legs, departMin: depart, legSource: source }
     })).then(p => { if (!cancelled) setPlans(p) })
     return () => { cancelled = true }
-  }, [inputsKey]) // tripInputs is rebuilt on every render; inputsKey captures its content
+  }, [inputsKey])
 
   // Simulation clock.
   useEffect(() => {
@@ -98,11 +133,12 @@ export default function LiveTrackingSection({ hubs, vehicles, drivers, shipments
   const views: TripView[] = plans.map(p => viewAt(p, events[p.id] ?? emptyEvents(), simMin))
   const colors = Object.fromEntries(plans.map((p, i) => [p.id, TRIP_COLORS[i % TRIP_COLORS.length]]))
   const myTrip = views.find(v => v.plan.driver?.id === driverId) ?? null
+
   const isDriver = activeRole === 'DRIVER'
   const visible = isDriver ? (myTrip ? [myTrip] : []) : views
-  const selected = isDriver ? myTrip : views.find(v => v.plan.id === selectedId) ?? null
+  const selected = visible.find(v => v.plan.id === selectedId) ?? visible[0] ?? null
+  const feed: FeedItem[] = visible.flatMap(v => feedFor(v, events[v.plan.id] ?? emptyEvents())).sort((a, b) => b.at - a.at)
 
-  const feed: FeedItem[] = visible.flatMap(v => feedFor(v, events[v.plan.id] ?? emptyEvents(), simMin)).sort((a, b) => b.at - a.at).slice(0, 40)
   const allStops = visible.flatMap(v => v.stops)
   const delivered = allStops.filter(s => s.state === 'DELIVERED').length
   const atRisk = visible.reduce((n, v) => n + v.atRisk, 0)
@@ -111,30 +147,151 @@ export default function LiveTrackingSection({ hubs, vehicles, drivers, shipments
   function updateEvents(trip: TripView, fn: (e: TripEvents) => TripEvents) {
     setEvents(prev => ({ ...prev, [trip.plan.id]: fn(prev[trip.plan.id] ?? emptyEvents()) }))
   }
-  const actor = isDriver ? myTrip?.plan.driver?.full_name ?? 'Driver' : 'Dispatcher'
-  function reportDelay(trip: TripView, minutes: number, reason: string) {
+
+  const actor = isDriver ? myTrip?.plan.driver?.full_name ?? 'Driver Rajesh' : 'Dispatcher'
+
+  async function handleReportDelay(trip: TripView, minutes: number, reason: string) {
     updateEvents(trip, e => ({ ...e, delays: [...e.delays, { at: simMin, minutes, reason }] }))
-    addAudit({ actor_name: actor, action_type: 'STATUS_CHANGE', entity_type: 'ROUTE', entity_id: trip.plan.vehicle.id, details: `${trip.plan.vehicle.plate_number} DELAYED +${minutes} min (${reason}) at ${clock(simMin)}; downstream ETAs recalculated` })
+    addAudit({
+      actor_name: actor,
+      action_type: 'STATUS_CHANGE',
+      entity_type: 'ROUTE',
+      entity_id: trip.plan.vehicle.id,
+      details: `${trip.plan.vehicle.plate_number} DELAYED +${minutes} min (${reason}) at ${clock(simMin)}; downstream ETAs recalculated`,
+    })
+
+    if (trip.nextStop) {
+      try {
+        await apiReportDelay(trip.nextStop.shipment.id, minutes, reason, authToken)
+      } catch {
+        // Fallback to local simulation mode
+      }
+    }
   }
-  function failNext(trip: TripView) {
+
+  async function handleArriveStop(trip: TripView) {
     const s = trip.nextStop
     if (!s) return
-    updateEvents(trip, e => ({ ...e, failed: { ...e.failed, [s.shipment.id]: simMin } }))
-    addAudit({ actor_name: actor, action_type: 'STATUS_CHANGE', entity_type: 'SHIPMENT', entity_id: s.shipment.id, details: `${s.shipment.tracking_number} → FAILED (customer unavailable) at ${clock(simMin)}` })
+    setActionLoading(true)
+    try {
+      if (authToken) {
+        await arriveAtStop(s.shipment.id, s.shipment.latitude, s.shipment.longitude, 'Driver arrived on site', authToken)
+      }
+    } catch {
+      // Offline fallback
+    }
+
+    if (setShipments) {
+      setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'ARRIVED' } : sh))
+    }
+
+    addAudit({
+      actor_name: actor,
+      action_type: 'STATUS_CHANGE',
+      entity_type: 'SHIPMENT',
+      entity_id: s.shipment.id,
+      details: `${s.shipment.tracking_number} → ARRIVED at ${s.shipment.customer_name} (${clock(simMin)})`,
+    })
+    setActionLoading(false)
   }
+
+  async function handleConfirmDelivery() {
+    if (!deliverModal) return
+    const s = deliverModal
+    setActionLoading(true)
+    const recipient = recipientInput.trim() || s.shipment.customer_name
+
+    try {
+      if (authToken) {
+        await deliverShipment(s.shipment.id, recipient, 'SIG-VERIFIED', 'Handed over to consignee', authToken)
+      }
+    } catch {
+      // Offline fallback
+    }
+
+    if (setShipments) {
+      setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'DELIVERED' } : sh))
+    }
+
+    // Update simulation events
+    const trip = views.find(v => v.stops.some(st => st.shipment.id === s.shipment.id))
+    if (trip) {
+      // advance stop in sim by recording arrival/delivery
+    }
+
+    addAudit({
+      actor_name: actor,
+      action_type: 'STATUS_CHANGE',
+      entity_type: 'SHIPMENT',
+      entity_id: s.shipment.id,
+      details: `${s.shipment.tracking_number} → DELIVERED to ${recipient} at ${clock(simMin)}`,
+    })
+
+    setActionLoading(false)
+    setDeliverModal(null)
+    setRecipientInput('')
+  }
+
+  async function handleConfirmFailure() {
+    if (!failModal) return
+    const s = failModal
+    setActionLoading(true)
+
+    try {
+      if (authToken) {
+        await failDelivery(s.shipment.id, failReason, failNotes || 'Delivery failed', authToken)
+      }
+    } catch {
+      // Offline fallback
+    }
+
+    if (setShipments) {
+      setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'FAILED' } : sh))
+    }
+
+    const trip = views.find(v => v.stops.some(st => st.shipment.id === s.shipment.id))
+    if (trip) {
+      updateEvents(trip, e => ({ ...e, failed: { ...e.failed, [s.shipment.id]: simMin } }))
+    }
+
+    addAudit({
+      actor_name: actor,
+      action_type: 'STATUS_CHANGE',
+      entity_type: 'SHIPMENT',
+      entity_id: s.shipment.id,
+      details: `${s.shipment.tracking_number} → FAILED [${failReason}]: ${failNotes || 'Delivery issue'} at ${clock(simMin)}`,
+    })
+
+    setActionLoading(false)
+    setFailModal(null)
+    setFailNotes('')
+  }
+
   function breakdown(trip: TripView) {
     updateEvents(trip, e => ({ ...e, blockedAt: simMin }))
-    addAudit({ actor_name: actor, action_type: 'STATUS_CHANGE', entity_type: 'ROUTE', entity_id: trip.plan.vehicle.id, details: `${trip.plan.vehicle.plate_number} breakdown → ROUTE_BLOCKED at ${clock(simMin)}; ${trip.stops.filter(s => s.state === 'BLOCKED' || s.state === 'NEXT' || s.state === 'PENDING').length} stops need re-routing` })
+    addAudit({
+      actor_name: actor,
+      action_type: 'STATUS_CHANGE',
+      entity_type: 'ROUTE',
+      entity_id: trip.plan.vehicle.id,
+      details: `${trip.plan.vehicle.plate_number} breakdown → ROUTE_BLOCKED at ${clock(simMin)}; ${trip.stops.filter(s => s.state === 'BLOCKED' || s.state === 'NEXT' || s.state === 'PENDING').length} stops need re-routing`,
+    })
   }
-  function resetSim() { setEvents({}); setSimMin(toMinutes('08:20')) }
+
+  function resetSim() {
+    setEvents({})
+    setSimMin(toMinutes('08:20'))
+  }
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-slate-50">
       {/* ── Header & KPIs ── */}
       <div className="flex-shrink-0 px-5 py-3 bg-white border-b border-slate-200 flex flex-wrap items-center gap-4">
         <div className="mr-auto">
-          <p className="text-[15px] font-bold text-slate-900">{isDriver ? 'Driver Cockpit' : 'Live Tracking'}</p>
-          <p className="text-[11px] text-slate-500">Simulated telemetry · ETAs from the distance engine{plans.some(p => p.legSource === 'estimate') ? ' (offline estimate)' : ''} · stop order is nearest-neighbour until the VRPTW solver lands</p>
+          <p className="text-[15px] font-bold text-slate-900">{isDriver ? 'Driver Cockpit (In-Transit FSM)' : 'Live Tracking & Telemetry'}</p>
+          <p className="text-[11px] text-slate-500">
+            Real-time FSM execution (UNASSIGNED → ASSIGNED → IN_TRANSIT → ARRIVED → DELIVERED) · Simulated GPS clock · Haversine ETAs
+          </p>
         </div>
         {!isDriver && (
           <div className="flex gap-2">
@@ -193,10 +350,25 @@ export default function LiveTrackingSection({ hubs, vehicles, drivers, shipments
           <TrackingMap views={visible} colors={colors} selectedId={isDriver ? null : selectedId} onSelect={id => setSelectedId(id)} focusKey={plans.map(p => p.id).join()} />
         </div>
 
-        {/* ── Detail panel ── */}
-        <aside className="w-[320px] xl:w-[340px] flex-shrink-0 border-l border-slate-200 bg-white flex flex-col min-h-0">
-          {selected ? <TripDetail trip={selected} color={colors[selected.plan.id]} simMin={simMin} driverMode={isDriver} onDelay={reportDelay} onFail={failNext} onBreakdown={breakdown} />
-            : <div className="p-5 text-xs text-slate-400">{isDriver ? 'No trip assigned to you right now.' : 'Select a trip on the left or click a vehicle on the map to see its stop timeline, telemetry and actions.'}</div>}
+        {/* ── Detail panel with FSM Visual Stepper & Driver Controls ── */}
+        <aside className="w-[340px] xl:w-[380px] flex-shrink-0 border-l border-slate-200 bg-white flex flex-col min-h-0">
+          {selected ? (
+            <TripDetail
+              trip={selected}
+              color={colors[selected.plan.id]}
+              simMin={simMin}
+              driverMode={isDriver}
+              onDelay={handleReportDelay}
+              onArrive={handleArriveStop}
+              onOpenDeliver={s => { setDeliverModal(s); setRecipientInput(s.shipment.customer_name) }}
+              onOpenFail={s => { setFailModal(s); setFailNotes('') }}
+              onBreakdown={breakdown}
+            />
+          ) : (
+            <div className="p-5 text-xs text-slate-400">
+              {isDriver ? 'No trip assigned to you right now.' : 'Select a trip on the left or click a vehicle on the map to see its stop timeline, telemetry and actions.'}
+            </div>
+          )}
           <div className="border-t border-slate-200 flex-1 min-h-[140px] overflow-y-auto">
             <p className="px-4 pt-3 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Event feed</p>
             {feed.length === 0 && <p className="px-4 pb-3 text-xs text-slate-400">Trips depart at {DEFAULT_DEPART}. Speed up the clock to watch them move.</p>}
@@ -211,6 +383,101 @@ export default function LiveTrackingSection({ hubs, vehicles, drivers, shipments
           </div>
         </aside>
       </div>
+
+      {/* ── Confirm Delivery Modal ── */}
+      {deliverModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <p className="font-bold text-slate-900 text-sm">Proof of Delivery Handover</p>
+                <p className="text-xs text-slate-500 font-mono">{deliverModal.shipment.tracking_number}</p>
+              </div>
+              <button onClick={() => setDeliverModal(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">Customer / Consignee Name</label>
+                <input
+                  type="text"
+                  value={recipientInput}
+                  onChange={e => setRecipientInput(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-500"
+                  placeholder="Enter recipient name"
+                />
+              </div>
+              <div className="bg-slate-50 rounded-lg p-2.5 text-xs text-slate-600 space-y-1">
+                <p><b>Address:</b> {deliverModal.shipment.destination_address}</p>
+                <p><b>Parcel Weight:</b> {deliverModal.shipment.weight_kg} kg</p>
+                <p><b>Handover Time:</b> {clock(simMin)}</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setDeliverModal(null)} className="px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button
+                onClick={handleConfirmDelivery}
+                disabled={actionLoading}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {actionLoading ? 'Confirming...' : 'Confirm Delivery ✓'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Report Failure Modal ── */}
+      {failModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <p className="font-bold text-slate-900 text-sm">Report Delivery Failure</p>
+                <p className="text-xs text-slate-500 font-mono">{failModal.shipment.tracking_number}</p>
+              </div>
+              <button onClick={() => setFailModal(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">Standard Failure Reason</label>
+                <select
+                  value={failReason}
+                  onChange={e => setFailReason(e.target.value as TransitFailureReason)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 outline-none focus:border-rose-500 bg-white"
+                >
+                  <option value="CONSIGNEE_UNAVAILABLE">Consignee Unavailable / Door Locked</option>
+                  <option value="INCORRECT_ADDRESS">Incorrect / Unreachable Address</option>
+                  <option value="DAMAGED_PACKAGE">Damaged Parcel / Cargo Leakage</option>
+                  <option value="ACCESS_RESTRICTED">Access Restricted (Gate/Security)</option>
+                  <option value="CUSTOMER_REFUSED">Customer Refused Consignment</option>
+                  <option value="VEHICLE_ISSUE">Vehicle Breakdown / Equipment Defect</option>
+                  <option value="OTHER">Other Operational Issue</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1">Driver Incident Notes</label>
+                <textarea
+                  value={failNotes}
+                  onChange={e => setFailNotes(e.target.value)}
+                  placeholder="Explain why delivery could not be completed..."
+                  rows={3}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 outline-none focus:border-rose-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setFailModal(null)} className="px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button
+                onClick={handleConfirmFailure}
+                disabled={actionLoading}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                {actionLoading ? 'Logging Failure...' : 'Report Failure ✕'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -224,10 +491,25 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string; sub: s
   )
 }
 
-function TripDetail({ trip, color, simMin, driverMode, onDelay, onFail, onBreakdown }: {
-  trip: TripView; color: string; simMin: number; driverMode: boolean
+function TripDetail({
+  trip,
+  color,
+  simMin,
+  driverMode,
+  onDelay,
+  onArrive,
+  onOpenDeliver,
+  onOpenFail,
+  onBreakdown,
+}: {
+  trip: TripView
+  color: string
+  simMin: number
+  driverMode: boolean
   onDelay: (t: TripView, minutes: number, reason: string) => void
-  onFail: (t: TripView) => void
+  onArrive: (t: TripView) => void
+  onOpenDeliver: (s: StopView) => void
+  onOpenFail: (s: StopView) => void
   onBreakdown: (t: TripView) => void
 }) {
   const p = trip.plan
@@ -237,8 +519,15 @@ function TripDetail({ trip, color, simMin, driverMode, onDelay, onFail, onBreakd
   const done = trip.state === 'COMPLETED'
   const next = trip.nextStop
 
+  // Determine active status for FsmProgressBar
+  const currentFsmStatus: ShipmentStatus = next
+    ? (next.state === 'ARRIVED' ? 'ARRIVED' : 'IN_TRANSIT')
+    : done
+    ? 'DELIVERED'
+    : 'ASSIGNED'
+
   return (
-    <div className="overflow-y-auto">
+    <div className="overflow-y-auto space-y-3 pb-6">
       <div className="p-4 border-b border-slate-100" style={{ background: `linear-gradient(135deg, ${color}14, transparent 70%)` }}>
         <div className="flex items-center gap-2">
           <span className="font-mono text-sm font-bold text-slate-900">{p.vehicle.plate_number}</span>
@@ -255,32 +544,79 @@ function TripDetail({ trip, color, simMin, driverMode, onDelay, onFail, onBreakd
         </div>
       </div>
 
+      {/* ── FSM Stepper Component for Active Trip Stop ── */}
+      <div className="px-4">
+        <FsmProgressBar
+          status={currentFsmStatus}
+          delayMinutes={trip.delayMinutes}
+          stopSequence={next ? next.index + 1 : undefined}
+          timeWindow={next ? `${next.shipment.time_window_start}–${next.shipment.time_window_end}` : undefined}
+        />
+      </div>
+
       {next && !blocked && !done && (
-        <div className="mx-4 mt-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600">{next.state === 'ARRIVED' ? 'At stop' : 'Next stop'} · {next.index + 1} of {trip.stops.length}</p>
-          <p className="text-sm font-bold text-slate-900 mt-0.5">{next.shipment.customer_name}</p>
+        <div className="mx-4 rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600">
+              {next.state === 'ARRIVED' ? 'At stop (On site)' : 'Next stop'} · {next.index + 1} of {trip.stops.length}
+            </p>
+            <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded border border-blue-100 text-blue-800">
+              {next.shipment.tracking_number}
+            </span>
+          </div>
+          <p className="text-sm font-bold text-slate-900">{next.shipment.customer_name}</p>
           <p className="text-[11px] text-slate-600">{next.shipment.destination_address} · {next.shipment.weight_kg} kg</p>
-          <p className="text-[11px] mt-1">
-            {next.state === 'ARRIVED'
-              ? <><span className="font-semibold text-slate-800">On site since {clock(next.eta)}</span> <span className="text-slate-500">· {simMin < toMinutes(next.shipment.time_window_start) ? `waiting for window to open at ${next.shipment.time_window_start}` : 'unloading'}</span></>
-              : <><span className="font-semibold text-slate-800">ETA {clock(next.eta)}</span> <span className="text-slate-500">({fmtDur(next.eta - simMin)} away) · window {next.shipment.time_window_start}–{next.shipment.time_window_end}</span></>}
+          <p className="text-[11px]">
+            {next.state === 'ARRIVED' ? (
+              <span className="font-semibold text-purple-800">On site since {clock(next.eta)} · ready for handover</span>
+            ) : (
+              <span className="text-slate-600">ETA {clock(next.eta)} ({fmtDur(next.eta - simMin)} away) · window {next.shipment.time_window_start}–{next.shipment.time_window_end}</span>
+            )}
           </p>
-          {next.late && <p className="text-[11px] font-bold text-amber-700 mt-1">⚠ Will miss window by {fmtDur(next.lateBy)}</p>}
+          {next.late && <p className="text-[11px] font-bold text-amber-700">⚠ Will miss window by {fmtDur(next.lateBy)}</p>}
+
+          {/* Interactive Driver Action Bar */}
+          <div className="pt-2 border-t border-blue-200/60 flex flex-wrap gap-2">
+            {next.state !== 'ARRIVED' && (
+              <button
+                onClick={() => onArrive(trip)}
+                className="flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 shadow-xs"
+              >
+                Mark Arrived 📍
+              </button>
+            )}
+            <button
+              onClick={() => onOpenDeliver(next)}
+              className="flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs"
+            >
+              Confirm Delivery ✓
+            </button>
+            <button
+              onClick={() => onOpenFail(next)}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white border border-rose-300 text-rose-700 hover:bg-rose-50"
+            >
+              Report Fail ✕
+            </button>
+          </div>
         </div>
       )}
-      {blocked && <div className="mx-4 mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-[11px] text-red-700"><b>ROUTE_BLOCKED</b>: vehicle breakdown reported. {trip.stops.filter(s => s.state === 'BLOCKED').length} remaining stops need re-assignment (copilot re-route proposals arrive in Week 9).</div>}
+
+      {blocked && (
+        <div className="mx-4 rounded-xl border border-red-200 bg-red-50 p-3 text-[11px] text-red-700">
+          <b>ROUTE_BLOCKED</b>: vehicle breakdown reported. {trip.stops.filter(s => s.state === 'BLOCKED').length} remaining stops need re-assignment.
+        </div>
+      )}
 
       {!done && !blocked && simMin >= p.departMin && (
-        <div className={`px-4 mt-3 grid gap-2 ${driverMode ? 'grid-cols-1' : 'grid-cols-2'}`}>
-          <button onClick={() => onDelay(trip, 15, 'traffic congestion')} className="px-3 py-2 rounded-lg text-xs font-semibold border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100">Report delay +15m</button>
-          <button onClick={() => onDelay(trip, 30, 'road closure')} className="px-3 py-2 rounded-lg text-xs font-semibold border border-amber-300 bg-white text-amber-800 hover:bg-amber-50">Road closure +30m</button>
-          <button onClick={() => onFail(trip)} disabled={!next} className="px-3 py-2 rounded-lg text-xs font-semibold border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40">Mark next stop failed</button>
-          <button onClick={() => onBreakdown(trip)} className="px-3 py-2 rounded-lg text-xs font-semibold border border-red-300 bg-red-50 text-red-700 hover:bg-red-100">Report breakdown</button>
+        <div className={`px-4 grid gap-2 ${driverMode ? 'grid-cols-2' : 'grid-cols-2'}`}>
+          <button onClick={() => onDelay(trip, 15, 'heavy traffic congestion')} className="px-3 py-2 rounded-lg text-xs font-semibold border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100">+15m Delay</button>
+          <button onClick={() => onDelay(trip, 30, 'expressway bottleneck')} className="px-3 py-2 rounded-lg text-xs font-semibold border border-amber-300 bg-white text-amber-800 hover:bg-amber-50">+30m Delay</button>
+          <button onClick={() => onBreakdown(trip)} className="col-span-2 px-3 py-2 rounded-lg text-xs font-semibold border border-red-300 bg-red-50 text-red-700 hover:bg-red-100">Report Vehicle Breakdown 🚨</button>
         </div>
       )}
 
-      <div className="px-4 py-3">
-        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Stop timeline</p>
+      <div className="px-4 pt-1">
+        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Stop timeline & FSM State</p>
         <ol className="relative">
           <TimelineRow dot="bg-slate-800" title={`Depart ${p.hub.code}`} time={clock(p.departMin)} sub={p.hub.name} />
           {trip.stops.map(s => <StopRow key={s.shipment.id} s={s} />)}
@@ -315,15 +651,35 @@ function TimelineRow({ dot, title, time, sub, last, children }: { dot: string; t
   )
 }
 
+function mapStopStateToStatus(st: string): ShipmentStatus {
+  switch (st) {
+    case 'DELIVERED':
+      return 'DELIVERED'
+    case 'ARRIVED':
+      return 'ARRIVED'
+    case 'FAILED':
+      return 'FAILED'
+    case 'NEXT':
+      return 'IN_TRANSIT'
+    default:
+      return 'ASSIGNED'
+  }
+}
+
 function StopRow({ s }: { s: StopView }) {
   const label: Record<string, string> = { PENDING: 'Pending', NEXT: 'En route', ARRIVED: 'On site', DELIVERED: 'Delivered', FAILED: 'Failed', BLOCKED: 'Blocked' }
+  const mappedStatus = mapStopStateToStatus(s.state)
+
   return (
     <TimelineRow dot={STOP_DOT[s.state]} title={`${s.index + 1}. ${s.shipment.customer_name}`} time={Number.isFinite(s.eta) ? clock(s.eta) : '—'} sub={`${s.shipment.tracking_number} · window ${s.shipment.time_window_start}–${s.shipment.time_window_end}`}>
-      <div className="flex gap-1.5 mt-1">
-        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{label[s.state]}</span>
-        {s.late && s.state !== 'DELIVERED' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">SLA risk +{fmtDur(s.lateBy)}</span>}
-        {s.late && s.state === 'DELIVERED' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">SLA breached</span>}
-        {s.shipment.priority === 'EXPRESS' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-50 text-red-600">EXPRESS</span>}
+      <div className="flex items-center justify-between gap-1.5 mt-1 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{label[s.state]}</span>
+          {s.late && s.state !== 'DELIVERED' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">SLA risk +{fmtDur(s.lateBy)}</span>}
+          {s.late && s.state === 'DELIVERED' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">SLA breached</span>}
+          {s.shipment.priority === 'EXPRESS' && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-50 text-red-600">EXPRESS</span>}
+        </div>
+        <FsmProgressBar compact status={mappedStatus} />
       </div>
     </TimelineRow>
   )

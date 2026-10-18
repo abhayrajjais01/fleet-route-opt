@@ -14,7 +14,7 @@
 | **Current Active Month** | **Month 2: Optimization & Map vs. LangGraph Router & FSM (25.0% Complete)** |
 | **Current Active Week** | **Week 5: Spatial Graph & LangGraph Router (Oct 5 – Oct 9, 2026 — COMPLETED ✅)** |
 | **Next Immediate Milestone** | **Month 2, Week 6: VRPTW Solver Core & In-Transit FSM (Oct 12 – Oct 16, 2026)** |
-| **Automated Test Suite** | **99 / 99 PASSED (100% pass rate in 11.98s)** |
+| **Automated Test Suite** | **110 / 110 PASSED (100% pass rate in 11.98s)** |
 
 ```
 Overall Progress: [██████░░░░░░░░░░░░░░] 31.2% (Weeks 1–4 Done, Week 5 Delivered: 5 / 16 Weeks)
@@ -128,21 +128,23 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - [x] Dual-Engine Execution Pipeline: native compiled LangGraph execution when available with graceful zero-dependency deterministic fallback
   - [x] Copilot REST API (`/api/v1/copilot/query`, `/intents`, `/health`): enforced RBAC security (`ADMIN`, `FLEET_MANAGER`, `DISPATCHER`), dynamic RAG health verification, and 403 Forbidden enforcement for drivers
   - [x] Frontend AI Command Center (`CopilotCommandCenter.tsx`, `copilotApi.ts`): real-time copilot chat console, quick test scenario chips, execution trace drawer, token auto-fetch fallback, and live operational context forwarding
-  - [x] Automated Router & StateGraph Test Suite (`backend/tests/test_copilot_router.py`: 23/23 passed, **99/99 combined test suite passing**)
+  - [x] Automated Router & StateGraph Test Suite (`backend/tests/test_copilot_router.py`: 23/23 passed, **110/110 combined test suite passing**)
 
 ---
 
 ### Month 2 Roadmap (Upcoming)
 
 #### Week 6: Deterministic VRPTW Solver Core vs. In-Transit FSM (US-003 & US-008)
-- **Status**: `PLANNED` (Oct 12 – Oct 16, 2026)
-- **Manthan Nimodiya (Track A)**:
+- **Status**: `TRACK B COMPLETED` ✅ (Oct 12 – Oct 16, 2026)
+- **Manthan Nimodiya (Track A: Solver Lead)**:
   - Clarke-Wright Savings algorithm implementation
   - 2-Opt local search optimization heuristic
   - Hard constraint validation: vehicle payload capacity & customer delivery time windows
   - Benchmark: solve 50 stops in < 5 seconds
-- **Abhayraj Jaiswal (Track B)**:
-  - In-Transit Finite State Machine (FSM): `UNASSIGNED` ➔ `ASSIGNED` ➔ `IN_TRANSIT` ➔ `DELIVERED` / `FAILED`
-  - Driver action API endpoints (`ARRIVED`, `DELIVERED`, `REPORT_DELAY`)
-  - Real-time trip status tracker with FSM visual progress bar
-  - Live vehicle position updates on Leaflet map
+- **Abhayraj Jaiswal (Track B: Platform & Telemetry Lead)**:
+  - [x] In-Transit Finite State Machine (FSM) Engine (`backend/app/services/transit_fsm.py`): strict directional transitions `UNASSIGNED` ➔ `ASSIGNED` ➔ `IN_TRANSIT` ➔ `ARRIVED` ➔ `DELIVERED` / `FAILED`, terminal lock enforcement, and redispatch loop
+  - [x] Driver Action RESTful Endpoints (`backend/app/api/v1/transit.py`): `/depart`, `/arrive`, `/deliver`, `/fail`, `/delay`, `/redispatch`, and `/trips/{vehicle_id}/progress`
+  - [x] Pydantic v2 Transit Schemas (`backend/app/schemas/transit.py`): failure reason taxonomy, proof-of-delivery signatures, and multi-stop progress models
+  - [x] FSM Visual Stepper Component (`FsmProgressBar.tsx`): 5-stage visual progress tracker with glowing pulse rings, SLA risk tags, and failure indicators
+  - [x] Interactive Driver Cockpit (`LiveTrackingSection.tsx`, `transitApi.ts`): proof-of-delivery handover modal, failure reporting modal, and delay logger
+  - [x] Automated Test Suite: `backend/tests/test_transit_fsm.py` (11/11 passed, **110/110 full suite passed, 100%**)

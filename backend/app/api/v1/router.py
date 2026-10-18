@@ -7,6 +7,7 @@ from app.api.v1.audit import router as audit_router
 from app.api.v1.rag import router as rag_router
 from app.api.v1.routes import router as routes_router
 from app.api.v1.copilot import router as copilot_router
+from app.api.v1.transit import router as transit_router
 
 api_router = APIRouter()
 
@@ -19,8 +20,6 @@ api_router.include_router(health_router, prefix="")
 api_router.include_router(fleet_router, prefix="/fleet", tags=["Fleet Asset Management"])
 api_router.include_router(rag_router, prefix="/rag", tags=["RAG Compliance Engine"])
 api_router.include_router(routes_router, prefix="/routes", tags=["Route Optimization (VRPTW)"])
-# from app.api.v1.tracking import router as tracking_router
-# api_router.include_router(tracking_router, prefix="/tracking", tags=["Live Tracking & FSM"])
 
 # =====================================================================
 # TRACK B: Multi-Agent AI & Governance (Abhayraj Jaiswal)
@@ -29,5 +28,4 @@ api_router.include_router(auth_router, prefix="/auth", tags=["Authentication & R
 api_router.include_router(shipments_router, prefix="/shipments", tags=["Shipment Orders & Ingestion"])
 api_router.include_router(audit_router, prefix="/audit", tags=["Immutable Audit Trail"])
 api_router.include_router(copilot_router, prefix="/copilot", tags=["LangGraph AI Copilot"])
-# from app.api.v1.analytics import router as analytics_router
-# api_router.include_router(analytics_router, prefix="/analytics", tags=["Operational Analytics"])
+api_router.include_router(transit_router, prefix="/transit", tags=["In-Transit FSM & Telemetry Tracking"])
