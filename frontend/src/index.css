@@ -19,3 +19,9 @@
 .fleet-pulse { position: absolute; top: 0; left: 50%; width: 30px; height: 30px; margin-left: -15px; border-radius: 9px; opacity: .45; animation: fleet-pulse 1.8s ease-out infinite; }
 @keyframes fleet-pulse { from { transform: scale(1); opacity: .45 } to { transform: scale(2.1); opacity: 0 } }
 .leaflet-container { font-family: 'DM Sans', sans-serif; background: #e9eef5; }
+/* Filter each tile (not the container) to avoid hairline seams between tiles in Chromium */
+.fleet-basemap img.leaflet-tile { filter: saturate(0.15) brightness(1.06) contrast(0.92); }
+.fleet-basemap { background: #eef0f3; }
+.leaflet-control-zoom { border: none !important; box-shadow: 0 4px 14px rgba(15, 23, 42, .12) !important; border-radius: 12px !important; overflow: hidden; }
+.leaflet-control-zoom a { width: 34px !important; height: 34px !important; line-height: 34px !important; color: #334155 !important; }
+.leaflet-popup-content-wrapper { border-radius: 14px; box-shadow: 0 10px 30px rgba(15, 23, 42, .18); }

@@ -192,3 +192,22 @@
      - `test_health.py` (3 passed)
      - `test_database_url.py` (7 passed)
    - Frontend production build (`pnpm run build`) passing with 0 errors.
+
+---
+
+### Week 6: VRPTW Solver Core vs. In-Transit FSM (Oct 12 – Oct 16, 2026)
+- **Status**: `IN PROGRESS` ⏳ (Track A Delivered)
+
+#### Track A (Manthan Nimodiya):
+1. **VRPTW Solver (`backend/app/services/optimizer/vrptw_solver.py`)**:
+   - Clarke-Wright savings merges routes by largest saving `d(hub,i) + d(hub,j) − d(i,j)` while the merged route stays feasible.
+   - Hard constraints never broken: payload, volume, time windows (early arrival waits), driver shift limit.
+   - Best-fit assignment of routes to the real fleet; leftover stops re-inserted at the cheapest feasible position (or by earliest deadline); anything impossible is returned as unassigned with a reason.
+   - 2-opt improvement using route cost = road km + 0.3 × route minutes, so the solver avoids long idle waits outside closed windows.
+2. **API**: `POST /api/v1/routes/optimize` returns sequenced routes with arrival/service/departure times, utilisation, unassigned reasons, and the saving versus serving every stop separately.
+3. **Results**: 50 stops on 5 trucks solved in milliseconds (PRD target < 5 s), ~80% less distance than separate trips. On the demo trip the van no longer waits 77 min at Powai.
+4. **Frontend**: Live Tracking orders each trip with the solver; nearest-neighbour remains as the offline fallback.
+5. **Testing**: `backend/tests/test_vrptw_solver.py` (13 tests) re-simulates every route independently to verify capacity, windows, shift limit and that each stop is served exactly once. **Full suite: 111/111 passing.**
+
+#### Track B Focus (Abhayraj Jaiswal - Active):
+- In-Transit FSM, driver action API, trip status tracker.

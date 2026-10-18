@@ -35,7 +35,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 | | **Week 3** | RAG Store & Shipments | RAG Knowledge Base & Vector Store | Shipment Ingestion & Audit Logging | `COMPLETED` ✅ |
 | | **Week 4** | Compliance UI & Ingestion | RAG Compliance Inspector Search UI | Batch Order Uploader & Regression Tests| `COMPLETED` ✅ |
 | **Month 2** | **Week 5** | Spatial Map & LangGraph | Haversine Matrix & Leaflet Map Shell| LangGraph StateGraph & Router Agent| `COMPLETED` ✅ |
-| | **Week 6** | VRPTW Solver & FSM | Deterministic VRPTW Solver Core | In-Transit FSM & Telemetry Tracking| `PLANNED` |
+| | **Week 6** | VRPTW Solver & FSM | Deterministic VRPTW Solver Core | In-Transit FSM & Telemetry Tracking| `IN PROGRESS` ⏳ *(Track A Done)* |
 | | **Week 7** | Map Polylines & Guardrails | Route Visualizer & Split Manifest | RAG Similarity Guardrails & Scores | `PLANNED` |
 | | **Week 8** | Resequencing & Policy Agent | Drag-and-Drop Resequencing UI/API | Policy & Compliance Agent + RAG Check| `PLANNED` |
 | **Month 3** | **Week 9** | Optimization Agent & Driver | LangGraph Optimization Agent (Solver Tool)| Mobile Driver View & Actions | `PLANNED` |
@@ -135,12 +135,16 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 ### Month 2 Roadmap (Upcoming)
 
 #### Week 6: Deterministic VRPTW Solver Core vs. In-Transit FSM (US-003 & US-008)
-- **Status**: `PLANNED` (Oct 12 – Oct 16, 2026)
+- **Status**: `IN PROGRESS` ⏳ (Oct 12 – Oct 16, 2026; Track A Delivered)
 - **Manthan Nimodiya (Track A)**:
-  - Clarke-Wright Savings algorithm implementation
-  - 2-Opt local search optimization heuristic
-  - Hard constraint validation: vehicle payload capacity & customer delivery time windows
-  - Benchmark: solve 50 stops in < 5 seconds
+  - [x] Clarke-Wright Savings construction (`backend/app/services/optimizer/vrptw_solver.py`)
+  - [x] 2-Opt local search with a time-aware route cost (km + 0.3 × route minutes, so idle waiting is not free)
+  - [x] Hard constraints: payload (kg), volume (m³), customer time windows, driver shift limit; infeasible stops reported with reasons
+  - [x] Best-fit fleet assignment + deadline-aware cheapest insertion for leftover stops
+  - [x] `POST /api/v1/routes/optimize` (ROUTE_PROPOSED / OPTIMIZATION_FAILED, ETAs, utilisation, saving vs separate trips)
+  - [x] Benchmark: 50 stops × 5 vehicles solved in milliseconds (PRD target < 5 s); ~80% less distance than separate trips
+  - [x] Live Tracking trips now sequenced by the solver (nearest-neighbour only as offline fallback)
+  - [x] `backend/tests/test_vrptw_solver.py`: 13 tests re-checking every hard constraint independently
 - **Abhayraj Jaiswal (Track B)**:
   - In-Transit Finite State Machine (FSM): `UNASSIGNED` ➔ `ASSIGNED` ➔ `IN_TRANSIT` ➔ `DELIVERED` / `FAILED`
   - Driver action API endpoints (`ARRIVED`, `DELIVERED`, `REPORT_DELAY`)
