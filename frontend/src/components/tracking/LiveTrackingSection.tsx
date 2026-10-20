@@ -9,7 +9,7 @@ import type { AuditEntry, Driver, Hub, Shipment, ShipmentStatus, UserRole, Vehic
 import { clock, estimateLeg, legsAlong, toMinutes, type LatLng } from '../../lib/geo'
 import { optimizeRoutes } from '../../lib/routesApi'
 import { emptyEvents, feedFor, viewAt, type FeedItem, type StopView, type TripEvents, type TripPlan, type TripState, type TripView } from './simulation'
-import TrackingMap, { STOP_COLOR } from './TrackingMap'
+import TrackingMap, { type MapInsets, STOP_COLOR } from './TrackingMap'
 import { FsmProgressBar } from './FsmProgressBar'
 import {
   arriveAtStop,
@@ -302,6 +302,13 @@ export default function LiveTrackingSection({
   const atRisk = visible.reduce((n, v) => n + v.atRisk, 0)
   const onTheRoad = visible.filter(v => v.state === 'IN_TRANSIT' || v.state === 'RETURNING').length
 
+  const insets: MapInsets = useMemo(() => ({
+    left: !isDriver ? 340 : 20,
+    right: selected ? 400 : 20,
+    top: 20,
+    bottom: 90,
+  }), [isDriver, selected])
+
   return (
     <div className="relative w-full h-full overflow-hidden bg-slate-900 select-none">
       {/* ── Background map ── */}
@@ -312,6 +319,7 @@ export default function LiveTrackingSection({
         hoveredId={hoveredId}
         onSelect={id => setSelectedId(id)}
         focusKey={plans.map(p => p.id).join()}
+        insets={insets}
       />
 
       {/* ── Floating trip list (dispatchers only) ── */}
