@@ -544,7 +544,7 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
   }
 
   function advanceFSM(s: Shipment) {
-    const next: Record<ShipmentStatus, ShipmentStatus> = { UNASSIGNED: 'CLUSTERED', CLUSTERED: 'ASSIGNED', ASSIGNED: 'IN_TRANSIT', IN_TRANSIT: 'DELIVERED', DELIVERED: 'DELIVERED', FAILED: 'FAILED' }
+    const next: Record<ShipmentStatus, ShipmentStatus> = { UNASSIGNED: 'CLUSTERED', CLUSTERED: 'ASSIGNED', ASSIGNED: 'IN_TRANSIT', IN_TRANSIT: 'ARRIVED', ARRIVED: 'DELIVERED', DELIVERED: 'DELIVERED', FAILED: 'FAILED' }
     setShipments(shipments.map(x => x.id === s.id ? { ...x, status: next[x.status] } : x))
     addAudit({ actor_name: 'Admin', action_type: 'STATUS_CHANGE', entity_type: 'SHIPMENT', entity_id: s.id, details: `${s.tracking_number}: ${s.status} → ${next[s.status]}` })
   }
