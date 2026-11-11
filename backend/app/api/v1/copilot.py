@@ -9,13 +9,20 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.core.logging import logger
 from app.core.security import require_roles
 from app.models.user import User, UserRole
+from app.core.database import get_db
+from sqlalchemy.orm import Session
 from app.schemas.copilot import (
     AgentIntent,
     CopilotHealthResponse,
     CopilotQueryRequest,
     CopilotQueryResponse,
     IntentCatalogItem,
+    GuardrailEvaluationResult,
+    PolicyComplianceReport,
+    RouteComplianceRequest,
 )
+from app.services.copilot.guardrails import evaluate_rag_guardrail, DEFAULT_GUARDRAIL_THRESHOLD
+from app.services.copilot.policy_agent import PolicyComplianceAgent
 from app.services.copilot.state_graph import get_copilot_graph
 
 router = APIRouter()
@@ -154,4 +161,42 @@ def get_copilot_health() -> CopilotHealthResponse:
         langgraph_available=graph.is_langgraph_native,
         supported_intents_count=len(INTENT_CATALOG),
         rag_corpus_indexed=rag_ready,
+        guardrails_active=True,
+        policy_agent_active=True,
+    )
+
+
+@router.post(
+    "/guardrails/evaluate",
+    response_model=GuardrailEvaluationResult,
+    summary="Evaluate Policy Query against Zero-Hallucination Guardrails (US-006, Week 7)",
+    description="Calculates similarity against RAG embeddings and applies calibrated confidence thresholds to prevent regulatory hallucinations.",
+)
+def evaluate_guardrail_endpoint(
+    request: CopilotQueryRequest,
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FLEET_MANAGER, UserRole.DISPATCHER])),
+) -> GuardrailEvaluationResult:
+    from app.services.rag.knowledge_base import get_knowledge_base
+    kb = get_knowledge_base()
+    hits = kb.search(request.query, top_k=3)
+    return evaluate_rag_guardrail(query=request.query, hits=hits)
+
+
+@router.post(
+    "/policy/validate-route",
+    response_model=PolicyComplianceReport,
+    summary="Evaluate Route Manifest Compliance via Policy Agent (US-006, Week 8)",
+    description="Validates a proposed route and manifest against Driver HOS (Motor Transport Workers Act), Hazmat segregation, and Cold Chain standards.",
+)
+def validate_route_policy_endpoint(
+    request: RouteComplianceRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FLEET_MANAGER, UserRole.DISPATCHER])),
+) -> PolicyComplianceReport:
+    return PolicyComplianceAgent.evaluate_manifest(
+        db=db,
+        vehicle_id=request.vehicle_id,
+        driver_id=request.driver_id,
+        shipment_ids=request.shipment_ids,
+        estimated_duration_minutes=request.estimated_duration_minutes,
     )

@@ -29,7 +29,11 @@ from app.schemas.copilot import (
     CopilotQueryResponse,
     SeverityLevel,
     TraceStep,
+    GuardrailEvaluationResult,
+    PolicyComplianceReport,
 )
+from app.services.copilot.guardrails import evaluate_rag_guardrail, DEFAULT_GUARDRAIL_THRESHOLD
+from app.services.copilot.policy_agent import PolicyComplianceAgent
 from app.services.copilot.router_agent import RouterAgent, get_router_agent
 
 try:
@@ -175,6 +179,25 @@ class CopilotStateGraph:
                         latency_ms=round((time.perf_counter() - t4) * 1000, 2),
                     )
                 )
+
+                node_details = state.get("node_details", {})
+                guardrail_obj = node_details.get("guardrail")
+                if guardrail_obj:
+                    trace.append(
+                        TraceStep(
+                            step=5,
+                            node="rag_similarity_guardrail",
+                            action=f"Zero-Hallucination Guardrail Check ({guardrail_obj.status})",
+                            details={
+                                "passed": guardrail_obj.passed,
+                                "confidence_pct": guardrail_obj.confidence_pct,
+                                "similarity_score": guardrail_obj.similarity_score,
+                                "threshold": guardrail_obj.threshold,
+                                "citations_count": len(guardrail_obj.citations),
+                            },
+                            latency_ms=1.1,
+                        )
+                    )
                 return state
 
             graph.add_node("action_synthesizer", action_synthesizer_node)
@@ -229,6 +252,7 @@ class CopilotStateGraph:
         }
         output_state = self._langgraph_app.invoke(initial_state)
 
+        node_details = output_state.get("node_details", {})
         return CopilotQueryResponse(
             session_id=session_id,
             query=query,
@@ -239,6 +263,8 @@ class CopilotStateGraph:
             suggested_action=output_state.get("suggested_action"),
             execution_trace=output_state["trace"],
             latency_ms=output_state.get("total_latency_ms", round((time.perf_counter() - start_time) * 1000, 2)),
+            guardrail=node_details.get("guardrail"),
+            compliance=node_details.get("compliance"),
         )
 
     def _execute_deterministic(
@@ -309,6 +335,24 @@ class CopilotStateGraph:
             )
         )
 
+        guardrail_obj = node_details.get("guardrail")
+        if guardrail_obj:
+            trace.append(
+                TraceStep(
+                    step=5,
+                    node="rag_similarity_guardrail",
+                    action=f"Zero-Hallucination Guardrail Check ({guardrail_obj.status})",
+                    details={
+                        "passed": guardrail_obj.passed,
+                        "confidence_pct": guardrail_obj.confidence_pct,
+                        "similarity_score": guardrail_obj.similarity_score,
+                        "threshold": guardrail_obj.threshold,
+                        "citations_count": len(guardrail_obj.citations),
+                    },
+                    latency_ms=1.1,
+                )
+            )
+
         return CopilotQueryResponse(
             session_id=session_id,
             query=query,
@@ -319,6 +363,8 @@ class CopilotStateGraph:
             suggested_action=suggested_action,
             execution_trace=trace,
             latency_ms=total_latency_ms,
+            guardrail=node_details.get("guardrail"),
+            compliance=node_details.get("compliance"),
         )
 
     def _dispatch_intent_handler(
@@ -353,39 +399,30 @@ class CopilotStateGraph:
 
         elif intent == AgentIntent.POLICY_QUERY:
             action = self.router.build_suggested_action(intent, entities)
-            citations = []
+            hits = []
             if _RAG_AVAILABLE:
                 try:
                     kb = get_knowledge_base()
-                    hits = kb.search(query, top_k=2, min_score=0.08)
-                    for hit in hits:
-                        sec_title = f"{hit.chunk.section} - {hit.chunk.heading}" if hit.chunk.section else hit.chunk.heading
-                        citations.append({
-                            "doc_id": hit.chunk.doc_id,
-                            "section": sec_title,
-                            "score": round(hit.score, 3),
-                            "excerpt": hit.chunk.text[:200] + "...",
-                        })
+                    hits = kb.search(query, top_k=3)
                 except Exception as err:
                     logger.error(f"Error querying RAG knowledge base: {err}")
 
-            if citations:
-                top = citations[0]
-                topic_str = entities.policy_topic or "Standard Operating Procedure"
-                narrative = (
-                    f"Regulatory Compliance Policy ({topic_str}):\n\n" +
-                    f"According to {top['doc_id']} ({top['section']}):\n" +
-                    f"\"{top['excerpt']}\"\n\n" +
-                    f"Verified Citation: {top['doc_id']} (Confidence: {top['score'] * 100:.1f}%)."
-                )
-            else:
-                ref = entities.rule_reference or "Fleet Operational SOP Manual"
-                topic_str = entities.policy_topic or "logistics operations"
-                narrative = (
-                    f"Standard Operating Procedure: Queried policy regarding {topic_str}. " +
-                    f"Reference standard: {ref}. Please verify driver shift logs and ensure mandatory safety procedures are logged."
-                )
-            return narrative, action, {"citations_found": len(citations), "citations": citations}
+            guardrail_res = evaluate_rag_guardrail(
+                query=query,
+                hits=hits,
+                policy_topic=entities.policy_topic,
+            )
+
+            citations_data = [c.model_dump() for c in guardrail_res.citations]
+            details = {
+                "guardrail": guardrail_res,
+                "guardrail_passed": guardrail_res.passed,
+                "confidence_score": guardrail_res.confidence_pct,
+                "similarity_score": guardrail_res.similarity_score,
+                "citations_count": len(guardrail_res.citations),
+                "citations": citations_data,
+            }
+            return guardrail_res.safe_response, action, details
 
         elif intent == AgentIntent.REROUTE_REQUEST:
             action = self.router.build_suggested_action(intent, entities)

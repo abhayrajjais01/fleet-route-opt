@@ -6,6 +6,8 @@ import LiveTrackingSection from './components/tracking/LiveTrackingSection'
 import ErrorBoundary from './components/ErrorBoundary'
 import DispatchPlanner, { type DispatchDecision } from './components/workflow/DispatchPlanner'
 import NetworkMapSection from './components/map/NetworkMapSection'
+import CopilotSlidingDrawer from './components/copilot/CopilotSlidingDrawer'
+import MobileDriverCockpit from './components/driver/MobileDriverCockpit'
 import type { UserRole, VehicleType, VehicleStatus, DriverStatus, LicenseType, ShipmentStatus, ShipmentPriority, AuditAction, AdminSection, Vehicle, Driver, Hub, Shipment, User, AuditEntry } from './lib/types'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -1138,6 +1140,8 @@ export default function App() {
   const [audit, setAudit] = useState<AuditEntry[]>(INIT_AUDIT)
   const [workflowShipment, setWorkflowShipment] = useState<Shipment | null>(null)
   const [authToken, setAuthToken] = useState<string | null>(null)
+  const [isCopilotDrawerOpen, setIsCopilotDrawerOpen] = useState(false)
+  const [driverCockpitMode, setDriverCockpitMode] = useState<'mobile' | 'map'>('mobile')
 
   useEffect(() => {
     fetchAuthToken(activeRole).then(token => setAuthToken(token))
@@ -1253,6 +1257,24 @@ export default function App() {
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{unassigned} unassigned · plan now
             </button>
           )}
+          {/* Mobile Driver view mode toggle */}
+          {activeRole === 'DRIVER' && (
+            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs mr-2">
+              <button
+                onClick={() => setDriverCockpitMode('mobile')}
+                className={`px-2.5 py-1 rounded-md font-semibold transition-colors ${driverCockpitMode === 'mobile' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                📱 Mobile Cockpit
+              </button>
+              <button
+                onClick={() => setDriverCockpitMode('map')}
+                className={`px-2.5 py-1 rounded-md font-semibold transition-colors ${driverCockpitMode === 'map' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                🗺 Map View
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center bg-slate-100 p-0.5 rounded-lg">
             {(['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] as UserRole[]).map((r) => (
               <button
@@ -1287,7 +1309,18 @@ export default function App() {
           {section === 'map' && <NetworkMapSection hubs={hubs} shipments={shipments} />}
           {/* Kept mounted so the simulation clock and reported events survive page switches */}
           <div className={section === 'tracking' ? 'h-full' : 'hidden'}>
-            <LiveTrackingSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments} activeRole={activeRole} driverId={1} active={section === 'tracking'} addAudit={addAudit} onOpenPlanner={() => setSection('workflow')} authToken={authToken} setShipments={setShipments} />
+            {activeRole === 'DRIVER' && driverCockpitMode === 'mobile' ? (
+              <MobileDriverCockpit
+                shipments={shipments}
+                vehicle={vehicles.find(v => v.id === 1) || null}
+                driver={drivers.find(d => d.id === 1) || null}
+                hub={hubs.find(h => h.id === 1) || null}
+                authToken={authToken}
+                onUpdateShipmentStatus={(id, st) => setShipments(prev => prev.map(s => s.id === id ? { ...s, status: st as ShipmentStatus } : s))}
+              />
+            ) : (
+              <LiveTrackingSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments} activeRole={activeRole} driverId={1} active={section === 'tracking'} addAudit={addAudit} onOpenPlanner={() => setSection('workflow')} authToken={authToken} setShipments={setShipments} />
+            )}
           </div>
           {section === 'compliance' && <ComplianceInspector />}
           {section === 'audit' && <AuditSection entries={audit} />}
@@ -1295,6 +1328,14 @@ export default function App() {
           </ErrorBoundary>
         </main>
       </div>
+
+      {/* Global AI Copilot Sliding Drawer (Week 10 Track B) */}
+      <CopilotSlidingDrawer
+        isOpen={isCopilotDrawerOpen}
+        onToggle={() => setIsCopilotDrawerOpen(v => !v)}
+        authToken={authToken}
+        activeRole={activeRole}
+      />
     </div>
   )
 }

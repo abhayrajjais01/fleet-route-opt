@@ -1,6 +1,6 @@
 """
-copilot.py - Schemas for LangGraph Multi-Agent StateGraph & Router Agent (US-005)
-Track B (Abhayraj Jaiswal) Week 5 Deliverable
+copilot.py - Schemas for LangGraph Multi-Agent StateGraph, Router & Policy Agent (US-005, US-006)
+Track B (Abhayraj Jaiswal) - Weeks 5 to 10
 """
 
 from datetime import datetime, timezone
@@ -45,6 +45,83 @@ class AgentEntities(BaseModel):
     raw_matches: List[str] = Field(default_factory=list)
 
 
+# ----------------------------------------------------
+# Week 7 Track B: Zero-Hallucination Guardrail Schemas
+# ----------------------------------------------------
+class PolicyCitationCard(BaseModel):
+    doc_id: str
+    doc_title: str
+    section_number: str
+    heading: str
+    score: float
+    confidence_pct: float
+    excerpt: str
+
+
+class GuardrailEvaluationResult(BaseModel):
+    query: str
+    passed: bool
+    status: str  # "VERIFIED" or "ZERO_HALLUCINATION_REJECTED"
+    similarity_score: float
+    threshold: float
+    confidence_pct: float
+    safe_response: str
+    citations: List[PolicyCitationCard] = Field(default_factory=list)
+    reason: str
+
+
+# ----------------------------------------------------
+# Week 8 Track B: Policy & Compliance Agent Schemas
+# ----------------------------------------------------
+class ViolationSeverity(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    CRITICAL = "CRITICAL"
+
+
+class PolicyViolation(BaseModel):
+    rule_code: str
+    sop_doc_id: str
+    sop_section: str
+    sop_heading: str
+    severity: ViolationSeverity
+    description: str
+    remediation: str
+    impacted_entity_type: str
+    impacted_entity_id: Optional[Any] = None
+
+
+class SOPRuleCitation(BaseModel):
+    sop_doc_id: str
+    sop_title: str
+    section_number: str
+    clause_heading: str
+    standard_reference: str
+    clause_summary: str
+
+
+class PolicyComplianceReport(BaseModel):
+    is_compliant: bool
+    compliance_score_pct: float
+    violations_count: int
+    critical_violations_count: int
+    violations: List[PolicyViolation] = Field(default_factory=list)
+    cited_rules: List[SOPRuleCitation] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+    evaluation_timestamp: str = ""
+
+
+class RouteComplianceRequest(BaseModel):
+    vehicle_id: int
+    driver_id: Optional[int] = None
+    shipment_ids: List[int] = Field(default_factory=list)
+    estimated_duration_minutes: float = Field(default=120.0, ge=0.0)
+
+
+# ----------------------------------------------------
+# Core Multi-Agent Copilot Schemas
+# ----------------------------------------------------
 class AgentState(BaseModel):
     session_id: str
     query: str
@@ -56,6 +133,8 @@ class AgentState(BaseModel):
     context: Dict[str, Any] = Field(default_factory=dict)
     execution_trace: List[TraceStep] = Field(default_factory=list)
     total_latency_ms: float = 0.0
+    guardrail: Optional[GuardrailEvaluationResult] = None
+    compliance: Optional[PolicyComplianceReport] = None
 
 
 class CopilotQueryRequest(BaseModel):
@@ -74,6 +153,8 @@ class CopilotQueryResponse(BaseModel):
     suggested_action: Optional[str] = None
     execution_trace: List[TraceStep]
     latency_ms: float
+    guardrail: Optional[GuardrailEvaluationResult] = None
+    compliance: Optional[PolicyComplianceReport] = None
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -91,3 +172,5 @@ class CopilotHealthResponse(BaseModel):
     langgraph_available: bool
     supported_intents_count: int
     rag_corpus_indexed: bool
+    guardrails_active: bool
+    policy_agent_active: bool

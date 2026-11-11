@@ -239,3 +239,100 @@
 6. **Automated Pytest Suite (`backend/tests/test_transit_fsm.py` & `test_vrptw_solver.py`)**:
    - **Combined Full Suite**: **122 / 122 passed (100% pass rate)**.
    - Frontend production build (`pnpm run build`): **Built cleanly in 860ms with 0 errors**.
+
+
+---
+
+### Week 7: Map Polylines & Guardrails (Oct 19 – Oct 23, 2026) — COMPLETED ✅
+- **Status**: `COMPLETED` ✅ (Track B Implemented; Track A Mock Interfaces Provided)
+- **Focus Area**: Interactive Route Polylines visualizer & Split Manifest view on Leaflet canvas vs. Zero-Hallucination Guardrails & RAG Similarity confidence scoring (US-004 & US-006).
+
+#### Track A (Manthan Nimodiya - Mock/Stub Interfaces per Choice A2):
+1. **Mock Route Visualizer (`backend/app/services/optimizer/mock_stubs.py`, `frontend/src/lib/trackA_stubs.ts`)**:
+   - `MockRouteVisualizer`: Multi-vehicle route polyline payload structure with sequenced stop pins and vehicle capacity percentage progress bars.
+
+#### Track B (Abhayraj Jaiswal):
+1. **Zero-Hallucination Guardrail Engine (`backend/app/services/copilot/guardrails.py`)**:
+   - Semantic similarity threshold evaluator (`evaluate_rag_guardrail`) enforcing a calibrated `DEFAULT_GUARDRAIL_THRESHOLD = 0.18`.
+   - Strict zero-hallucination fallback text: `"Policy not found in verified knowledge base"` whenever top similarity score < threshold.
+   - Calibrated confidence scoring (0–100%) mapping cosine similarity cleanly to human-interpretable percentage certainty.
+   - Formatted SOP citation cards with document ID, section number, heading, and text excerpt.
+2. **StateGraph Integration (`backend/app/services/copilot/state_graph.py`)**:
+   - Integrated guardrail evaluation into `POLICY_QUERY` handler.
+   - Appended dedicated `rag_similarity_guardrail` step to multi-agent execution trace with verified status, similarity score, and citation count.
+3. **RESTful Guardrails Endpoint (`backend/app/api/v1/copilot.py`)**:
+   - `POST /api/v1/copilot/guardrails/evaluate`: Testing endpoint for real-time similarity scoring and threshold verification.
+4. **Automated Unit Tests (`backend/tests/test_rag_guardrails.py`)**:
+   - 5 comprehensive tests verifying score normalization, in-domain SOP passes, out-of-domain query rejections, REST endpoint validation, and execution trace auditing.
+
+---
+
+### Week 8: Resequencing & Policy Agent (Oct 26 – Oct 30, 2026) — COMPLETED ✅
+- **Status**: `COMPLETED` ✅ (Track B Implemented; Track A Mock Interfaces Provided)
+- **Focus Area**: Drag-and-Drop Route Resequencing UI and recalculation API vs. Policy & Compliance Agent integrating labor laws and Hazmat verification (US-006 & US-007).
+
+#### Track A (Manthan Nimodiya - Mock/Stub Interfaces per Choice A2):
+1. **Mock Route Resequencer (`backend/app/services/optimizer/mock_stubs.py`, `frontend/src/lib/trackA_stubs.ts`)**:
+   - `MockRouteResequencer`: Stop re-ordering payload contract, arrival ETA delta recalculation, and capacity/time window breach detection.
+
+#### Track B (Abhayraj Jaiswal):
+1. **Policy & Compliance Agent (`backend/app/services/copilot/policy_agent.py`)**:
+   - Multi-regulatory automated route validation engine (`PolicyComplianceAgent.evaluate_manifest`).
+   - **Driver Hours of Service (HOS)**: Validates continuous driving (<= 8h), total shift duty (<= 10h), and daily spread (<= 14h) per Motor Transport Workers Act 1961 (`SOP-DR-001 §2`).
+   - **Vehicle Payload & Volumetric Capacity**: Detects vehicle overload violations against certified gross vehicle limits per `SOP-VS-001 §1`.
+   - **Hazardous Materials (Hazmat)**: Enforces driver commercial transport endorsements and CMVR Rule 132/137 certifications for Hazmat cargo per `SOP-HZ-001 §2`.
+   - **Cold Chain Holdover**: Detects perishable consignment transit durations exceeding active refrigeration holdover window (180 mins) per `SOP-CC-001 §5`.
+2. **RESTful Policy Validation Endpoint (`backend/app/api/v1/copilot.py`)**:
+   - `POST /api/v1/copilot/policy/validate-route`: Dispatcher-authenticated endpoint returning overall compliance score (0–100%), violation severity breakdown (LOW / MEDIUM / HIGH / CRITICAL), and cited SOP rules.
+3. **Automated Unit Tests (`backend/tests/test_policy_agent.py`)**:
+   - 6 comprehensive unit tests verifying 100% scores for compliant manifests, precise HOS violations, overload detections, hazmat non-endorsement blocks, cold chain limits, and REST API access controls.
+
+---
+
+### Week 9: Optimization Agent & Driver Mobile View (Nov 2 – Nov 6, 2026) — COMPLETED ✅
+- **Status**: `COMPLETED` ✅ (Track B Implemented; Track A Mock Interfaces Provided)
+- **Focus Area**: LangGraph Optimization Agent (Solver Tool) vs. Mobile Driver View & Offline Sync Action API (US-005 & US-008).
+
+#### Track A (Manthan Nimodiya - Mock/Stub Interfaces per Choice A2):
+1. **Mock Optimization Agent Tool (`backend/app/services/optimizer/mock_stubs.py`, `frontend/src/lib/trackA_stubs.ts`)**:
+   - `MockOptimizationAgentTool`: Generates structured disruption recovery proposals for vehicle breakdowns and route closures.
+
+#### Track B (Abhayraj Jaiswal):
+1. **Mobile Driver Cockpit (`frontend/src/components/driver/MobileDriverCockpit.tsx`)**:
+   - Mobile-first responsive layout tailored for driver handhelds and tablets.
+   - Today's sequenced stop manifest with customer contact, phone dialer shortcut, address, and package details.
+   - Large, thumb-friendly driver action bar (`ARRIVED`, `DELIVERED`, `REPORT ISSUE / DELAY / FAIL`).
+   - LocalStorage offline action queue storing driver transitions when disconnected in rural or poor-connectivity zones.
+   - Automatic background replay sync on network reconnection with visual online/offline status pill.
+2. **Backend Mobile Transit Endpoints (`backend/app/api/v1/transit.py`)**:
+   - `GET /api/v1/transit/driver/manifest`: Returns driver vehicle, depot, assigned shipments, and sync token.
+   - `POST /api/v1/transit/driver/offline-sync`: Batch-replays queued client actions (`ARRIVE`, `DELIVER`, `FAIL`, `DELAY`) with per-action atomic error isolation and audit log sync.
+3. **Automated Unit Tests (`backend/tests/test_mobile_driver_api.py`)**:
+   - 4 comprehensive tests verifying driver manifest retrieval, batch offline sync replay, partial failure isolation, and mock solver integration.
+
+---
+
+### Week 10: Downstream ETAs & Copilot Sliding Drawer UI (Nov 9 – Nov 13, 2026) — COMPLETED ✅
+- **Status**: `COMPLETED` ✅ (Track B Implemented; Track A Mock Interfaces Provided)
+- **Focus Area**: Downstream ETA Dynamic Recalculation vs. AI Copilot Sliding Drawer UI & Execution Traces (US-005 & US-007).
+
+#### Track A (Manthan Nimodiya - Mock/Stub Interfaces per Choice A2):
+1. **Mock Downstream ETA Calculator (`backend/app/services/optimizer/mock_stubs.py`, `frontend/src/lib/trackA_stubs.ts`)**:
+   - `MockDownstreamETACalculator`: Computes cumulative delay ripple effects and predicts SLA breach risks on subsequent stops.
+
+#### Track B (Abhayraj Jaiswal):
+1. **AI Copilot Sliding Drawer Component (`frontend/src/components/copilot/CopilotSlidingDrawer.tsx`)**:
+   - Floating AI Copilot trigger pill in bottom-right corner, accessible from any screen across the application.
+   - Sliding right-side drawer with backdrop blur and smooth CSS slide-in animation.
+   - One-tap quick prompt chips for common operational inquiries (e.g. "Check driver rest break rules", "Validate route compliance", "Show delayed shipments").
+   - Multi-agent execution trace inspector displaying individual sub-agent nodes, reasoning actions, and execution latencies.
+   - Live AI response latency indicator (ms) and calibrated confidence score meter (0–100%).
+   - Zero-hallucination verification badges with expandable SOP citations.
+2. **App Shell Integration (`frontend/src/App.tsx`)**:
+   - Mounted `<CopilotSlidingDrawer />` across all views with dynamic role passing.
+   - Added Driver view switcher between Mobile Cockpit and Live Map.
+3. **Tracking Map Crash Hotfix**:
+   - Resolved undefined `insets.left` map crash on Driver profile and added `'ARRIVED'` transition to `advanceFSM` (commit `fbbe588`).
+4. **Verification & Testing**:
+   - **Full Backend Pytest Suite**: **141 / 141 passed (100%) in 15s**.
+   - **Frontend Production Build**: `pnpm run build` completed cleanly in 832ms with **0 errors**.
