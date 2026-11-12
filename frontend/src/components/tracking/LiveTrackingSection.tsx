@@ -11,6 +11,7 @@ import { optimizeRoutes } from '../../lib/routesApi'
 import { emptyEvents, feedFor, viewAt, type FeedItem, type StopView, type TripEvents, type TripPlan, type TripState, type TripView } from './simulation'
 import TrackingMap, { STOP_COLOR } from './TrackingMap'
 import { FsmProgressBar } from './FsmProgressBar'
+import SlaAlerts from './SlaAlerts'
 import {
   arriveAtStop,
   deliverShipment,
@@ -119,8 +120,11 @@ export default function LiveTrackingSection({
     Promise.all(tripInputs.map(async (input): Promise<TripPlan> => {
       let t = input
       const departure = t.stops.map(s => s.dispatch_time ?? DEFAULT_DEPART).sort()[0]
-      // Sequence stops with the VRPTW solver (time windows, capacity); fall back to nearest-neighbour offline.
-      try {
+      // A route approved in the Route Planner keeps the dispatcher's order (route_sequence). Otherwise sequence
+      // the stops with the VRPTW solver (time windows, capacity), falling back to nearest-neighbour offline.
+      if (t.stops.every(s => s.route_sequence != null)) {
+        t = { ...t, stops: [...t.stops].sort((a, b) => a.route_sequence! - b.route_sequence!) }
+      } else try {
         const res = await optimizeRoutes(
           { id: `hub-${t.hub.id}`, latitude: t.hub.latitude, longitude: t.hub.longitude },
           t.stops.map(s => ({ id: String(s.id), latitude: s.latitude!, longitude: s.longitude!, weight_kg: s.weight_kg, volume_m3: s.volume_m3, window_start: s.time_window_start, window_end: s.time_window_end })),
@@ -176,32 +180,30 @@ export default function LiveTrackingSection({
 
   const actor = isDriver ? myTrip?.plan.driver?.full_name ?? 'Driver' : 'Dispatcher'
 
+  // Trips planned in the browser (Route Planner, sample orders) live only in the client simulation, so the server's
+  // FSM can reject them (unknown id, or still UNASSIGNED there). Server sync is best-effort: the simulation always
+  // updates so downstream ETAs and SLA alerts stay correct, and a rejection is shown as a notice instead of a dead button.
+  async function serverSync(call: () => Promise<unknown>, what: string) {
+    if (!authToken) return
+    try {
+      await call()
+      setActionError(null)
+    } catch (err: any) {
+      setActionError(`${what} applied to the live simulation only. Server: ${err?.message || 'rejected'}`)
+    }
+  }
+
   const actions = {
     async delay(trip: TripView, minutes: number, reason: string) {
-      if (authToken && trip.nextStop) {
-        try {
-          await apiReportDelay(trip.nextStop.shipment.id, minutes, reason, authToken)
-        } catch (err: any) {
-          setActionError(err.message || 'Server rejected transit delay.')
-          return
-        }
-      }
-      setActionError(null)
+      const next = trip.nextStop
+      if (next) await serverSync(() => apiReportDelay(next.shipment.id, minutes, reason, authToken), 'Delay')
       updateEvents(trip, e => ({ ...e, delays: [...e.delays, { at: simMin, minutes, reason }] }))
       addAudit({ actor_name: actor, action_type: 'STATUS_CHANGE', entity_type: 'ROUTE', entity_id: trip.plan.vehicle.id, details: `${trip.plan.vehicle.plate_number} delayed +${minutes} min (${reason}) at ${clock(simMin)}; downstream ETAs recalculated` })
     },
     async arrive(trip: TripView) {
       const s = trip.nextStop
       if (!s) return
-      if (authToken) {
-        try {
-          await arriveAtStop(s.shipment.id, s.shipment.latitude, s.shipment.longitude, 'Driver checked in', authToken)
-        } catch (err: any) {
-          setActionError(err.message || 'Arrival check-in rejected by server.')
-          return
-        }
-      }
-      setActionError(null)
+      await serverSync(() => arriveAtStop(s.shipment.id, s.shipment.latitude, s.shipment.longitude, 'Driver checked in', authToken), 'Arrival')
       if (setShipments) {
         setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'ARRIVED' } : sh))
       }
@@ -234,15 +236,7 @@ export default function LiveTrackingSection({
     setActionError(null)
     const recipient = recipientInput.trim() || s.shipment.customer_name
 
-    if (authToken) {
-      try {
-        await deliverShipment(s.shipment.id, recipient, 'SIG-VERIFIED', 'Handed over to consignee', authToken)
-      } catch (err: any) {
-        setActionError(err.message || 'Delivery confirmation rejected by server.')
-        setActionLoading(false)
-        return
-      }
-    }
+    await serverSync(() => deliverShipment(s.shipment.id, recipient, 'SIG-VERIFIED', 'Handed over to consignee', authToken), 'Delivery')
 
     if (setShipments) {
       setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'DELIVERED' } : sh))
@@ -266,15 +260,7 @@ export default function LiveTrackingSection({
     setActionLoading(true)
     setActionError(null)
 
-    if (authToken) {
-      try {
-        await failDelivery(s.shipment.id, failReason, failNotes || 'Delivery failed', authToken)
-      } catch (err: any) {
-        setActionError(err.message || 'Failure reporting rejected by server.')
-        setActionLoading(false)
-        return
-      }
-    }
+    await serverSync(() => failDelivery(s.shipment.id, failReason, failNotes || 'Delivery failed', authToken), 'Failed stop')
 
     if (setShipments) {
       setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'FAILED' } : sh))
@@ -312,7 +298,9 @@ export default function LiveTrackingSection({
         hoveredId={hoveredId}
         onSelect={id => setSelectedId(id)}
         focusKey={plans.map(p => p.id).join()}
+        insets={{ left: isDriver ? 0 : 336, right: selected ? 400 : 0, bottom: 80, top: 0 }}
       />
+      <SlaAlerts views={visible} />
 
       {/* ── Floating trip list (dispatchers only) ── */}
       {!isDriver && (

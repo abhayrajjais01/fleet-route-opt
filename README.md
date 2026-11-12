@@ -7,7 +7,7 @@ An enterprise-grade, end-to-end AI solution for Fleet Route Optimization address
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com)
 [![React 19](https://img.shields.io/badge/React-19.0-61DAFB.svg)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646CFF.svg)](https://vitejs.dev)
-[![Tests](https://img.shields.io/badge/Tests-122%2F122%20Passed%20(100%25)-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-164%2F164%20Passed%20(100%25)-brightgreen.svg)]()
 [![RAG Benchmark](https://img.shields.io/badge/RAG%20Eval-Recall%403%201.00%20%7C%20MRR%200.98-success.svg)]()
 [![Render](https://img.shields.io/badge/Render-Backend%20Live-brightgreen.svg)](https://fleet-route-opt.onrender.com)
 [![Vercel](https://img.shields.io/badge/Vercel-Frontend%20Live-black.svg)](https://fleet-route-opt.vercel.app)
@@ -31,11 +31,10 @@ The project is strictly split across two balanced engineering tracks covering bo
 ## 16-Week Roadmap & Delivery Status
 
 ```
-Overall Progress: [██████░░░░░░░░░░░░░░] 31.2% (Month 1 Done, Week 5 Track A & B Delivered: 5 / 16 Weeks Done)
-Month 1 Progress: [████████████████████] 100.0% (Weeks 1, 2, 3, and 4 COMPLETED)
-Month 2 Progress: [█████░░░░░░░░░░░░░░░] 25.0% (Week 5 Delivered, Week 6 Starting Next)
-Month 3 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
-Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
+Track A Progress: [████████████████████] 100% (16 / 16 weeks delivered, Weeks 11–16 early)
+Track B Progress: [████████████░░░░░░░░] Weeks 1–6 delivered, Weeks 7–16 in progress
+Month 1 Progress: [████████████████████] 100% (Weeks 1–4 COMPLETED)
+Month 2 Progress: [███████████████░░░░░] Weeks 5–6 COMPLETED; Weeks 7–8 Track A done
 ```
 
 | Milestone | Scope & Deliverables | Track A (Manthan Nimodiya) | Track B (Abhayraj Jaiswal) | Status |
@@ -45,8 +44,20 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 | **Week 3** | **RAG Knowledge Base & Shipment Engine** | Vector Store Engine & RAG Ingestion (US-006) | Shipment Models, APIs & Immutable Audit Log (US-002 & US-008) | `COMPLETED` ✅ |
 | **Week 4** | **Batch Ingestion & Compliance UI** | RAG Compliance Inspector Search UI | Batch Order Uploader (CSV/JSON), Cluster Preview & Regression Tests | `COMPLETED` ✅ |
 | **Week 5** | **Spatial Map & LangGraph Foundation** | Haversine Matrix & Leaflet Map Shell | LangGraph StateGraph & Router Agent (Intent Classifier) | `COMPLETED` ✅ |
+| **Week 6** | **VRPTW Solver & In-Transit FSM** | Clarke-Wright + 2-opt VRPTW Solver | In-Transit FSM, Driver Actions & Telemetry | `COMPLETED` ✅ |
+| **Week 7** | **Route Visualizer & Guardrails** | Route Planner, Colour-coded Polylines, Split Manifest | RAG Similarity Guardrails | Track A ✅ |
+| **Week 8** | **Resequencing & Policy Agent** | Drag-and-drop Resequencing, Violation Badges, Approve & Dispatch | Policy & Compliance Agent | Track A ✅ |
+| **Week 9** | **Optimization Agent & Driver View** | Tool-calling Optimization Agent (`/routes/disruption`) | Mobile Driver View | Track A ✅ |
+| **Week 10** | **Downstream ETAs & Copilot UI** | ETA Recalculation Engine & ETA Notifications | Copilot Drawer & Traces | Track A ✅ |
+| **Week 11** | **Route Explainer & Proposals** | RAG-grounded Route Explanations & Driver Instructions | Proposal Cards & Diff | Track A ✅ (early) |
+| **Week 12** | **SLA Alerts & KPI Dashboard** | SLA Breach Detection, Alert Toasts & Sound | Executive KPI Dashboard | Track A ✅ (early) |
+| **Week 13** | **Operational KPIs** | Metrics Engine (OTIF, Fuel, Cost per tonne-km) & Reports Page | Analytics Filters | Track A ✅ (early) |
+| **Week 14** | **Data Export** | CSV & PDF Exports | Security Audit & Agent Benchmarks | Track A ✅ (early) |
+| **Week 15** | **Performance** | Benchmark Script, Indexes, Performance Tests | Multi-Agent Exception Handling | Track A ✅ (early) |
+| **Week 16** | **Containerization & Release** | Backend Dockerfile, Postgres Compose, OpenAPI Polish | Frontend Docker, CI & Walkthrough | Track A ✅ (early) |
 
-- **Automated Backend Test Suite**: `python -m pytest` → **122 / 122 PASSED (100%)**
+- **Automated Backend Test Suite**: `python -m pytest` → **164 / 164 PASSED (100%)**
+- **Performance Benchmark**: `python -m scripts.benchmark` → VRPTW 50 stops ≈ 3 ms (target < 5 s), agent re-route < 20 ms (target < 3 s)
 - **RAG Retrieval Benchmark**: `python -m app.services.rag.evaluation` → **Recall@3 1.00 · MRR 0.98 · p95 < 1 ms** (WikiQA-style eval set)
 - **Database Seeder**: `python scripts/seed_demo_data.py` → **Pre-loads 4 roles, 3 hubs, 4 vehicles, 5 drivers, 5 shipments, and audit logs**
 - **Live Deployments**:
@@ -108,6 +119,8 @@ fleet-route-opt/
 │   │   │   ├── rag.py                   # [Track A] Semantic policy search & benchmark
 │   │   │   ├── shipments.py             # [Track B] Shipment CRUD & batch ingestion
 │   │   │   ├── audit.py                 # [Track B] Immutable audit trail query API
+│   │   │   ├── routes.py                # [Track A] Distance matrix, optimize, evaluate, recalculate, SLA, explain, disruption
+│   │   │   ├── reports.py               # [Track A] Metrics, CSV & PDF exports
 │   │   │   └── router.py                # Central API router aggregator
 │   │   ├── core/                        # Security, configuration, database engines
 │   │   ├── models/                      # SQLAlchemy 2.0 ORM models
@@ -115,10 +128,16 @@ fleet-route-opt/
 │   │   └── services/
 │   │       ├── audit_service.py         # Forensic state diff audit logger
 │   │       ├── batch_ingestion.py       # High-throughput CSV/JSON parser
-│   │       └── rag/                     # Vector store, corpus, embeddings, evaluation
+│   │       ├── rag/                     # Vector store, corpus, embeddings, evaluation
+│   │       ├── optimizer/               # [Track A] Distance matrix, VRPTW solver, ETA engine, route explainer
+│   │       ├── copilot/                 # Router agent, state graph [B]; optimization agent [A]
+│   │       └── analytics/               # [Track A] Metrics engine, simulated history, exports
 │   ├── scripts/
-│   │   └── seed_demo_data.py            # Automated database seeder
-│   └── tests/                           # Pytest automated test suites (111/111 passed)
+│   │   ├── seed_demo_data.py            # Automated database seeder
+│   │   ├── benchmark.py                 # [Track A] Performance benchmark vs PRD targets
+│   │   └── docker_entrypoint.py         # [Track A] Wait for DB, migrate, seed, start API
+│   ├── Dockerfile                       # [Track A] Multi-stage backend image
+│   └── tests/                           # Pytest automated test suites (164/164 passed)
 │       ├── test_health.py               # Probe validation (3 tests)
 │       ├── test_auth_rbac.py            # JWT & RBAC tests (5 tests)
 │       ├── test_fleet_crud.py           # Fleet asset CRUD tests (4 tests)
@@ -131,7 +150,8 @@ fleet-route-opt/
 │   │   ├── main.tsx                     # Vite React 19 entrypoint
 │   │   └── index.css                    # Design system styling & Tailwind utilities
 │   └── package.json                     # Frontend dependencies
-├── milestones_tracker.md                # 16-Week master progress tracker (Month 1: 100%)
+├── docker-compose.yml                   # [Track A] Postgres 16 + backend
+├── milestones_tracker.md                # 16-Week master progress tracker
 ├── weekly_work_log.md                   # Chronological weekly engineering work log
 ├── complete_project_overview_and_work_split.md # Comprehensive 50-50 viva presentation guide
 └── team_work_split.md                   # 50-50 full-stack & GenAI engineering split
@@ -151,11 +171,14 @@ pip install -r requirements.txt
 # Run database seeder
 python scripts/seed_demo_data.py
 
-# Run all 49 regression tests
+# Run all 164 regression tests
 python -m pytest
 
 # Run RAG retrieval benchmark
 python -m app.services.rag.evaluation
+
+# Run the performance benchmark
+python -m scripts.benchmark
 
 # Start development server
 uvicorn app.main:app --reload --port 8000
@@ -170,6 +193,12 @@ pnpm run build
 pnpm run dev
 ```
 Dispatch Cockpit: [http://localhost:5173](http://localhost:5173)
+
+### 3. Backend + Postgres with Docker
+```bash
+docker compose up --build
+```
+Starts `postgres:16-alpine` and the backend on [http://localhost:8000](http://localhost:8000). The entrypoint waits for the database, creates tables, runs migrations and seeds the demo data. The optional Claude planner for the optimization agent turns on only when `ANTHROPIC_API_KEY` is set and the `anthropic` package is installed; otherwise the deterministic planner is used.
 
 ---
 

@@ -10,18 +10,19 @@
 
 | Metric | Status |
 | :--- | :--- |
-| **Overall Roadmap Progress** | **31.2% Completed** (Weeks 1–4 Done, Week 5 Track A & B Delivered: 5 / 16 Weeks Done) |
-| **Current Active Month** | **Month 2: Optimization & Map vs. LangGraph Router & FSM (25.0% Complete)** |
-| **Current Active Week** | **Week 5: Spatial Graph & LangGraph Router (Oct 5 – Oct 9, 2026 — COMPLETED ✅)** |
-| **Next Immediate Milestone** | **Month 2, Week 6: VRPTW Solver Core & In-Transit FSM (Oct 12 – Oct 16, 2026)** |
-| **Automated Test Suite** | **122 / 122 PASSED (100% pass rate in 11.98s)** |
+| **Overall Roadmap Progress** | **Weeks 1–6 Completed by both tracks; Track A (Manthan) delivered Weeks 7–16 ahead of schedule on Nov 12, 2026** |
+| **Current Active Month** | **Month 3: Agents, Live ETAs & Explanations** |
+| **Current Active Week** | **Week 10: Downstream ETAs & Copilot UI (Nov 9 – Nov 13, 2026)** |
+| **Track A Status** | **All 16 Track A weeks delivered** (Weeks 12–16 delivered early; Track B Weeks 7–16 continue on schedule) |
+| **Automated Test Suite** | **164 / 164 PASSED** (`pytest -q` in `backend/`) |
 
 ```
-Overall Progress: [██████░░░░░░░░░░░░░░] 31.2% (Weeks 1–4 Done, Week 5 Delivered: 5 / 16 Weeks)
-Month 1 Progress: [████████████████████] 100.0% (Weeks 1, 2, 3, and 4 COMPLETED)
-Month 2 Progress: [█████░░░░░░░░░░░░░░░] 25.0% (Week 5 Delivered, Week 6 Starting Next)
-Month 3 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
-Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
+Track A Progress: [████████████████████] 100% (16 / 16 weeks delivered)
+Track B Progress: [████████████░░░░░░░░] 6 / 16 weeks (Weeks 7–16 in progress)
+Month 1 Progress: [████████████████████] 100% (Weeks 1–4 COMPLETED)
+Month 2 Progress: [███████████████░░░░░] Weeks 5–6 COMPLETED; Weeks 7–8 Track A done
+Month 3 Progress: [██████████░░░░░░░░░░] Weeks 9–12 Track A done
+Month 4 Progress: [██████████░░░░░░░░░░] Weeks 13–16 Track A done
 ```
 
 ---
@@ -35,17 +36,17 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 | | **Week 3** | RAG Store & Shipments | RAG Knowledge Base & Vector Store | Shipment Ingestion & Audit Logging | `COMPLETED` ✅ |
 | | **Week 4** | Compliance UI & Ingestion | RAG Compliance Inspector Search UI | Batch Order Uploader & Regression Tests| `COMPLETED` ✅ |
 | **Month 2** | **Week 5** | Spatial Map & LangGraph | Haversine Matrix & Leaflet Map Shell| LangGraph StateGraph & Router Agent| `COMPLETED` ✅ |
-| | **Week 6** | VRPTW Solver & FSM | Deterministic VRPTW Solver Core | In-Transit FSM & Telemetry Tracking| `IN PROGRESS` ⏳ *(Track A Done)* |
-| | **Week 7** | Map Polylines & Guardrails | Route Visualizer & Split Manifest | RAG Similarity Guardrails & Scores | `PLANNED` |
-| | **Week 8** | Resequencing & Policy Agent | Drag-and-Drop Resequencing UI/API | Policy & Compliance Agent + RAG Check| `PLANNED` |
-| **Month 3** | **Week 9** | Optimization Agent & Driver | LangGraph Optimization Agent (Solver Tool)| Mobile Driver View & Actions | `PLANNED` |
-| | **Week 10** | Downstream ETAs & Copilot UI| Downstream Dynamic Recalculation | Copilot Sliding Drawer & Traces | `PLANNED` |
-| | **Week 11** | RAG Route Explainer & Proposals| RAG Route Explanations & Summaries | Interactive Proposal Cards & Diff | `PLANNED` |
-| | **Week 12** | SLA Alerts & KPI Dashboard | SLA Breach Alerts & Recovery FSM | Executive KPI Analytics Dashboard UI| `PLANNED` |
-| **Month 4** | **Week 13** | Operational KPIs & Filter | Operational Metrics Calc Engine | Multi-Dimensional Analytics Filter | `PLANNED` |
-| | **Week 14** | Data Export & Pipeline Polish| CSV / PDF Audit Export Generator | Security Audit & Agent Benchmarks | `PLANNED` |
-| | **Week 15** | Performance & Stress Testing| Solver & Vector Indexing Benchmark (<5s)| Multi-Agent Exception Handling (<3s)| `PLANNED` |
-| | **Week 16** | Containerization & Release | Backend Docker & Postgres Service | Frontend Docker, Compose & Walkthru| `PLANNED` |
+| | **Week 6** | VRPTW Solver & FSM | Deterministic VRPTW Solver Core | In-Transit FSM & Telemetry Tracking| `COMPLETED` ✅ |
+| | **Week 7** | Map Polylines & Guardrails | Route Visualizer & Split Manifest | RAG Similarity Guardrails & Scores | `IN PROGRESS` ⏳ *(Track A Done)* |
+| | **Week 8** | Resequencing & Policy Agent | Drag-and-Drop Resequencing UI/API | Policy & Compliance Agent + RAG Check| `IN PROGRESS` ⏳ *(Track A Done)* |
+| **Month 3** | **Week 9** | Optimization Agent & Driver | LangGraph Optimization Agent (Solver Tool)| Mobile Driver View & Actions | `IN PROGRESS` ⏳ *(Track A Done)* |
+| | **Week 10** | Downstream ETAs & Copilot UI| Downstream Dynamic Recalculation | Copilot Sliding Drawer & Traces | `IN PROGRESS` ⏳ *(Track A Done)* |
+| | **Week 11** | RAG Route Explainer & Proposals| RAG Route Explanations & Summaries | Interactive Proposal Cards & Diff | `PLANNED` *(Track A Done early)* |
+| | **Week 12** | SLA Alerts & KPI Dashboard | SLA Breach Alerts & Recovery FSM | Executive KPI Analytics Dashboard UI| `PLANNED` *(Track A Done early)* |
+| **Month 4** | **Week 13** | Operational KPIs & Filter | Operational Metrics Calc Engine | Multi-Dimensional Analytics Filter | `PLANNED` *(Track A Done early)* |
+| | **Week 14** | Data Export & Pipeline Polish| CSV / PDF Audit Export Generator | Security Audit & Agent Benchmarks | `PLANNED` *(Track A Done early)* |
+| | **Week 15** | Performance & Stress Testing| Solver & Vector Indexing Benchmark (<5s)| Multi-Agent Exception Handling (<3s)| `PLANNED` *(Track A Done early)* |
+| | **Week 16** | Containerization & Release | Backend Docker & Postgres Service | Frontend Docker, Compose & Walkthru| `PLANNED` *(Track A Done early)* |
 
 ---
 
@@ -132,7 +133,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 
 ---
 
-### Month 2 Roadmap (Upcoming)
+### Month 2: Optimization & Map vs. LangGraph Router & FSM
 
 #### Week 6: Deterministic VRPTW Solver Core vs. In-Transit FSM (US-003 & US-008)
 - **Status**: `COMPLETED` ✅ (Oct 12 – Oct 16, 2026; Track A & Track B Delivered)
@@ -152,3 +153,95 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - [x] FSM Visual Stepper Component (`FsmProgressBar.tsx`): 5-stage visual progress tracker with glowing pulse rings, SLA risk tags, and failure indicators
   - [x] Interactive Driver Cockpit (`LiveTrackingSection.tsx`, `transitApi.ts`): proof-of-delivery handover modal, failure reporting modal, and delay logger
   - [x] Automated Test Suite: `backend/tests/test_transit_fsm.py` (11/11 passed, **122/122 full suite passed, 100%**)
+
+#### Week 7: Route Visualizer & Split Manifest (US-003)
+- **Status**: Track A `COMPLETED` ✅ · Track B `IN PROGRESS`
+- **Manthan Nimodiya (Track A)**:
+  - [x] Route Planner page (`frontend/src/components/routes/RoutePlannerSection.tsx`): pick hub, departure time, orders and vehicles, then optimize
+  - [x] Colour-coded route polylines with numbered stop pins and ETA popups (`RoutePlanMap.tsx`); hovering a route fades the others
+  - [x] Split manifest per vehicle: driver, capacity bar (% full), km, duration, return time, per-stop ETA and window
+  - [x] Headline numbers: routes, total km vs separate trips, late stops; unplannable orders listed with the solver's reason
+- **Abhayraj Jaiswal (Track B)**:
+  - [ ] RAG similarity guardrails & scores
+
+#### Week 8: Drag-and-Drop Resequencing (US-003)
+- **Status**: Track A `COMPLETED` ✅ · Track B `IN PROGRESS`
+- **Manthan Nimodiya (Track A)**:
+  - [x] Drag stops to re-order them or move them onto another vehicle; ▲/▼ buttons as keyboard-friendly fallback
+  - [x] ETAs recalculated instantly in the browser, confirmed by `POST /api/v1/routes/evaluate`
+  - [x] Time-window violation badges (late / over capacity / over shift) on the stop and route
+  - [x] "Approve & dispatch" assigns shipments, vehicles go IN_TRANSIT, drivers ON_TRIP; Live Tracking follows the approved order (`route_sequence`)
+- **Abhayraj Jaiswal (Track B)**:
+  - [ ] Policy & Compliance agent + RAG check
+
+### Month 3: Agents, Live ETAs & Explanations
+
+#### Week 9: Optimization Agent with Tool Calling (US-005)
+- **Status**: Track A `COMPLETED` ✅ · Track B `IN PROGRESS`
+- **Manthan Nimodiya (Track A)**:
+  - [x] `backend/app/services/copilot/optimization_agent.py`: three JSON-schema tools (`reassign_stops`, `apply_delay`, `reoptimize_route`) that call the VRPTW solver and ETA engine
+  - [x] Deterministic planner (Router Agent intent + breakdown/delay parsing) by default; optional Claude tool-calling planner when `ANTHROPIC_API_KEY` is set
+  - [x] Breakdown: cheapest feasible insertion into other vehicles, then spare vehicles from the hub; stops that cannot be placed are listed by name with the reason
+  - [x] `POST /api/v1/routes/disruption` returns a proposal (changes, ETAs before → after, late minutes before → after) that the dispatcher approves or declines
+  - [x] UI: "What if it breaks down?" per route and a free-text "Ask the optimization agent" box with an approve/decline proposal card
+- **Abhayraj Jaiswal (Track B)**:
+  - [ ] Mobile driver view & actions
+
+#### Week 10: Downstream ETA Recalculation & Notifications
+- **Status**: Track A `COMPLETED` ✅ · Track B `IN PROGRESS`
+- **Manthan Nimodiya (Track A)**:
+  - [x] `backend/app/services/optimizer/eta_engine.py`: completed stops keep actual times; a delay shifts the next stop and later stops absorb it where they were waiting for a window
+  - [x] `POST /api/v1/routes/recalculate`
+  - [x] Live Tracking toast "ETAs updated on <vehicle>" when a delay moves stops (`SlaAlerts.tsx`)
+- **Abhayraj Jaiswal (Track B)**:
+  - [ ] Copilot sliding drawer & traces
+
+#### Week 11: RAG Route Explanations & Driver Instructions
+- **Status**: Track A `COMPLETED` ✅ (delivered early)
+- **Manthan Nimodiya (Track A)**:
+  - [x] `backend/app/services/optimizer/route_explainer.py`: plain-language summary, a reason for every stop, turn-by-turn style driver instructions (compass direction, km, minutes)
+  - [x] Built only from computed ETAs plus SOP clauses retrieved from the RAG store (cited, never invented)
+  - [x] `POST /api/v1/routes/explain`; "Explain route" modal with *Stop by stop* and *Driver instructions* tabs
+
+#### Week 12: SLA Breach Detection & Alerts
+- **Status**: Track A `COMPLETED` ✅ (delivered early)
+- **Manthan Nimodiya (Track A)**:
+  - [x] SLA classes: ON_TIME, AT_RISK (within 15 min of window close), PREDICTED_BREACH, SLA_BREACHED, FAILED; trip states ROUTE_BLOCKED / ROUTE_PROPOSED
+  - [x] `POST /api/v1/routes/sla-check` returns alerts sorted worst first
+  - [x] Live Tracking toasts for predicted breach, actual breach and blocked route, with an optional alert tone
+
+### Month 4: Metrics, Exports, Performance & Release
+
+#### Week 13: Operational Metrics Engine
+- **Status**: Track A `COMPLETED` ✅ (delivered early)
+- **Manthan Nimodiya (Track A)**:
+  - [x] `backend/app/services/analytics/metrics.py`: OTIF, on-time %, SLA breaches, average transit time, route efficiency, fuel burn (L/100 km), cost per tonne-km, fleet utilisation; breakdowns by hub and vehicle type
+  - [x] 30-day dispatch history replayed through the real solver + ETA engine (`history.py`, seeded so it is repeatable)
+  - [x] `GET /api/v1/reports/metrics` with filters: days, hub, vehicle type, driver, fuel price, driver cost
+  - [x] Reports page with KPI tiles, OTIF-by-day chart and hub / vehicle-type tables
+
+#### Week 14: CSV / PDF Exports
+- **Status**: Track A `COMPLETED` ✅ (delivered early)
+- **Manthan Nimodiya (Track A)**:
+  - [x] `GET /api/v1/reports/export.csv` (one row per stop) and `GET /api/v1/reports/summary.pdf` (ReportLab KPI summary)
+  - [x] Export buttons on the Reports page honour the active filters
+
+#### Week 15: Benchmarks & Performance Hardening
+- **Status**: Track A `COMPLETED` ✅ (delivered early)
+- **Manthan Nimodiya (Track A)**:
+  - [x] `python -m scripts.benchmark`: VRPTW 50 stops ≈ 3 ms (target < 5 s), 250×250 matrix ≈ 1 ms, RAG search < 1 ms (target < 100 ms), agent breakdown re-route ≈ 5 ms and delay ≈ 17 ms (target < 3 s)
+  - [x] Composite DB indexes on vehicles (hub, status) and drivers (hub, status)
+  - [x] `backend/tests/test_performance.py` guards the targets in CI
+
+#### Week 16: Backend Docker & Postgres Service
+- **Status**: Track A `COMPLETED` ✅ (delivered early)
+- **Manthan Nimodiya (Track A)**:
+  - [x] Multi-stage `backend/Dockerfile` (non-root user, healthcheck on `/api/v1/health`)
+  - [x] `docker-compose.yml`: `postgres:16-alpine` + backend; entrypoint waits for the DB, creates tables, runs migrations and seeds demo data
+  - [x] OpenAPI polish: tagged and described endpoint groups at `/docs`
+- **Abhayraj Jaiswal (Track B)**:
+  - [ ] Frontend Docker, CI and walkthrough
+
+#### Track A test summary
+- New suites: `test_route_operations.py` (27), `test_reports.py` (8), `test_performance.py` (3)
+- **Full backend suite: 164 / 164 passed**; frontend `tsc` 0 errors and `pnpm build` clean

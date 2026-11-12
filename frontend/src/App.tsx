@@ -6,6 +6,8 @@ import LiveTrackingSection from './components/tracking/LiveTrackingSection'
 import ErrorBoundary from './components/ErrorBoundary'
 import DispatchPlanner, { type DispatchDecision } from './components/workflow/DispatchPlanner'
 import NetworkMapSection from './components/map/NetworkMapSection'
+import RoutePlannerSection, { type RouteDispatch } from './components/routes/RoutePlannerSection'
+import ReportsSection from './components/reports/ReportsSection'
 import type { UserRole, VehicleType, VehicleStatus, DriverStatus, LicenseType, ShipmentStatus, ShipmentPriority, AuditAction, AdminSection, Vehicle, Driver, Hub, Shipment, User, AuditEntry } from './lib/types'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -23,6 +25,7 @@ const INIT_VEHICLES: Vehicle[] = [
   { id: 3, name: 'Eco Cargo Electric', plate_number: 'MH-01-EV-8822', vehicle_type: 'EV', max_payload_kg: 950, max_volume_m3: 8, fuel_efficiency_kpl: 18, current_status: 'IN_TRANSIT', assigned_hub_id: 2, fuel_pct: 67 },
   { id: 4, name: 'Interstate Hauler', plate_number: 'MH-12-QQ-4001', vehicle_type: 'SEMI_TRUCK', max_payload_kg: 8500, max_volume_m3: 55, fuel_efficiency_kpl: 5.8, current_status: 'MAINTENANCE', assigned_hub_id: 3, fuel_pct: 28 },
   { id: 5, name: 'Metro Box Truck', plate_number: 'MH-43-BX-3310', vehicle_type: 'BOX_TRUCK', max_payload_kg: 2500, max_volume_m3: 18, fuel_efficiency_kpl: 9.2, current_status: 'AVAILABLE', assigned_hub_id: 2, fuel_pct: 74 },
+  { id: 6, name: 'City Runner Van', plate_number: 'MH-43-CV-7712', vehicle_type: 'VAN', max_payload_kg: 1200, max_volume_m3: 10, fuel_efficiency_kpl: 13.5, current_status: 'AVAILABLE', assigned_hub_id: 2, fuel_pct: 88 },
 ]
 const INIT_DRIVERS: Driver[] = [
   { id: 1, full_name: 'Rajesh Kumar', license_number: 'DL-14-2021-9988', license_type: 'COMMERCIAL', phone_number: '+91-98200-11223', status: 'ON_TRIP', max_driving_hours_per_day: 8, assigned_hub_id: 1, current_vehicle_id: 1, rating: 4.8 },
@@ -31,6 +34,7 @@ const INIT_DRIVERS: Driver[] = [
   { id: 4, full_name: 'Suresh Reddy', license_number: 'KA01-2019-33441', license_type: 'COMMERCIAL', phone_number: '+91-98450-99887', status: 'OFF_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 3, current_vehicle_id: null, rating: 4.7 },
   { id: 5, full_name: 'Priya Mehta', license_number: 'GJ01-2022-12345', license_type: 'CLASS_B', phone_number: '+91-97200-55678', status: 'ON_TRIP', max_driving_hours_per_day: 8, assigned_hub_id: 2, current_vehicle_id: 3, rating: 4.9 },
   { id: 6, full_name: 'Neha Kulkarni', license_number: 'MH43-2018-77120', license_type: 'COMMERCIAL', phone_number: '+91-98190-33445', status: 'ON_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 2, current_vehicle_id: null, rating: 4.7 },
+  { id: 7, full_name: 'Imran Shaikh', license_number: 'MH43-2019-55018', license_type: 'COMMERCIAL', phone_number: '+91-98330-22114', status: 'ON_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 2, current_vehicle_id: null, rating: 4.6 },
 ]
 const INIT_SHIPMENTS: Shipment[] = [
   { id: 1, tracking_number: 'SHP-001-MUM', customer_name: 'Reliance Industries', destination_address: 'BKC, Mumbai', weight_kg: 450, volume_m3: 3.2, time_window_start: '09:00', time_window_end: '12:00', priority: 'HIGH', status: 'IN_TRANSIT', hub_id: 1, latitude: 19.066, longitude: 72.865, assigned_vehicle_id: 2 },
@@ -544,7 +548,7 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
   }
 
   function advanceFSM(s: Shipment) {
-    const next: Record<ShipmentStatus, ShipmentStatus> = { UNASSIGNED: 'CLUSTERED', CLUSTERED: 'ASSIGNED', ASSIGNED: 'IN_TRANSIT', IN_TRANSIT: 'DELIVERED', DELIVERED: 'DELIVERED', FAILED: 'FAILED' }
+    const next: Record<ShipmentStatus, ShipmentStatus> = { UNASSIGNED: 'CLUSTERED', CLUSTERED: 'ASSIGNED', ASSIGNED: 'IN_TRANSIT', IN_TRANSIT: 'ARRIVED', ARRIVED: 'DELIVERED', DELIVERED: 'DELIVERED', FAILED: 'FAILED' }
     setShipments(shipments.map(x => x.id === s.id ? { ...x, status: next[x.status] } : x))
     addAudit({ actor_name: 'Admin', action_type: 'STATUS_CHANGE', entity_type: 'SHIPMENT', entity_id: s.id, details: `${s.tracking_number}: ${s.status} → ${next[s.status]}` })
   }
@@ -1116,10 +1120,12 @@ const ALL_NAV: { id: AdminSection; label: string; group: 'Operations' | 'Assets 
   { id: 'dashboard', label: 'AI Command', group: 'Operations', path: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
   { id: 'shipments', label: 'Shipments', group: 'Operations', path: 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z', roles: ['ADMIN', 'DISPATCHER'] },
   { id: 'workflow', label: 'Dispatch Planner', group: 'Operations', path: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', roles: ['ADMIN', 'DISPATCHER'] },
+  { id: 'routes', label: 'Route Planner', group: 'Operations', path: 'M3 17l6-6 4 4 8-8M14 7h7v7', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
   { id: 'tracking', label: 'Live Tracking', group: 'Operations', path: 'M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] },
   { id: 'map', label: 'Network Map', group: 'Operations', path: 'M9 20l-5.447-2.724A1 1 0 0 1 3 16.382V5.618a1 1 0 0 1 1.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0 0 21 18.382V7.618a1 1 0 0 0-.553-.894L15 4m0 13V4m0 0L9 7', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
   { id: 'fleet', label: 'Fleet Assets', group: 'Assets & policy', path: 'M1 3h15v13H1zM16 8h4l3 3v5h-7V8z', roles: ['ADMIN', 'FLEET_MANAGER'] },
   { id: 'compliance', label: 'Compliance', group: 'Assets & policy', path: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
+  { id: 'reports', label: 'Reports', group: 'Governance', path: 'M4 20V10M10 20V4M16 20v-7M22 20H2', roles: ['ADMIN', 'FLEET_MANAGER'] },
   { id: 'audit', label: 'Audit Log', group: 'Governance', path: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2', roles: ['ADMIN', 'FLEET_MANAGER'] },
   { id: 'users', label: 'Users', group: 'Governance', path: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', roles: ['ADMIN'] },
 ]
@@ -1163,6 +1169,17 @@ export default function App() {
     setShipments(prev => prev.map(s => s.id === d.shipmentId ? { ...s, status: 'ASSIGNED', assigned_vehicle_id: d.vehicleId, dispatch_time: d.departure } : s))
     setVehicles(prev => prev.map(v => v.id === d.vehicleId ? { ...v, current_status: 'IN_TRANSIT' } : v))
     setDrivers(prev => prev.map(dr => dr.id === d.driverId ? { ...dr, status: 'ON_TRIP', current_vehicle_id: d.vehicleId } : dr))
+  }
+
+  // Route Planner approval: every stop gets its vehicle, departure and position in the approved sequence.
+  function dispatchRoutes(routes: RouteDispatch[]) {
+    const seq = new Map(routes.flatMap(r => r.shipmentIds.map((id, i) => [id, { r, i }] as const)))
+    setShipments(prev => prev.map(s => {
+      const hit = seq.get(s.id)
+      return hit ? { ...s, status: 'ASSIGNED', assigned_vehicle_id: hit.r.vehicleId, dispatch_time: hit.r.departure, route_sequence: hit.i } : s
+    }))
+    setVehicles(prev => prev.map(v => routes.some(r => r.vehicleId === v.id) ? { ...v, current_status: 'IN_TRANSIT' } : v))
+    setDrivers(prev => prev.map(d => { const r = routes.find(x => x.driverId === d.id); return r ? { ...d, status: 'ON_TRIP', current_vehicle_id: r.vehicleId } : d }))
   }
 
   function triggerWorkflow(s: Shipment) {
@@ -1285,6 +1302,9 @@ export default function App() {
           {section === 'workflow' && <DispatchPlanner shipments={shipments} hubs={hubs} vehicles={vehicles} drivers={drivers} initialShipmentId={workflowShipment?.id ?? null} onDispatch={dispatch} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
           {section === 'fleet' && <FleetSection vehicles={vehicles} setVehicles={setVehicles} drivers={drivers} setDrivers={setDrivers} hubs={hubs} setHubs={setHubs} addAudit={addAudit} />}
           {section === 'map' && <NetworkMapSection hubs={hubs} shipments={shipments} />}
+          {section === 'routes' && <RoutePlannerSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments}
+            onAddShipments={list => setShipments(prev => [...prev, ...list])} onDispatchRoutes={dispatchRoutes} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
+          {section === 'reports' && <ReportsSection />}
           {/* Kept mounted so the simulation clock and reported events survive page switches */}
           <div className={section === 'tracking' ? 'h-full' : 'hidden'}>
             <LiveTrackingSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments} activeRole={activeRole} driverId={1} active={section === 'tracking'} addAudit={addAudit} onOpenPlanner={() => setSection('workflow')} authToken={authToken} setShipments={setShipments} />

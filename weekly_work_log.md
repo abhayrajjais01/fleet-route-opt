@@ -239,3 +239,44 @@
 6. **Automated Pytest Suite (`backend/tests/test_transit_fsm.py` & `test_vrptw_solver.py`)**:
    - **Combined Full Suite**: **122 / 122 passed (100% pass rate)**.
    - Frontend production build (`pnpm run build`): **Built cleanly in 860ms with 0 errors**.
+
+---
+
+### Weeks 7–16 (Track A): Route Planner, Optimization Agent, Live ETAs, Reports & Release — delivered Nov 12, 2026
+- **Status**: Track A `COMPLETED` ✅ (Weeks 7–10 on schedule; Weeks 11–16 delivered early). Track B Weeks 7–16 continue on their own schedule.
+- **Focus Area**: Turning the Week 6 solver into a dispatcher workflow (plan → re-order → explain → approve → track), an agent that re-plans after disruptions, live SLA alerts, operational reporting, and a containerised backend.
+
+#### Track A (Manthan Nimodiya):
+1. **Week 7: Route visualizer & split manifest** (`frontend/src/components/routes/`)
+   - New **Route Planner** page: choose hub, departure time, orders and vehicles, then optimize.
+   - Colour-coded polylines and numbered pins per vehicle (`RoutePlanMap.tsx`); hovering a manifest fades the other routes.
+   - Manifest per vehicle with driver, capacity bar, km, duration, return time and per-stop ETA/window; headline km vs separate trips.
+2. **Week 8: Drag-and-drop resequencing**
+   - Drag stops within or between vehicles (▲/▼ buttons as a keyboard fallback). ETAs update instantly in the browser and are confirmed by `POST /api/v1/routes/evaluate`.
+   - Violation badges for late stops, over-capacity and over-shift routes.
+   - **Approve & dispatch** assigns the shipments, sets vehicles IN_TRANSIT and drivers ON_TRIP, and Live Tracking follows the approved order (`route_sequence`).
+3. **Week 9: Optimization Agent** (`backend/app/services/copilot/optimization_agent.py`)
+   - Tool-calling agent with three JSON-schema tools: `reassign_stops`, `apply_delay`, `reoptimize_route`.
+   - Deterministic planner by default (Router Agent intent + breakdown/delay parsing); optional Claude planner when `ANTHROPIC_API_KEY` is set and the `anthropic` package is installed.
+   - Breakdown handling: cheapest feasible insertion into the other vehicles, then spare vehicles at the hub; anything impossible is reported by stop name with the reason.
+   - `POST /api/v1/routes/disruption` returns a proposal the dispatcher approves or declines (UI: "What if it breaks down?" and "Ask the optimization agent").
+4. **Week 10: Downstream ETA recalculation** (`backend/app/services/optimizer/eta_engine.py`)
+   - Completed stops keep their actual times; a delay shifts the next stop and later stops absorb it where they were waiting for a window to open.
+   - `POST /api/v1/routes/recalculate`; Live Tracking shows an "ETAs updated" toast.
+5. **Week 11: RAG route explanations** (`backend/app/services/optimizer/route_explainer.py`)
+   - Route summary, a reason for every stop, and driver instructions (direction, km, minutes, arrival and hand-over times).
+   - Built only from computed ETAs plus SOP clauses retrieved from the RAG store, with citations. `POST /api/v1/routes/explain`.
+6. **Week 12: SLA breach detection & alerts**
+   - SLA classes ON_TIME / AT_RISK (15 min margin) / PREDICTED_BREACH / SLA_BREACHED / FAILED; trip states ROUTE_BLOCKED and ROUTE_PROPOSED.
+   - `POST /api/v1/routes/sla-check` (worst first); Live Tracking toasts for predicted breach, breach and blocked route, with an optional alert tone (`SlaAlerts.tsx`).
+7. **Week 13: Operational metrics engine** (`backend/app/services/analytics/`)
+   - OTIF, on-time %, SLA breaches, transit time, route efficiency, fuel burn, cost per tonne-km, utilisation; by hub and vehicle type.
+   - 30 days of dispatch history replayed through the real solver and ETA engine (seeded, repeatable).
+   - `GET /api/v1/reports/metrics` with days / hub / vehicle type / driver / fuel price / driver cost filters; **Reports** page with KPI tiles and an OTIF-by-day chart.
+8. **Week 14: Exports**: `GET /api/v1/reports/export.csv` and `GET /api/v1/reports/summary.pdf` (ReportLab), wired to export buttons that respect the filters.
+9. **Week 15: Benchmarks & hardening**: `python -m scripts.benchmark` (all PRD targets pass: VRPTW 50 stops ≈ 3 ms vs < 5 s; RAG search < 1 ms vs < 100 ms; agent re-route ≈ 5–17 ms vs < 3 s); composite indexes on vehicles and drivers; `test_performance.py`.
+10. **Week 16: Backend Docker & Postgres**: multi-stage `backend/Dockerfile` (non-root, healthcheck), `docker-compose.yml` with `postgres:16-alpine`, entrypoint that waits for the DB, creates tables, migrates and seeds; OpenAPI tags and descriptions at `/docs`.
+11. **Fixes found while integrating with Week 6 Track B**
+   - Live Tracking crashed because `TrackingMap` was missing the `insets` prop; the shipment status map was missing `ARRIVED`. Both fixed.
+   - Driver actions on trips dispatched from the browser were rejected by the server FSM (shipment still UNASSIGNED there) and silently did nothing. Server sync is now best-effort: the simulation always updates and a server rejection is shown as a notice.
+12. **Testing**: `test_route_operations.py` (27), `test_reports.py` (8), `test_performance.py` (3). **Full suite: 164 / 164 passed**; frontend `tsc` 0 errors, `pnpm build` clean; flows verified in the browser (optimize, re-order, breakdown proposal, explain, dispatch, delay → ETA and SLA toasts, reports filters and exports, driver role).
