@@ -16,7 +16,7 @@ import {
 } from '../../lib/routesApi'
 import RoutePlanMap, { type PlanMapRoute } from './RoutePlanMap'
 
-const ROUTE_COLORS = ['#7c3aed', '#0891b2', '#ea580c', '#db2777', '#16a34a']
+const ROUTE_COLORS = ['#178a72', '#c4862f', '#4a78b8', '#6f9438', '#a65c8c']
 const OPEN_STATUSES = ['UNASSIGNED', 'CLUSTERED']
 
 interface PlanRoute { vehicle: Vehicle; driver: Driver | null; stops: Shipment[]; evaluation: RouteEvaluation | null; confirmed: boolean }
@@ -248,7 +248,7 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, shipments
         <div className="p-4 border-b border-slate-100 space-y-3">
           <div className="flex flex-wrap gap-1.5">
             {hubs.map(h => (
-              <button key={h.id} onClick={() => setHubId(h.id)} className={`px-3 py-1.5 rounded-full text-sm ${hubId === h.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+              <button key={h.id} onClick={() => setHubId(h.id)} className={`px-3 py-1.5 rounded-full text-sm ${hubId === h.id ? 'bg-violet-50 text-violet-800 ring-1 ring-violet-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                 {h.name.split(' ').slice(0, 2).join(' ')}
               </button>
             ))}
@@ -326,12 +326,12 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, shipments
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-slate-900">{r.vehicle.plate_number}</span>
                     <span className="text-xs text-slate-500 truncate">{r.driver ? r.driver.full_name : 'No driver on duty'}</span>
-                    {!r.confirmed && <span className="ml-auto text-[11px] text-slate-400">estimating…</span>}
+                    {!r.confirmed && <span className="ml-auto text-xs text-slate-400">estimating…</span>}
                   </div>
                   {r.evaluation && (
                     <>
                       <div className="flex items-center gap-2 mt-2 text-xs text-slate-600">
-                        <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(100, r.evaluation.utilisation * 100)}%`, background: r.evaluation.utilisation > 1 ? '#dc2626' : '#7c3aed' }} /></div>
+                        <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(100, r.evaluation.utilisation * 100)}%`, background: r.evaluation.utilisation > 1 ? '#a25846' : '#477866' }} /></div>
                         <span className="tabular-nums">{Math.round(r.evaluation.utilisation * 100)}% full</span>
                       </div>
                       <p className="text-xs text-slate-500 mt-1">{r.evaluation.distance_km.toFixed(1)} km · {fmtDur(r.evaluation.duration_min)} · back {r.evaluation.return_time}</p>
@@ -355,8 +355,8 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, shipments
                         </div>
                         <div className="text-right">
                           <p className={`text-sm font-medium tabular-nums ${e && e.minutes_late > 0 ? 'text-red-600' : 'text-slate-900'}`}>{e?.arrival ?? '—'}</p>
-                          {e && e.minutes_late > 0 && <p className="text-[11px] font-medium text-red-600">{Math.round(e.minutes_late)} min late</p>}
-                          {e && e.sla === 'AT_RISK' && <p className="text-[11px] font-medium text-amber-600">tight</p>}
+                          {e && e.minutes_late > 0 && <p className="text-xs font-medium text-red-600">{Math.round(e.minutes_late)} min late</p>}
+                          {e && e.sla === 'AT_RISK' && <p className="text-xs font-medium text-amber-600">tight</p>}
                         </div>
                         {!dispatched && (
                           <span className="flex flex-col">
@@ -387,7 +387,7 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, shipments
               <form className="flex gap-2" onSubmit={e => { e.preventDefault(); askAgent(agentText) }}>
                 <input id="agent-message" value={agentText} onChange={e => setAgentText(e.target.value)} placeholder={`e.g. ${plan.find(r => r.stops.length)?.vehicle.plate_number ?? 'MH-43-BX-3310'} delayed 40 min`}
                   className="flex-1 min-w-0 border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-violet-200" />
-                <button disabled={agentBusy || !agentText.trim()} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm font-medium disabled:bg-slate-200">{agentBusy ? '…' : 'Ask'}</button>
+                <button disabled={agentBusy || !agentText.trim()} className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium disabled:bg-slate-200">{agentBusy ? '…' : 'Ask'}</button>
               </form>
               {agentError && <p className="text-xs text-red-600 mt-1.5">{agentError}</p>}
             </div>
@@ -398,7 +398,7 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, shipments
               <div className="flex items-center gap-3">
                 <span className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">✓</span>
                 <p className="flex-1 text-sm font-medium text-slate-900">Routes dispatched</p>
-                <button onClick={onOpenTracking} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700">Track them</button>
+                <button onClick={onOpenTracking} className="px-3 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">Track them</button>
               </div>
             ) : (
               <>
@@ -429,7 +429,7 @@ function Modal({ title, subtitle, onClose, children, footer }: { title: string; 
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40" onClick={onClose}>
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-[2px]" onClick={onClose}>
       <div role="dialog" aria-modal="true" className="w-full max-w-xl max-h-[85vh] rounded-2xl bg-white shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="px-5 pt-5 pb-3 flex items-start gap-3">
           <div className="flex-1"><p className="text-base font-semibold text-slate-900">{title}</p>{subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}</div>

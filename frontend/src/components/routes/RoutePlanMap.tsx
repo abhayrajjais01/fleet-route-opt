@@ -39,7 +39,7 @@ export default function RoutePlanMap({ hub, routes, pending, focusId, padding }:
     if (!map || !g) return
     g.clearLayers()
     for (const p of pending) {
-      L.circleMarker([p.lat, p.lon], { radius: 5, color: '#fff', weight: 2, fillColor: '#64748b', fillOpacity: 0.9 })
+      L.circleMarker([p.lat, p.lon], { radius: 5, color: '#fff', weight: 2, fillColor: '#77837c', fillOpacity: 0.9 })
         .bindTooltip(`${escapeHtml(p.name)} · window ${escapeHtml(p.window)}`, { direction: 'top', offset: [0, -6] }).addTo(g)
     }
     for (const r of routes) {
@@ -48,13 +48,13 @@ export default function RoutePlanMap({ hub, routes, pending, focusId, padding }:
       L.polyline(path, { color: '#fff', weight: focusId === r.id ? 8 : 6, opacity: faded ? 0.2 : 0.9, interactive: false }).addTo(g)
       L.polyline(path, { color: r.color, weight: focusId === r.id ? 5 : 3.5, opacity: faded ? 0.18 : 0.9, lineCap: 'round', interactive: false }).addTo(g)
       r.stops.forEach((s, i) => {
-        if (s.late && !faded) L.circleMarker([s.lat, s.lon], { radius: 19, color: '#d97706', weight: 2, fillOpacity: 0.08, interactive: false }).addTo(g)
+        if (s.late && !faded) L.circleMarker([s.lat, s.lon], { radius: 19, color: '#a67739', weight: 2, fillOpacity: 0.08, interactive: false }).addTo(g)
         L.marker([s.lat, s.lon], { icon: pinIcon(r.color, i + 1, faded), zIndexOffset: faded ? 0 : 400 })
           .bindPopup(`<div style="font-family:'DM Sans',sans-serif;min-width:190px">
-            <p style="margin:0;font-weight:700;color:#0f172a">${i + 1}. ${escapeHtml(s.name)}</p>
-            <p style="margin:2px 0 0;font-size:12px;color:#64748b">${escapeHtml(r.label)}</p>
-            <p style="margin:8px 0 0;font-size:12px;color:#334155">ETA <b>${escapeHtml(s.eta ?? '—')}</b> · window ${escapeHtml(s.window)}</p>
-            ${s.late ? '<p style="margin:4px 0 0;font-size:12px;color:#b45309;font-weight:600">Arrives after the window closes</p>' : ''}
+            <p style="margin:0;font-weight:700;color:#27302c">${i + 1}. ${escapeHtml(s.name)}</p>
+            <p style="margin:2px 0 0;font-size:12px;color:#77837c">${escapeHtml(r.label)}</p>
+            <p style="margin:8px 0 0;font-size:12px;color:#47524d">ETA <b>${escapeHtml(s.eta ?? '—')}</b> · window ${escapeHtml(s.window)}</p>
+            ${s.late ? '<p style="margin:4px 0 0;font-size:12px;color:#87602f;font-weight:600">Arrives after the window closes</p>' : ''}
           </div>`).addTo(g)
       })
     }

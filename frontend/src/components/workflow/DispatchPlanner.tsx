@@ -69,7 +69,7 @@ export default function DispatchPlanner({ shipments, hubs, vehicles, drivers, in
                 <button key={s.id} onClick={() => setShipmentId(s.id)} className={`w-full text-left rounded-xl px-3 py-2.5 transition-colors ${on ? 'bg-violet-50 ring-1 ring-violet-200' : 'hover:bg-slate-50'}`}>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-slate-900 truncate flex-1">{s.customer_name}</span>
-                    {urgent && <span className="text-[11px] font-semibold" style={{ color: PRIORITY_COLOR[s.priority] }}>{s.priority.toLowerCase()}</span>}
+                    {urgent && <span className="text-xs font-semibold" style={{ color: PRIORITY_COLOR[s.priority] }}>{s.priority.toLowerCase()}</span>}
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">{s.weight_kg} kg · {s.time_window_start}–{s.time_window_end}</p>
                 </button>
@@ -293,7 +293,7 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
             <div className="flex items-center gap-3">
               <span className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">✓</span>
               <div className="flex-1"><p className="text-sm font-medium text-slate-900">{justDispatched ? 'Dispatched' : 'Already scheduled'}</p><p className="text-xs text-slate-500">{vehicle?.plate_number} leaves at {departure}</p></div>
-              <button onClick={onOpenTracking} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700">Track it</button>
+              <button onClick={onOpenTracking} className="px-3 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">Track it</button>
             </div>
           ) : (
             <>
@@ -345,7 +345,7 @@ function Option({ title, note, selected, disabled, badge, meter, onClick }: { ti
     <button onClick={onClick} disabled={disabled && !selected} className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg ${selected ? 'bg-white ring-1 ring-violet-300' : 'hover:bg-white'} disabled:opacity-50 disabled:cursor-not-allowed`}>
       <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${selected ? 'border-violet-600 bg-violet-600 shadow-[inset_0_0_0_2px_white]' : 'border-slate-300'}`} />
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2"><span className="text-sm text-slate-900 truncate">{title}</span>{badge && <span className="text-[11px] font-medium text-violet-700 bg-violet-50 px-1.5 rounded">{badge}</span>}</div>
+        <div className="flex items-center gap-2"><span className="text-sm text-slate-900 truncate">{title}</span>{badge && <span className="text-xs font-medium text-violet-700 bg-violet-50 px-1.5 rounded">{badge}</span>}</div>
         <p className="text-xs text-slate-500 truncate">{note}</p>
         {meter !== undefined && <div className="mt-1 h-1 rounded-full bg-slate-200 overflow-hidden"><div className="h-full rounded-full bg-violet-500" style={{ width: `${meter}%` }} /></div>}
       </div>
@@ -362,11 +362,11 @@ function WindowStrip({ depart, eta, open, close, back }: { depart: number; eta: 
       <div className="relative h-8">
         <div className="absolute top-2.5 h-3 rounded bg-emerald-100" style={{ left: x(open), width: `calc(${x(close)} - ${x(open)})` }} />
         <div className="absolute top-[15px] h-0.5 bg-slate-300" style={{ left: x(depart), width: `calc(${x(back)} - ${x(depart)})` }} />
-        {[{ m: depart, c: '#0f172a' }, { m: eta, c: eta > close ? '#dc2626' : '#7c3aed' }, { m: back, c: '#94a3b8' }].map((p, i) => (
+        {[{ m: depart, c: '#27302c' }, { m: eta, c: eta > close ? '#a25846' : '#477866' }, { m: back, c: '#a0a9a2' }].map((p, i) => (
           <span key={i} className="absolute top-[10px] w-3 h-3 -ml-1.5 rounded-full border-2 border-white shadow" style={{ left: x(p.m), background: p.c }} />
         ))}
       </div>
-      <div className="flex justify-between text-[11px] text-slate-400"><span>leave {clock(depart)}</span><span className="text-emerald-700">window {clock(open)}–{clock(close)}</span><span>back {clock(back)}</span></div>
+      <div className="flex justify-between text-xs text-slate-400"><span>leave {clock(depart)}</span><span className="text-emerald-700">window {clock(open)}–{clock(close)}</span><span>back {clock(back)}</span></div>
     </div>
   )
 }

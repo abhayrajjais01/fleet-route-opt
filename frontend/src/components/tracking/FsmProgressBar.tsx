@@ -91,7 +91,7 @@ export const FsmProgressBar: React.FC<FsmProgressBarProps> = ({
           })}
         </div>
         <span
-          className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${
+          className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${
             isFailed
               ? 'bg-rose-50 text-rose-700 border border-rose-200'
               : status === 'DELIVERED'
@@ -119,9 +119,9 @@ export const FsmProgressBar: React.FC<FsmProgressBarProps> = ({
               Stop #{stopSequence}
             </span>
           )}
-          <span className="font-semibold text-slate-700">FSM Lifecycle Tracking</span>
+          <span className="font-semibold text-slate-700">Delivery progress</span>
           {timeWindow && (
-            <span className="text-slate-400 font-mono text-[11px]">
+            <span className="text-slate-400 font-mono text-xs">
               Window: {timeWindow}
             </span>
           )}
@@ -129,18 +129,18 @@ export const FsmProgressBar: React.FC<FsmProgressBarProps> = ({
 
         <div className="flex items-center gap-1.5">
           {delayMinutes && delayMinutes > 0 ? (
-            <span className="bg-amber-100 text-amber-800 border border-amber-300 font-semibold px-2 py-0.5 rounded-full text-[10px] flex items-center gap-1">
+            <span className="bg-amber-100 text-amber-800 border border-amber-300 font-semibold px-2 py-0.5 rounded-full text-[11px] flex items-center gap-1">
               <span>⚠️</span> +{delayMinutes}m Delayed
             </span>
           ) : null}
 
           {isFailed ? (
-            <span className="bg-rose-100 text-rose-800 border border-rose-300 font-semibold px-2 py-0.5 rounded-full text-[10px] flex items-center gap-1">
+            <span className="bg-rose-100 text-rose-800 border border-rose-300 font-semibold px-2 py-0.5 rounded-full text-[11px] flex items-center gap-1">
               <span>✕</span> FAILED ({failureReason || 'Consignee Unavailable'})
             </span>
           ) : (
             <span
-              className={`font-semibold px-2 py-0.5 rounded-full text-[10px] uppercase ${
+              className={`font-semibold px-2 py-0.5 rounded-full text-[11px] ${
                 status === 'DELIVERED'
                   ? 'bg-emerald-100 text-emerald-800'
                   : status === 'ARRIVED'
@@ -177,7 +177,7 @@ export const FsmProgressBar: React.FC<FsmProgressBarProps> = ({
           return (
             <div key={s.key} className="relative z-10 flex flex-col items-center">
               <div
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-all shadow-sm ${
+                className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold transition-all shadow-sm ${
                   isFailedStep
                     ? 'bg-rose-600 text-white ring-4 ring-rose-100 scale-110'
                     : isCompleted
@@ -190,7 +190,7 @@ export const FsmProgressBar: React.FC<FsmProgressBarProps> = ({
                 {isCompleted ? '✓' : isFailedStep ? '✕' : idx + 1}
               </div>
               <span
-                className={`text-[10px] font-semibold mt-1 whitespace-nowrap ${
+                className={`text-[11px] font-semibold mt-1 whitespace-nowrap ${
                   isFailedStep
                     ? 'text-rose-700'
                     : isCurrent
