@@ -16,11 +16,11 @@ import {
 } from '../../lib/ragApi'
 
 const CATEGORY_STYLE: Record<PolicyCategory, { bg: string; text: string; icon: string }> = {
-  HAZMAT: { bg: '#fbf2ef', text: '#86493a', icon: '☣️' },
-  DRIVER_REST: { bg: '#fbf6ec', text: '#87602f', icon: '🛌' },
-  COLD_CHAIN: { bg: '#eef6f7', text: '#375e64', icon: '❄️' },
-  VEHICLE_SAFETY: { bg: '#f0f6f1', text: '#416249', icon: '🛻' },
-  OPERATIONS: { bg: '#f0f4f8', text: '#445c79', icon: '🧭' },
+  HAZMAT: { bg: '#fef2f2', text: '#b91c1c', icon: '☣️' },
+  DRIVER_REST: { bg: '#fffbeb', text: '#b45309', icon: '🛌' },
+  COLD_CHAIN: { bg: '#ecfeff', text: '#0e7490', icon: '❄️' },
+  VEHICLE_SAFETY: { bg: '#ecfdf5', text: '#047857', icon: '🛻' },
+  OPERATIONS: { bg: '#eff6ff', text: '#1d4ed8', icon: '🧭' },
 }
 
 const EXAMPLE_QUERIES = [
@@ -35,9 +35,9 @@ const EXAMPLE_QUERIES = [
 // Similarity bands calibrated on the WikiQA-style benchmark (backend/app/services/rag/eval_set.json):
 // every answerable question's best passage scored ≥ 0.16, every off-topic question scored 0.
 function confidence(score: number): { label: string; color: string } {
-  if (score >= 0.25) return { label: 'High match', color: '#416249' }
-  if (score >= 0.12) return { label: 'Medium match', color: '#87602f' }
-  return { label: 'Weak match', color: '#86493a' }
+  if (score >= 0.25) return { label: 'High match', color: '#047857' }
+  if (score >= 0.12) return { label: 'Medium match', color: '#b45309' }
+  return { label: 'Weak match', color: '#b91c1c' }
 }
 
 const STOP = new Set(['the', 'and', 'for', 'what', 'how', 'can', 'when', 'with', 'does', 'must', 'are', 'before', 'long', 'is'])
@@ -238,7 +238,7 @@ export default function ComplianceInspector() {
         {!result && !loading && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {EXAMPLE_QUERIES.map(q => (
-              <button key={q} onClick={() => search(q)} className="text-left px-4 py-3 ring-1 ring-slate-200/70 bg-white rounded-2xl text-sm text-slate-600 hover:ring-violet-200 hover:text-violet-700 hover:bg-violet-50/50 transition">{q}</button>
+              <button key={q} onClick={() => search(q)} className="text-left px-4 py-3 ring-1 ring-slate-200 bg-white rounded-2xl text-sm text-slate-600 hover:ring-violet-200 hover:text-violet-700 hover:bg-violet-50/50 transition">{q}</button>
             ))}
           </div>
         )}
@@ -269,7 +269,7 @@ export default function ComplianceInspector() {
       </div>
 
       {/* ── SOP library ── */}
-      <aside className="hidden lg:flex w-80 flex-shrink-0 flex-col border-l border-slate-200/70 bg-white/70">
+      <aside className="hidden lg:flex w-80 flex-shrink-0 flex-col border-l border-slate-200 bg-white/70">
         <div className="px-5 pt-5 pb-3">
           <p className="text-sm font-semibold text-slate-800">SOP library</p>
           <p className="text-[11px] text-slate-400 mt-0.5">{visibleDocs.length} verified document{visibleDocs.length === 1 ? '' : 's'}</p>

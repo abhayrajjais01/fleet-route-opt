@@ -89,12 +89,12 @@ async function fetchAuthToken(role: UserRole = 'ADMIN'): Promise<string | null> 
 // ─── STATUS STYLING ───────────────────────────────────────────────────────────
 // Calm, muted tones: green = settled, blue = moving, ochre = needs a decision, clay = something went wrong.
 const TONE = {
-  good: { bg: '#f0f6f1', text: '#416249', dot: '#77a783' },
-  info: { bg: '#f0f4f8', text: '#445c79', dot: '#7b9bc0' },
-  accent: { bg: '#eff5f2', text: '#3b6254', dot: '#6fa291' },
-  attention: { bg: '#fbf6ec', text: '#87602f', dot: '#d4a660' },
-  critical: { bg: '#fbf2ef', text: '#86493a', dot: '#cd8370' },
-  neutral: { bg: '#f3f5f1', text: '#5c6862', dot: '#a0a9a2' },
+  good: { bg: '#ecfdf5', text: '#047857', dot: '#34d399' },
+  info: { bg: '#eff6ff', text: '#1d4ed8', dot: '#60a5fa' },
+  accent: { bg: '#eef2ff', text: '#4338ca', dot: '#818cf8' },
+  attention: { bg: '#fffbeb', text: '#b45309', dot: '#fbbf24' },
+  critical: { bg: '#fef2f2', text: '#b91c1c', dot: '#f87171' },
+  neutral: { bg: '#f1f5f9', text: '#475569', dot: '#94a3b8' },
 }
 const SC: Record<string, { bg: string; text: string; dot: string }> = {
   AVAILABLE: TONE.good, IN_TRANSIT: TONE.info, MAINTENANCE: TONE.attention, DECOMMISSIONED: TONE.neutral,
@@ -111,7 +111,7 @@ function Badge({ s }: { s: string }) {
   return <span style={{ background: c.bg, color: c.text }} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"><span style={{ background: c.dot }} className="w-1.5 h-1.5 rounded-full" />{sentence(s)}</span>
 }
 function Bar({ pct }: { pct: number }) {
-  const c = pct > 60 ? '#77a783' : pct > 30 ? '#d4a660' : '#cd8370'
+  const c = pct > 60 ? '#34d399' : pct > 30 ? '#fbbf24' : '#f87171'
   return <div className="flex items-center gap-2"><div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: c }} /></div><span className="tabular-nums text-xs text-slate-400 w-8 text-right">{pct}%</span></div>
 }
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
@@ -216,11 +216,11 @@ function CopilotDashboard({ vehicles, drivers, shipments, hubs, audit, setSectio
   const operational = vehicles.filter(v => v.current_status !== 'DECOMMISSIONED')
   const onTrip = vehicles.filter(v => v.current_status === 'IN_TRANSIT').length
   const statBar = [
-    { label: 'Vehicles on trip', value: `${onTrip}/${operational.length}`, sub: `${vehicles.filter(v => v.current_status === 'MAINTENANCE').length} in maintenance`, color: '#477866', bg: '#eff5f2' },
-    { label: 'Shipments dispatched', value: shipments.filter(s => s.status === 'IN_TRANSIT' || s.status === 'ASSIGNED').length, sub: `${shipments.filter(s => s.status === 'IN_TRANSIT').length} in transit`, color: '#477866', bg: '#eff5f2' },
-    { label: 'Unassigned', value: shipments.filter(s => s.status === 'UNASSIGNED').length, sub: 'need a plan', color: '#a25846', bg: '#fbf2ef' },
-    { label: 'Drivers on duty', value: drivers.filter(d => d.status === 'ON_DUTY' || d.status === 'ON_TRIP').length, sub: `of ${drivers.length} registered`, color: '#4d7858', bg: '#f0f6f1' },
-    { label: 'Fleet utilisation', value: `${operational.length ? Math.round((onTrip / operational.length) * 100) : 0}%`, sub: 'vehicles on trip', color: '#407279', bg: '#eef6f7' },
+    { label: 'Vehicles on trip', value: `${onTrip}/${operational.length}`, sub: `${vehicles.filter(v => v.current_status === 'MAINTENANCE').length} in maintenance`, color: '#4f46e5', bg: '#eef2ff' },
+    { label: 'Shipments dispatched', value: shipments.filter(s => s.status === 'IN_TRANSIT' || s.status === 'ASSIGNED').length, sub: `${shipments.filter(s => s.status === 'IN_TRANSIT').length} in transit`, color: '#4f46e5', bg: '#eef2ff' },
+    { label: 'Unassigned', value: shipments.filter(s => s.status === 'UNASSIGNED').length, sub: 'need a plan', color: '#dc2626', bg: '#fef2f2' },
+    { label: 'Drivers on duty', value: drivers.filter(d => d.status === 'ON_DUTY' || d.status === 'ON_TRIP').length, sub: `of ${drivers.length} registered`, color: '#059669', bg: '#ecfdf5' },
+    { label: 'Fleet utilisation', value: `${operational.length ? Math.round((onTrip / operational.length) * 100) : 0}%`, sub: 'vehicles on trip', color: '#0891b2', bg: '#ecfeff' },
   ]
 
   return (
@@ -258,7 +258,7 @@ function CopilotDashboard({ vehicles, drivers, shipments, hubs, audit, setSectio
                   <Badge s={s.status} />
                 </div>
                 <p className="text-xs text-slate-600 truncate">{s.customer_name}</p>
-                <p className="text-[11px] text-slate-400">{s.weight_kg}kg · <span style={{ color: SC[s.priority]?.text ?? '#47524d' }}>{s.priority}</span></p>
+                <p className="text-[11px] text-slate-400">{s.weight_kg}kg · <span style={{ color: SC[s.priority]?.text ?? '#334155' }}>{s.priority}</span></p>
               </div>
             ))}
           </div>
@@ -356,18 +356,18 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
     setModal(null); setHf(blankH)
   }
 
-  const tabCls = (t: string) => `px-4 py-1.5 text-sm rounded-lg transition-colors ${tab === t ? 'bg-white text-slate-800 font-medium shadow-xs ring-1 ring-slate-200/70' : 'text-slate-500 hover:text-slate-700'}`
+  const tabCls = (t: string) => `px-4 py-1.5 text-sm rounded-lg transition-colors ${tab === t ? 'bg-white text-slate-800 font-medium shadow-xs ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`
 
   return (
     <div className="flex flex-col h-full overflow-hidden px-6 pt-5 pb-6 gap-4">
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 flex-shrink-0">
         {[
-          { label: 'Total Vehicles', value: vehicles.length, sub: `${vehicles.filter(v => v.current_status === 'AVAILABLE').length} available`, color: '#506e92' },
-          { label: 'In Transit', value: vehicles.filter(v => v.current_status === 'IN_TRANSIT').length, sub: 'currently active', color: '#477866' },
-          { label: 'Total Drivers', value: drivers.length, sub: `${drivers.filter(d => d.status === 'ON_DUTY' || d.status === 'ON_TRIP').length} on duty`, color: '#416249' },
-          { label: 'Hubs', value: hubs.length, sub: 'all operational', color: '#a67739' },
+          { label: 'Total Vehicles', value: vehicles.length, sub: `${vehicles.filter(v => v.current_status === 'AVAILABLE').length} available`, color: '#2563eb' },
+          { label: 'In Transit', value: vehicles.filter(v => v.current_status === 'IN_TRANSIT').length, sub: 'currently active', color: '#4f46e5' },
+          { label: 'Total Drivers', value: drivers.length, sub: `${drivers.filter(d => d.status === 'ON_DUTY' || d.status === 'ON_TRIP').length} on duty`, color: '#047857' },
+          { label: 'Hubs', value: hubs.length, sub: 'all operational', color: '#d97706' },
         ].map(k => (
-          <div key={k.label} className="rounded-2xl bg-white ring-1 ring-slate-200/70 px-5 py-4">
+          <div key={k.label} className="rounded-2xl bg-white ring-1 ring-slate-200 px-5 py-4">
             <p className="text-sm text-slate-500">{k.label}</p>
             <p className="text-2xl font-semibold text-slate-800 tabular-nums mt-1">{k.value}</p>
             <p className="text-xs text-slate-400 mt-0.5">{k.sub}</p>
@@ -379,7 +379,7 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
           {(['vehicles', 'drivers', 'hubs'] as const).map(t => <button key={t} onClick={() => { setTab(t); setSearch('') }} className={tabCls(t)}>{t.charAt(0).toUpperCase() + t.slice(1)}</button>)}
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 rounded-xl bg-white ring-1 ring-slate-200/70 px-3 py-2">
+          <div className="flex items-center gap-2 rounded-xl bg-white ring-1 ring-slate-200 px-3 py-2">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-slate-400"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search" className="text-sm outline-none w-48 bg-transparent text-slate-700 placeholder:text-slate-400" />
           </div>
@@ -389,7 +389,7 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-auto rounded-2xl bg-white ring-1 ring-slate-200/70">
+      <div className="flex-1 overflow-auto rounded-2xl bg-white ring-1 ring-slate-200">
         {tab === 'vehicles' && (
           <table className="w-full text-sm [&_td]:whitespace-nowrap">
             <thead className="sticky top-0 bg-white z-10"><tr className="border-b border-slate-100">{['ID', 'Name', 'Plate', 'Type', 'Status', 'Payload', 'Fuel Eff.', 'Hub', 'Fuel', ''].map(h => <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3 whitespace-nowrap">{h}</th>)}</tr></thead>
@@ -846,7 +846,7 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
     <div className="flex flex-col h-full overflow-hidden px-6 pt-5 pb-6 gap-4">
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 flex-shrink-0">
         {(['UNASSIGNED', 'IN_TRANSIT', 'DELIVERED', 'FAILED'] as ShipmentStatus[]).map(s => (
-          <div key={s} className="rounded-2xl bg-white ring-1 ring-slate-200/70 px-5 py-4">
+          <div key={s} className="rounded-2xl bg-white ring-1 ring-slate-200 px-5 py-4">
             <p className="text-sm text-slate-500">{sentence(s)}</p>
             <p className="text-2xl font-semibold text-slate-800 tabular-nums mt-1">{shipments.filter(x => x.status === s).length}</p>
           </div>
@@ -870,17 +870,17 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
       )}
       <div className="flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 rounded-xl bg-white ring-1 ring-slate-200/70 px-3 py-2">
+          <div className="flex items-center gap-2 rounded-xl bg-white ring-1 ring-slate-200 px-3 py-2">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-slate-400"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search" className="text-sm outline-none w-48 bg-transparent text-slate-700 placeholder:text-slate-400" />
           </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="rounded-xl bg-white ring-1 ring-slate-200/70 px-3 py-2 text-sm text-slate-600 outline-none">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="rounded-xl bg-white ring-1 ring-slate-200 px-3 py-2 text-sm text-slate-600 outline-none">
             <option value="ALL">All statuses</option>
             {['UNASSIGNED', 'CLUSTERED', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED', 'FAILED'].map(s => <option key={s} value={s}>{sentence(s)}</option>)}
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => { setBatchModal(true); setBatchPreview([]); setBatchErrors([]); setBatchSuccessMsg('') }} className="flex items-center gap-1.5 bg-white ring-1 ring-slate-200/70 hover:ring-violet-200 text-slate-700 text-sm font-medium px-4 py-2 rounded-xl transition">
+          <button onClick={() => { setBatchModal(true); setBatchPreview([]); setBatchErrors([]); setBatchSuccessMsg('') }} className="flex items-center gap-1.5 bg-white ring-1 ring-slate-200 hover:ring-violet-200 text-slate-700 text-sm font-medium px-4 py-2 rounded-xl transition">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             Import CSV / JSON
           </button>
@@ -890,7 +890,7 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-auto rounded-2xl bg-white ring-1 ring-slate-200/70">
+      <div className="flex-1 overflow-auto rounded-2xl bg-white ring-1 ring-slate-200">
         <table className="w-full text-sm [&_td]:whitespace-nowrap">
           <thead className="sticky top-0 bg-white z-10"><tr className="border-b border-slate-100">{['Tracking #', 'Customer', 'Destination', 'Weight', 'Priority', 'Window', 'Status', 'Hub', ''].map(h => <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3 whitespace-nowrap">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">
@@ -1042,17 +1042,17 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
 function AuditSection({ entries }: { entries: AuditEntry[] }) {
   const [filter, setFilter] = useState('ALL')
   const filt = entries.filter(e => filter === 'ALL' || e.action_type === filter)
-  const actionColor: Record<string, string> = { ROUTE_MODIFIED: '#506e92', STATUS_CHANGE: '#477866', COPILOT_OVERRIDE: '#a67739', DISPATCH_APPROVED: '#416249', ASSET_CREATED: '#407279', ASSET_DELETED: '#a25846' }
+  const actionColor: Record<string, string> = { ROUTE_MODIFIED: '#2563eb', STATUS_CHANGE: '#4f46e5', COPILOT_OVERRIDE: '#d97706', DISPATCH_APPROVED: '#047857', ASSET_CREATED: '#0891b2', ASSET_DELETED: '#dc2626' }
   return (
     <div className="flex flex-col h-full overflow-hidden px-6 pt-5 pb-6 gap-4">
       <div className="flex items-center justify-between flex-shrink-0">
         <div><p className="text-base font-semibold text-slate-800">Activity history</p><p className="text-sm text-slate-500">{entries.length} entries · records can't be edited or deleted</p></div>
-        <select value={filter} onChange={e => setFilter(e.target.value)} className="rounded-xl bg-white ring-1 ring-slate-200/70 px-3 py-2 text-sm text-slate-600 outline-none">
+        <select value={filter} onChange={e => setFilter(e.target.value)} className="rounded-xl bg-white ring-1 ring-slate-200 px-3 py-2 text-sm text-slate-600 outline-none">
           <option value="ALL">All activity</option>
           {['ROUTE_MODIFIED', 'STATUS_CHANGE', 'COPILOT_OVERRIDE', 'DISPATCH_APPROVED', 'ASSET_CREATED', 'ASSET_DELETED'].map(t => <option key={t} value={t}>{sentence(t)}</option>)}
         </select>
       </div>
-      <div className="flex-1 overflow-auto rounded-2xl bg-white ring-1 ring-slate-200/70">
+      <div className="flex-1 overflow-auto rounded-2xl bg-white ring-1 ring-slate-200">
         <table className="w-full text-sm [&_td]:whitespace-nowrap">
           <thead className="sticky top-0 bg-white z-10"><tr className="border-b border-slate-100">{['#', 'Timestamp', 'Actor', 'Action', 'Entity', 'Details'].map(h => <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3 whitespace-nowrap">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">
@@ -1061,7 +1061,7 @@ function AuditSection({ entries }: { entries: AuditEntry[] }) {
                 <td className="px-5 py-3.5 text-slate-400 tabular-nums">#{e.id}</td>
                 <td className="px-5 py-3.5 text-slate-500 tabular-nums whitespace-nowrap">{e.timestamp}</td>
                 <td className="px-5 py-3.5 font-medium text-slate-700">{e.actor_name}</td>
-                <td className="px-5 py-3.5"><span className="inline-flex items-center gap-2 text-slate-700"><span className="w-1.5 h-1.5 rounded-full" style={{ background: actionColor[e.action_type] ?? '#a0a9a2' }} />{sentence(e.action_type)}</span></td>
+                <td className="px-5 py-3.5"><span className="inline-flex items-center gap-2 text-slate-700"><span className="w-1.5 h-1.5 rounded-full" style={{ background: actionColor[e.action_type] ?? '#94a3b8' }} />{sentence(e.action_type)}</span></td>
                 <td className="px-5 py-3.5 text-slate-500 tabular-nums">{e.entity_type} #{e.entity_id}</td>
                 <td className="px-5 py-3.5 text-slate-600 min-w-[320px] !whitespace-normal">{e.details}</td>
               </tr>
@@ -1090,7 +1090,7 @@ function UsersSection({ users, setUsers }: { users: User[]; setUsers: (u: User[]
         <div><p className="text-base font-semibold text-slate-800">Team members</p><p className="text-sm text-slate-500">Administrators, fleet managers, dispatchers and drivers</p></div>
         <button onClick={() => { setForm(blank); setModal('add') }} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Add User</button>
       </div>
-      <div className="flex-1 overflow-auto rounded-2xl bg-white ring-1 ring-slate-200/70">
+      <div className="flex-1 overflow-auto rounded-2xl bg-white ring-1 ring-slate-200">
         <table className="w-full text-sm [&_td]:whitespace-nowrap">
           <thead className="sticky top-0 bg-white z-10"><tr className="border-b border-slate-100">{['ID', 'Name', 'Email', 'Role', 'Status', ''].map(h => <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">
@@ -1225,10 +1225,10 @@ export default function App() {
   return (
     <div className="h-screen flex overflow-hidden bg-slate-50 text-slate-800 font-sans">
       {/* Sidebar: light, quiet, grouped by what you're doing */}
-      <aside className={`${sidebarOpen ? 'w-64' : 'w-0'} flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-out border-r border-slate-200/70 bg-white/70`}>
+      <aside className={`${sidebarOpen ? 'w-64' : 'w-0'} flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-out border-r border-slate-200 bg-white`}>
         <div className="w-64 h-full flex flex-col">
           <div className="h-16 flex items-center gap-3 px-5">
-            <div className="w-9 h-9 rounded-xl bg-violet-50 ring-1 ring-violet-100 flex items-center justify-center text-violet-600">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-sky-500 shadow-sm shadow-violet-200 flex items-center justify-center text-white">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="18" height="18"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z" /><circle cx="7" cy="17.5" r="1.5" /><circle cx="17" cy="17.5" r="1.5" /></svg>
             </div>
             <div className="leading-tight">
@@ -1249,7 +1249,8 @@ export default function App() {
                       const on = section === item.id
                       return (
                         <button key={item.id} onClick={() => setSection(item.id)} aria-current={on ? 'page' : undefined}
-                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-sm transition-colors ${on ? 'bg-violet-50 text-violet-800 font-medium' : 'text-slate-600 hover:bg-slate-100/70 hover:text-slate-800'}`}>
+                          className={`relative w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-sm transition-colors ${on ? 'bg-violet-50 text-violet-700 font-medium' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
+                          {on && <span className="absolute -left-3 top-2 bottom-2 w-1 rounded-r-full bg-violet-600" />}
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className={`w-[18px] h-[18px] flex-shrink-0 ${on ? 'text-violet-600' : 'text-slate-400'}`}><path d={item.path} /></svg>
                           <span className="flex-1">{item.label}</span>
                           {item.id === 'shipments' && unassigned > 0 && <span className="min-w-5 h-5 px-1.5 rounded-full bg-amber-50 text-amber-700 text-xs font-medium flex items-center justify-center">{unassigned}</span>}
@@ -1268,8 +1269,8 @@ export default function App() {
               <span className={`w-1.5 h-1.5 rounded-full ${isBackendOnline ? 'bg-emerald-400' : isBackendOnline === null ? 'bg-slate-300' : 'bg-amber-400'}`} />
               {isBackendOnline ? 'All systems running' : isBackendOnline === null ? 'Connecting…' : 'Offline · using local estimates'}
             </div>
-            <div className="flex items-center gap-3 p-2.5 rounded-2xl bg-slate-50 ring-1 ring-slate-200/60">
-              <div className="w-9 h-9 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-semibold">{currentUser.initials}</div>
+            <div className="flex items-center gap-3 p-2.5 rounded-2xl bg-slate-50 border border-slate-200">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-sky-500 text-white flex items-center justify-center text-xs font-semibold">{currentUser.initials}</div>
               <div className="flex-1 min-w-0 leading-tight">
                 <p className="text-sm font-medium text-slate-800 truncate">{currentUser.name}</p>
                 <label className="relative flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 cursor-pointer">
@@ -1287,7 +1288,7 @@ export default function App() {
 
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Header: page name, a one-line description, and only the one reminder that matters */}
-        <header className="flex-shrink-0 h-16 flex items-center gap-4 px-6 border-b border-slate-200/60 bg-slate-50/80 backdrop-blur">
+        <header className="flex-shrink-0 h-16 flex items-center gap-4 px-6 border-b border-slate-200 bg-white">
           <button onClick={() => setSidebarOpen(o => !o)} className="-ml-2 w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600" title={sidebarOpen ? 'Hide menu' : 'Show menu'} aria-label="Toggle menu">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" className="w-[18px] h-[18px]"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M9 4v16" /></svg>
           </button>

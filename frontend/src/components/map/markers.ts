@@ -6,7 +6,7 @@ export const PRIORITY_COLOR: Record<string, string> = {
   EXPRESS: '#a8473f',
   HIGH: '#c99a2e',
   STANDARD: '#4a78b8',
-  LOW: '#8b958f',
+  LOW: '#94a3b8',
 }
 
 export function escapeHtml(value: unknown): string {
@@ -15,15 +15,15 @@ export function escapeHtml(value: unknown): string {
 
 /** Distribution hub: dark rounded square with a warehouse glyph and the hub code underneath. */
 export function hubIcon(code: string, selected: boolean): L.DivIcon {
-  const ring = selected ? '#477866' : '#47524d'
+  const ring = selected ? '#4f46e5' : '#334155'
   const svg = `
     <svg width="34" height="34" viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg">
-      <rect x="2" y="2" width="30" height="30" rx="8" fill="#47524d" stroke="${ring}" stroke-width="${selected ? 3 : 1.5}"/>
+      <rect x="2" y="2" width="30" height="30" rx="8" fill="#334155" stroke="${ring}" stroke-width="${selected ? 3 : 1.5}"/>
       <path d="M9 24V15l8-5 8 5v9h-4.5v-5.5h-7V24z" fill="#fff"/>
     </svg>`
   return L.divIcon({
     className: 'fleet-marker',
-    html: `<div style="display:flex;flex-direction:column;align-items:center">${svg}<span style="margin-top:2px;padding:0 4px;border-radius:4px;background:#47524d;color:#fff;font:600 9px 'DM Mono',monospace;white-space:nowrap">${escapeHtml(code)}</span></div>`,
+    html: `<div style="display:flex;flex-direction:column;align-items:center">${svg}<span style="margin-top:2px;padding:0 4px;border-radius:4px;background:#334155;color:#fff;font:600 9px 'DM Mono',monospace;white-space:nowrap">${escapeHtml(code)}</span></div>`,
     iconSize: [60, 50],
     iconAnchor: [30, 17],
     popupAnchor: [0, -18],
@@ -57,7 +57,7 @@ export function vehicleIcon(color: string, plate: string, moving: boolean, selec
       <div style="position:relative;width:30px;height:30px;border-radius:9px;background:${color};border:${selected ? 3 : 2}px solid #fff;box-shadow:0 4px 12px rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z"/><circle cx="7" cy="17.5" r="1.6" fill="#fff"/><circle cx="17" cy="17.5" r="1.6" fill="#fff"/></svg>
       </div>
-      ${showLabel ? `<span style="margin-top:4px;padding:2px 6px;border-radius:6px;background:#47524d;color:#fff;font:600 10px 'DM Mono',monospace;white-space:nowrap">${escapeHtml(plate)}</span>` : ''}
+      ${showLabel ? `<span style="margin-top:4px;padding:2px 6px;border-radius:6px;background:#334155;color:#fff;font:600 10px 'DM Mono',monospace;white-space:nowrap">${escapeHtml(plate)}</span>` : ''}
     </div>`,
     iconSize: [70, 50],
     iconAnchor: [35, 15],

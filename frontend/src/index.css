@@ -2,211 +2,51 @@
 @import 'tailwindcss';
 
 /*
- * FleetOps "calm" theme.
- * The platform takes stressful pen-and-paper dispatch work off people's plates, so the UI should feel quiet:
- * paper-like neutrals, one sage accent, soft muted status colours, gentle shadows and lighter type weights.
- * Every Tailwind colour family the app uses is re-tuned here, so components keep their classes
- * (bg-violet-600, text-slate-900, ...) and pick up the calm palette automatically.
+ * FleetOps theme: crisp and cool.
+ * Light layout, Tailwind's cool slate neutrals and status colours, one indigo accent and crisp 1px borders.
+ * Components use `violet-*` / `purple-*` classes for the brand accent; they are mapped to indigo here,
+ * so the accent can be changed in one place.
  */
 @theme {
   --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'DM Mono', ui-monospace, monospace;
 
-  --font-weight-semibold: 560;
-  --font-weight-bold: 620;
-  --font-weight-extrabold: 650;
-  --font-weight-black: 680;
+  --font-weight-semibold: 580;
+  --font-weight-bold: 650;
+  --font-weight-extrabold: 700;
+  --font-weight-black: 750;
 
-  /* Neutrals: warm paper greys with a hint of green */
-  --color-slate-50: #f7f8f5;
-  --color-slate-100: #eff1ed;
-  --color-slate-200: #e3e7e1;
-  --color-slate-300: #ced4cc;
-  --color-slate-400: #a0a9a2;
-  --color-slate-500: #77837c;
-  --color-slate-600: #5c6862;
-  --color-slate-700: #47524d;
-  --color-slate-800: #343d39;
-  --color-slate-900: #27302c;
-  --color-slate-950: #1d2421;
-  --color-gray-50: #f7f8f5;
-  --color-gray-100: #eff1ed;
-  --color-gray-200: #e3e7e1;
-  --color-gray-300: #ced4cc;
-  --color-gray-400: #a0a9a2;
-  --color-gray-500: #77837c;
-  --color-gray-600: #5c6862;
-  --color-gray-700: #47524d;
-  --color-gray-800: #343d39;
-  --color-gray-900: #27302c;
+  /* Brand accent: indigo */
+  --color-violet-50: #eef2ff;
+  --color-violet-100: #e0e7ff;
+  --color-violet-200: #c7d2fe;
+  --color-violet-300: #a5b4fc;
+  --color-violet-400: #818cf8;
+  --color-violet-500: #6366f1;
+  --color-violet-600: #4f46e5;
+  --color-violet-700: #4338ca;
+  --color-violet-800: #3730a3;
+  --color-violet-900: #312e81;
+  --color-violet-950: #1e1b4b;
+  --color-purple-50: #eef2ff;
+  --color-purple-100: #e0e7ff;
+  --color-purple-200: #c7d2fe;
+  --color-purple-300: #a5b4fc;
+  --color-purple-400: #818cf8;
+  --color-purple-500: #6366f1;
+  --color-purple-600: #4f46e5;
+  --color-purple-700: #4338ca;
+  --color-purple-800: #3730a3;
+  --color-purple-900: #312e81;
 
-  /* Accent: sage teal (replaces violet / purple / indigo) */
-  --color-violet-50: #eff5f2;
-  --color-violet-100: #ddebe5;
-  --color-violet-200: #bed8cd;
-  --color-violet-300: #97beaf;
-  --color-violet-400: #6fa291;
-  --color-violet-500: #568c7a;
-  --color-violet-600: #477866;
-  --color-violet-700: #3b6254;
-  --color-violet-800: #314f45;
-  --color-violet-900: #29423a;
-  --color-violet-950: #1b2c27;
-  --color-purple-50: #eff5f2;
-  --color-purple-100: #ddebe5;
-  --color-purple-200: #bed8cd;
-  --color-purple-300: #97beaf;
-  --color-purple-400: #6fa291;
-  --color-purple-500: #568c7a;
-  --color-purple-600: #477866;
-  --color-purple-700: #3b6254;
-  --color-purple-800: #314f45;
-  --color-purple-900: #29423a;
-  --color-indigo-50: #eff5f2;
-  --color-indigo-100: #ddebe5;
-  --color-indigo-200: #bed8cd;
-  --color-indigo-300: #97beaf;
-  --color-indigo-400: #6fa291;
-  --color-indigo-500: #568c7a;
-  --color-indigo-600: #477866;
-  --color-indigo-700: #3b6254;
-  --color-indigo-800: #314f45;
-  --color-indigo-900: #29423a;
-
-  /* Information: dusty blue */
-  --color-blue-50: #f0f4f8;
-  --color-blue-100: #e0e8f1;
-  --color-blue-200: #c5d4e5;
-  --color-blue-300: #a0b8d3;
-  --color-blue-400: #7b9bc0;
-  --color-blue-500: #6183aa;
-  --color-blue-600: #506e92;
-  --color-blue-700: #445c79;
-  --color-blue-800: #3a4d64;
-  --color-blue-900: #314053;
-  --color-blue-950: #212b38;
-  --color-sky-50: #eef6f7;
-  --color-sky-100: #daecee;
-  --color-sky-200: #b6d8dc;
-  --color-sky-300: #8bbec4;
-  --color-sky-400: #64a2aa;
-  --color-sky-500: #4d8991;
-  --color-sky-600: #407279;
-  --color-sky-700: #375e64;
-  --color-sky-800: #2f4d52;
-  --color-sky-900: #294145;
-  --color-cyan-50: #eef6f7;
-  --color-cyan-100: #daecee;
-  --color-cyan-200: #b6d8dc;
-  --color-cyan-300: #8bbec4;
-  --color-cyan-400: #64a2aa;
-  --color-cyan-500: #4d8991;
-  --color-cyan-600: #407279;
-  --color-cyan-700: #375e64;
-  --color-cyan-800: #2f4d52;
-  --color-cyan-900: #294145;
-  --color-teal-50: #eef6f7;
-  --color-teal-100: #daecee;
-  --color-teal-200: #b6d8dc;
-  --color-teal-300: #8bbec4;
-  --color-teal-400: #64a2aa;
-  --color-teal-500: #4d8991;
-  --color-teal-600: #407279;
-  --color-teal-700: #375e64;
-  --color-teal-800: #2f4d52;
-  --color-teal-900: #294145;
-
-  /* Good: soft sage green */
-  --color-emerald-50: #f0f6f1;
-  --color-emerald-100: #deede1;
-  --color-emerald-200: #c1dbc7;
-  --color-emerald-300: #9bc2a5;
-  --color-emerald-400: #77a783;
-  --color-emerald-500: #5e8f6a;
-  --color-emerald-600: #4d7858;
-  --color-emerald-700: #416249;
-  --color-emerald-800: #36503d;
-  --color-emerald-900: #2d4334;
-  --color-green-50: #f0f6f1;
-  --color-green-100: #deede1;
-  --color-green-200: #c1dbc7;
-  --color-green-300: #9bc2a5;
-  --color-green-400: #77a783;
-  --color-green-500: #5e8f6a;
-  --color-green-600: #4d7858;
-  --color-green-700: #416249;
-  --color-green-800: #36503d;
-  --color-green-900: #2d4334;
-
-  /* Attention: warm ochre */
-  --color-amber-50: #fbf6ec;
-  --color-amber-100: #f6ebd5;
-  --color-amber-200: #edd7ae;
-  --color-amber-300: #e2bf83;
-  --color-amber-400: #d4a660;
-  --color-amber-500: #c28f47;
-  --color-amber-600: #a67739;
-  --color-amber-700: #87602f;
-  --color-amber-800: #6d4d29;
-  --color-amber-900: #5a4024;
-  --color-yellow-50: #fbf6ec;
-  --color-yellow-100: #f6ebd5;
-  --color-yellow-200: #edd7ae;
-  --color-yellow-300: #e2bf83;
-  --color-yellow-400: #d4a660;
-  --color-yellow-500: #c28f47;
-  --color-yellow-600: #a67739;
-  --color-yellow-700: #87602f;
-  --color-yellow-800: #6d4d29;
-  --color-orange-50: #fcf4ee;
-  --color-orange-100: #f8e6d9;
-  --color-orange-200: #f0ccb3;
-  --color-orange-300: #e5ad88;
-  --color-orange-400: #d78f64;
-  --color-orange-500: #c7784d;
-  --color-orange-600: #ab633f;
-  --color-orange-700: #8c5236;
-  --color-orange-800: #71442f;
-  --color-orange-900: #5d3a29;
-
-  /* Critical: muted clay (never a siren red) */
-  --color-red-50: #fbf2ef;
-  --color-red-100: #f5e2dc;
-  --color-red-200: #ebc6bb;
-  --color-red-300: #dda393;
-  --color-red-400: #cd8370;
-  --color-red-500: #bb6a56;
-  --color-red-600: #a25846;
-  --color-red-700: #86493a;
-  --color-red-800: #6d3d32;
-  --color-red-900: #5a342c;
-  --color-rose-50: #fbf2ef;
-  --color-rose-100: #f5e2dc;
-  --color-rose-200: #ebc6bb;
-  --color-rose-300: #dda393;
-  --color-rose-400: #cd8370;
-  --color-rose-500: #bb6a56;
-  --color-rose-600: #a25846;
-  --color-rose-700: #86493a;
-  --color-rose-800: #6d3d32;
-  --color-rose-900: #5a342c;
-  --color-pink-50: #f8f1f4;
-  --color-pink-100: #f0e2e8;
-  --color-pink-200: #e0c5d1;
-  --color-pink-300: #cba2b4;
-  --color-pink-400: #b88aa0;
-  --color-pink-500: #a8738b;
-  --color-pink-600: #925f77;
-  --color-pink-700: #7a4f63;
-
-  /* Gentle, low-contrast elevation */
-  --shadow-2xs: 0 1px 0 rgb(39 48 44 / 0.03);
-  --shadow-xs: 0 1px 2px rgb(39 48 44 / 0.04);
-  --shadow-sm: 0 1px 3px rgb(39 48 44 / 0.05), 0 1px 2px rgb(39 48 44 / 0.03);
-  --shadow-md: 0 4px 12px -2px rgb(39 48 44 / 0.06), 0 2px 4px -2px rgb(39 48 44 / 0.04);
-  --shadow-lg: 0 10px 24px -6px rgb(39 48 44 / 0.08), 0 4px 8px -4px rgb(39 48 44 / 0.04);
-  --shadow-xl: 0 16px 36px -10px rgb(39 48 44 / 0.10), 0 6px 12px -6px rgb(39 48 44 / 0.05);
-  --shadow-2xl: 0 24px 48px -12px rgb(39 48 44 / 0.14);
+  /* Cool, crisp elevation */
+  --shadow-2xs: 0 1px 0 rgb(15 23 42 / 0.03);
+  --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.05);
+  --shadow-sm: 0 1px 3px rgb(15 23 42 / 0.06), 0 1px 2px rgb(15 23 42 / 0.04);
+  --shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.05);
+  --shadow-lg: 0 10px 24px -6px rgb(15 23 42 / 0.10), 0 4px 8px -4px rgb(15 23 42 / 0.05);
+  --shadow-xl: 0 16px 36px -10px rgb(15 23 42 / 0.14), 0 6px 12px -6px rgb(15 23 42 / 0.06);
+  --shadow-2xl: 0 24px 48px -12px rgb(15 23 42 / 0.20);
 }
 
 * {
@@ -214,39 +54,39 @@
 }
 
 html, body {
-  background: #f7f8f5;
-  color: #27302c;
+  background: #f8fafc;
+  color: #0f172a;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: 'ss01', 'cv11';
 }
 
-::selection { background: #ddebe5; color: #27302c; }
+::selection { background: #e0e7ff; color: #1e1b4b; }
 
-:focus-visible { outline: 2px solid #97beaf; outline-offset: 2px; }
+:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 2px; }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #dfe3dd; border-radius: 6px; }
-::-webkit-scrollbar-thumb:hover { background: #ced4cc; }
+::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
 
-/* Page entrance: a soft fade so switching sections never feels abrupt */
-.calm-enter { animation: calm-enter 0.28s ease-out both; }
+/* Page entrance: a short fade so switching sections never feels abrupt */
+.calm-enter { animation: calm-enter 0.25s ease-out both; }
 @keyframes calm-enter { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
 
 /* Map marker pulse used by live vehicle markers */
-.fleet-pulse { position: absolute; top: 0; left: 50%; width: 30px; height: 30px; margin-left: -15px; border-radius: 9px; opacity: .35; animation: fleet-pulse 2.4s ease-out infinite; }
-@keyframes fleet-pulse { from { transform: scale(1); opacity: .35 } to { transform: scale(2) ; opacity: 0 } }
-.leaflet-container { font-family: 'DM Sans', sans-serif; background: #eef0eb; }
-/* Filter each tile (not the container) to avoid hairline seams between tiles in Chromium; a touch of sepia gives a paper feel */
-.fleet-basemap img.leaflet-tile { filter: grayscale(0.92) sepia(0.05) brightness(1.08) contrast(0.85); }
-.fleet-basemap { background: #eef0eb; }
-.leaflet-control-zoom { border: none !important; box-shadow: 0 4px 14px rgba(39, 48, 44, .08) !important; border-radius: 12px !important; overflow: hidden; }
-.leaflet-control-zoom a { width: 34px !important; height: 34px !important; line-height: 34px !important; color: #47524d !important; border-color: #eff1ed !important; }
-.leaflet-popup-content-wrapper { border-radius: 14px; box-shadow: 0 10px 30px rgba(39, 48, 44, .12); }
-.leaflet-control-attribution { background: rgba(247, 248, 245, .8) !important; color: #a0a9a2 !important; }
-.leaflet-control-attribution a { color: #77837c !important; }
+.fleet-pulse { position: absolute; top: 0; left: 50%; width: 30px; height: 30px; margin-left: -15px; border-radius: 9px; opacity: .4; animation: fleet-pulse 2.2s ease-out infinite; }
+@keyframes fleet-pulse { from { transform: scale(1); opacity: .4 } to { transform: scale(2) ; opacity: 0 } }
+.leaflet-container { font-family: 'DM Sans', sans-serif; background: #eef2f6; }
+/* Filter each tile (not the container) to avoid hairline seams between tiles in Chromium; cool grey basemap */
+.fleet-basemap img.leaflet-tile { filter: grayscale(0.9) brightness(1.06) contrast(0.9) hue-rotate(185deg) saturate(0.6); }
+.fleet-basemap { background: #eef2f6; }
+.leaflet-control-zoom { border: 1px solid #e2e8f0 !important; box-shadow: 0 4px 14px rgba(15, 23, 42, .08) !important; border-radius: 12px !important; overflow: hidden; }
+.leaflet-control-zoom a { width: 34px !important; height: 34px !important; line-height: 34px !important; color: #334155 !important; border-color: #f1f5f9 !important; }
+.leaflet-popup-content-wrapper { border-radius: 14px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px rgba(15, 23, 42, .12); }
+.leaflet-control-attribution { background: rgba(248, 250, 252, .85) !important; color: #94a3b8 !important; }
+.leaflet-control-attribution a { color: #64748b !important; }

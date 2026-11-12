@@ -331,7 +331,7 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, shipments
                   {r.evaluation && (
                     <>
                       <div className="flex items-center gap-2 mt-2 text-xs text-slate-600">
-                        <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(100, r.evaluation.utilisation * 100)}%`, background: r.evaluation.utilisation > 1 ? '#a25846' : '#477866' }} /></div>
+                        <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(100, r.evaluation.utilisation * 100)}%`, background: r.evaluation.utilisation > 1 ? '#dc2626' : '#4f46e5' }} /></div>
                         <span className="tabular-nums">{Math.round(r.evaluation.utilisation * 100)}% full</span>
                       </div>
                       <p className="text-xs text-slate-500 mt-1">{r.evaluation.distance_km.toFixed(1)} km · {fmtDur(r.evaluation.duration_min)} · back {r.evaluation.return_time}</p>

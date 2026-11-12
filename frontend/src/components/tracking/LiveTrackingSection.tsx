@@ -31,11 +31,11 @@ const RATES = [
 ]
 
 const TRIP_STATE: Record<TripState, { label: string; color: string }> = {
-  SCHEDULED: { label: 'Scheduled', color: '#77837c' },
-  IN_TRANSIT: { label: 'On the road', color: '#506e92' },
-  RETURNING: { label: 'Returning', color: '#477866' },
-  COMPLETED: { label: 'Completed', color: '#4d7858' },
-  ROUTE_BLOCKED: { label: 'Blocked', color: '#a25846' },
+  SCHEDULED: { label: 'Scheduled', color: '#64748b' },
+  IN_TRANSIT: { label: 'On the road', color: '#2563eb' },
+  RETURNING: { label: 'Returning', color: '#4f46e5' },
+  COMPLETED: { label: 'Completed', color: '#059669' },
+  ROUTE_BLOCKED: { label: 'Blocked', color: '#dc2626' },
 }
 const STOP_LABEL: Record<string, string> = { PENDING: 'Upcoming', NEXT: 'Heading here', ARRIVED: 'On site', DELIVERED: 'Delivered', FAILED: 'Failed', BLOCKED: 'Needs re-route' }
 

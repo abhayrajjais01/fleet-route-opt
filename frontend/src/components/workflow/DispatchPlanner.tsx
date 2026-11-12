@@ -362,7 +362,7 @@ function WindowStrip({ depart, eta, open, close, back }: { depart: number; eta: 
       <div className="relative h-8">
         <div className="absolute top-2.5 h-3 rounded bg-emerald-100" style={{ left: x(open), width: `calc(${x(close)} - ${x(open)})` }} />
         <div className="absolute top-[15px] h-0.5 bg-slate-300" style={{ left: x(depart), width: `calc(${x(back)} - ${x(depart)})` }} />
-        {[{ m: depart, c: '#27302c' }, { m: eta, c: eta > close ? '#a25846' : '#477866' }, { m: back, c: '#a0a9a2' }].map((p, i) => (
+        {[{ m: depart, c: '#0f172a' }, { m: eta, c: eta > close ? '#dc2626' : '#4f46e5' }, { m: back, c: '#94a3b8' }].map((p, i) => (
           <span key={i} className="absolute top-[10px] w-3 h-3 -ml-1.5 rounded-full border-2 border-white shadow" style={{ left: x(p.m), background: p.c }} />
         ))}
       </div>

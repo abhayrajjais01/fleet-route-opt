@@ -213,10 +213,10 @@ export const CopilotCommandCenter: React.FC<CopilotCommandCenterProps> = ({
   const waiting = shipments.filter((s) => s.status === 'UNASSIGNED').length
   const onDuty = drivers.filter((d) => d.status === 'ON_DUTY' || d.status === 'ON_TRIP').length
   const glance = [
-    { value: onRoad, label: onRoad === 1 ? 'vehicle on the road' : 'vehicles on the road', go: 'tracking' as AdminSection, cta: 'Track' },
-    { value: waiting, label: waiting === 1 ? 'order waiting to be planned' : 'orders waiting to be planned', go: 'routes' as AdminSection, cta: 'Plan', tone: waiting > 0 ? 'attention' : undefined },
-    { value: onDuty, label: onDuty === 1 ? 'driver on duty' : 'drivers on duty', go: 'fleet' as AdminSection, cta: 'View' },
-    { value: '99.2%', label: 'delivered on time and in full', go: 'reports' as AdminSection, cta: 'Reports' },
+    { value: onRoad, label: onRoad === 1 ? 'vehicle on the road' : 'vehicles on the road', go: 'tracking' as AdminSection, cta: 'Track', icon: 'M3 7h11v9H3zM14 10h4l3 3v3h-7zM7 19.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM17 19.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z', tint: 'bg-violet-50 text-violet-600' },
+    { value: waiting, label: waiting === 1 ? 'order waiting to be planned' : 'orders waiting to be planned', go: 'routes' as AdminSection, cta: 'Plan', tone: waiting > 0 ? 'attention' : undefined, icon: 'M21 16V8l-9-5-9 5v8l9 5 9-5zM3.3 7.5 12 12l8.7-4.5M12 22V12', tint: 'bg-amber-50 text-amber-600' },
+    { value: onDuty, label: onDuty === 1 ? 'driver on duty' : 'drivers on duty', go: 'fleet' as AdminSection, cta: 'View', icon: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75', tint: 'bg-sky-50 text-sky-600' },
+    { value: '99.2%', label: 'on time and in full', go: 'reports' as AdminSection, cta: 'Reports', icon: 'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4 12 14.01l-3-3', tint: 'bg-emerald-50 text-emerald-600' },
   ]
   const STATUS_ORDER: Record<string, number> = { UNASSIGNED: 0, FAILED: 1, ARRIVED: 2, IN_TRANSIT: 3, ASSIGNED: 4 }
   const STATUS_LABEL: Record<string, { text: string; dot: string }> = {
@@ -241,7 +241,11 @@ export const CopilotCommandCenter: React.FC<CopilotCommandCenterProps> = ({
       <div className="flex-shrink-0 grid grid-cols-2 xl:grid-cols-4 gap-3">
         {glance.map((g) => (
           <button key={g.label} onClick={() => setSection(g.go)}
-            className="group text-left rounded-2xl bg-white ring-1 ring-slate-200/70 px-5 py-4 hover:ring-violet-200 hover:shadow-sm transition">
+            className="group text-left rounded-2xl bg-white border border-slate-200 px-5 py-4 hover:border-violet-200 hover:shadow-md transition flex items-center gap-4">
+            <span className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${g.tint}`}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d={g.icon} /></svg>
+            </span>
+            <span className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-semibold text-slate-800 tabular-nums">{g.value}</span>
               {g.tone === 'attention' && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 -translate-y-1" />}
@@ -250,13 +254,14 @@ export const CopilotCommandCenter: React.FC<CopilotCommandCenterProps> = ({
               <span className="text-sm text-slate-500">{g.label}</span>
               <span className="text-xs text-violet-600 opacity-0 group-hover:opacity-100 transition">{g.cta} →</span>
             </div>
+            </span>
           </button>
         ))}
       </div>
 
       <div className="flex-1 min-h-0 flex gap-5">
         {/* Conversation */}
-        <section className="flex-1 min-w-0 flex flex-col rounded-2xl bg-white ring-1 ring-slate-200/70 overflow-hidden" aria-label="Dispatch assistant">
+        <section className="flex-1 min-w-0 flex flex-col rounded-2xl bg-white ring-1 ring-slate-200 overflow-hidden" aria-label="Dispatch assistant">
           <div className="flex-1 overflow-y-auto">
             <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
               {messages.map((m) => {
@@ -354,7 +359,7 @@ export const CopilotCommandCenter: React.FC<CopilotCommandCenterProps> = ({
                 <span className="text-xs text-slate-400 py-1">Try asking</span>
                 {quickScenarios.map((a) => (
                   <button key={a.label} onClick={() => handleSend(a.q)} disabled={loading}
-                    className="text-xs px-3 py-1 rounded-full bg-slate-50 ring-1 ring-slate-200/70 text-slate-600 hover:bg-violet-50 hover:ring-violet-200 hover:text-violet-700 transition disabled:opacity-50">
+                    className="text-xs px-3 py-1 rounded-full bg-slate-50 ring-1 ring-slate-200 text-slate-600 hover:bg-violet-50 hover:ring-violet-200 hover:text-violet-700 transition disabled:opacity-50">
                     {a.label}
                   </button>
                 ))}
@@ -375,7 +380,7 @@ export const CopilotCommandCenter: React.FC<CopilotCommandCenterProps> = ({
         </section>
 
         {/* Active shipments */}
-        <aside className="hidden lg:flex w-80 flex-shrink-0 flex-col rounded-2xl bg-white ring-1 ring-slate-200/70 overflow-hidden" aria-label="Active shipments">
+        <aside className="hidden lg:flex w-80 flex-shrink-0 flex-col rounded-2xl bg-white ring-1 ring-slate-200 overflow-hidden" aria-label="Active shipments">
           <div className="px-5 pt-4 pb-3 flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-800">Active shipments</p>

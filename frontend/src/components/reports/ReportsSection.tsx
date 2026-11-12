@@ -150,18 +150,18 @@ function OtifChart({ daily }: { daily: (Kpis & { date: string })[] }) {
         onMouseLeave={() => setHover(null)}>
         {ticks.map(t => (
           <g key={t}>
-            <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e3e7e1" strokeWidth="1" />
-            <text x={L - 6} y={y(t) + 4} textAnchor="end" fontSize="11" fill="#77837c">{Math.round(t)}%</text>
+            <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e2e8f0" strokeWidth="1" />
+            <text x={L - 6} y={y(t) + 4} textAnchor="end" fontSize="11" fill="#64748b">{Math.round(t)}%</text>
           </g>
         ))}
         {daily.map((d, i) => (i % labelEvery === 0 || i === daily.length - 1) && (
-          <text key={d.date} x={x(i)} y={H - 8} textAnchor="middle" fontSize="11" fill="#77837c">{d.date.slice(5)}</text>
+          <text key={d.date} x={x(i)} y={H - 8} textAnchor="middle" fontSize="11" fill="#64748b">{d.date.slice(5)}</text>
         ))}
-        <path d={`${path} L${x(daily.length - 1)},${y(min)} L${x(0)},${y(min)} Z`} fill="#477866" opacity="0.08" />
-        <path d={path} fill="none" stroke="#477866" strokeWidth="2" strokeLinejoin="round" />
-        {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={T} y2={H - B} stroke="#a0a9a2" strokeDasharray="3 3" />}
-        {hover !== null && <circle cx={x(hover)} cy={y(daily[hover].otif_pct)} r="4.5" fill="#477866" stroke="#fff" strokeWidth="2" />}
-        <circle cx={x(daily.length - 1)} cy={y(daily[daily.length - 1].otif_pct)} r="3.5" fill="#477866" />
+        <path d={`${path} L${x(daily.length - 1)},${y(min)} L${x(0)},${y(min)} Z`} fill="#4f46e5" opacity="0.08" />
+        <path d={path} fill="none" stroke="#4f46e5" strokeWidth="2" strokeLinejoin="round" />
+        {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={T} y2={H - B} stroke="#94a3b8" strokeDasharray="3 3" />}
+        {hover !== null && <circle cx={x(hover)} cy={y(daily[hover].otif_pct)} r="4.5" fill="#4f46e5" stroke="#fff" strokeWidth="2" />}
+        <circle cx={x(daily.length - 1)} cy={y(daily[daily.length - 1].otif_pct)} r="3.5" fill="#4f46e5" />
       </svg>
       {h && hover !== null && (
         <div className="absolute pointer-events-none rounded-lg bg-slate-800 text-white text-xs px-2.5 py-1.5 shadow-lg"
