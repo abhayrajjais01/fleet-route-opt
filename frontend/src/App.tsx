@@ -6,6 +6,8 @@ import LiveTrackingSection from './components/tracking/LiveTrackingSection'
 import ErrorBoundary from './components/ErrorBoundary'
 import DispatchPlanner, { type DispatchDecision } from './components/workflow/DispatchPlanner'
 import NetworkMapSection from './components/map/NetworkMapSection'
+import CopilotSlidingDrawer from './components/copilot/CopilotSlidingDrawer'
+import MobileDriverCockpit from './components/driver/MobileDriverCockpit'
 import RoutePlannerSection, { type RouteDispatch } from './components/routes/RoutePlannerSection'
 import ReportsSection from './components/reports/ReportsSection'
 import type { UserRole, VehicleType, VehicleStatus, DriverStatus, LicenseType, ShipmentStatus, ShipmentPriority, AuditAction, AdminSection, Vehicle, Driver, Hub, Shipment, User, AuditEntry } from './lib/types'
@@ -1155,6 +1157,8 @@ export default function App() {
   const [audit, setAudit] = useState<AuditEntry[]>(INIT_AUDIT)
   const [workflowShipment, setWorkflowShipment] = useState<Shipment | null>(null)
   const [authToken, setAuthToken] = useState<string | null>(null)
+  const [isCopilotDrawerOpen, setIsCopilotDrawerOpen] = useState(false)
+  const [driverCockpitMode, setDriverCockpitMode] = useState<'mobile' | 'map'>('mobile')
 
   useEffect(() => {
     fetchAuthToken(activeRole).then(token => setAuthToken(token))
@@ -1302,6 +1306,16 @@ export default function App() {
               <span className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 text-xs font-medium">Plan now</span>
             </button>
           )}
+          {activeRole === 'DRIVER' && section === 'tracking' && (
+            <div role="group" aria-label="Driver view" className="flex items-center p-0.5 rounded-full bg-white ring-1 ring-slate-200 text-sm">
+              {([['mobile', 'My stops'], ['map', 'Map']] as const).map(([mode, label]) => (
+                <button key={mode} onClick={() => setDriverCockpitMode(mode)} aria-pressed={driverCockpitMode === mode}
+                  className={`px-3 py-1 rounded-full transition-colors ${driverCockpitMode === mode ? 'bg-violet-50 text-violet-700 font-medium' : 'text-slate-500 hover:text-slate-700'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </header>
 
         {/* Main content */}
@@ -1317,7 +1331,19 @@ export default function App() {
           {section === 'reports' && <ReportsSection />}
           {/* Kept mounted so the simulation clock and reported events survive page switches */}
           <div className={section === 'tracking' ? 'h-full' : 'hidden'}>
-            <LiveTrackingSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments} activeRole={activeRole} driverId={1} active={section === 'tracking'} addAudit={addAudit} onOpenPlanner={() => setSection('workflow')} authToken={authToken} setShipments={setShipments} />
+            {activeRole === 'DRIVER' && driverCockpitMode === 'mobile' ? (
+              // Loads the signed-in driver's manifest from the API; these props are only the offline demo fallback
+              <MobileDriverCockpit
+                shipments={shipments}
+                vehicle={vehicles.find(v => v.id === 1) || null}
+                driver={drivers.find(d => d.id === 1) || null}
+                hub={hubs.find(h => h.id === 1) || null}
+                authToken={authToken}
+                onUpdateShipmentStatus={(id, st) => setShipments(prev => prev.map(s => s.id === id ? { ...s, status: st as ShipmentStatus } : s))}
+              />
+            ) : (
+              <LiveTrackingSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments} activeRole={activeRole} driverId={1} active={section === 'tracking'} addAudit={addAudit} onOpenPlanner={() => setSection('workflow')} authToken={authToken} setShipments={setShipments} />
+            )}
           </div>
           {section === 'compliance' && <ComplianceInspector />}
           {section === 'audit' && <AuditSection entries={audit} />}
@@ -1325,6 +1351,14 @@ export default function App() {
           </ErrorBoundary>
         </main>
       </div>
+
+      {/* Global AI Copilot Sliding Drawer (Week 10 Track B) */}
+      <CopilotSlidingDrawer
+        isOpen={isCopilotDrawerOpen}
+        onToggle={() => setIsCopilotDrawerOpen(v => !v)}
+        authToken={authToken}
+        activeRole={activeRole}
+      />
     </div>
   )
 }

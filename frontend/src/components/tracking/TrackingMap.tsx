@@ -16,14 +16,16 @@ export const STOP_COLOR: Record<StopState, string> = {
 
 export interface MapInsets { left: number; right: number; bottom: number; top: number }
 
-export default function TrackingMap({ views, colors, selectedId, hoveredId, onSelect, focusKey, insets }: {
+const DEFAULT_INSETS: MapInsets = { left: 0, right: 0, bottom: 0, top: 0 }
+
+export default function TrackingMap({ views, colors, selectedId, hoveredId, onSelect, focusKey, insets = DEFAULT_INSETS }: {
   views: TripView[]
   colors: Record<string, string>
   selectedId: string | null
   hoveredId: string | null
   onSelect: (id: string | null) => void
   focusKey: string
-  insets: MapInsets // space covered by floating panels, kept clear when fitting routes
+  insets?: MapInsets // space covered by floating panels, kept clear when fitting routes
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -134,8 +136,9 @@ export default function TrackingMap({ views, colors, selectedId, hoveredId, onSe
     // animated flyTo when the map has no size yet, since Leaflet then computes NaN coordinates and throws.
     map.invalidateSize()
     const size = map.getSize()
-    const opts = { paddingTopLeft: [insets.left + 40, insets.top + 40] as L.PointTuple, paddingBottomRight: [insets.right + 40, insets.bottom + 40] as L.PointTuple, maxZoom: 14 }
-    if (size.x <= insets.left + insets.right + 80 || size.y <= insets.top + insets.bottom + 80) map.fitBounds(L.latLngBounds(pts), { maxZoom: 14 })
+    const safeInsets = insets ?? DEFAULT_INSETS
+    const opts = { paddingTopLeft: [safeInsets.left + 40, safeInsets.top + 40] as L.PointTuple, paddingBottomRight: [safeInsets.right + 40, safeInsets.bottom + 40] as L.PointTuple, maxZoom: 14 }
+    if (size.x <= safeInsets.left + safeInsets.right + 80 || size.y <= safeInsets.top + safeInsets.bottom + 80) map.fitBounds(L.latLngBounds(pts), { maxZoom: 14 })
     else map.flyToBounds(L.latLngBounds(pts), { ...opts, duration: 0.6 })
   }
   useEffect(() => fitRef.current(), [focusKey, selectedId])

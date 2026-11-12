@@ -10,18 +10,19 @@
 
 | Metric | Status |
 | :--- | :--- |
-| **Overall Roadmap Progress** | **Weeks 1–6 Completed by both tracks; Track A (Manthan) delivered Weeks 7–16 ahead of schedule on Nov 12, 2026** |
+| **Overall Roadmap Progress** | **Weeks 1–10 Completed by both tracks; Track A (Manthan) delivered Weeks 11–16 ahead of schedule on Nov 12, 2026** |
 | **Current Active Month** | **Month 3: Agents, Live ETAs & Explanations** |
 | **Current Active Week** | **Week 10: Downstream ETAs & Copilot UI (Nov 9 – Nov 13, 2026)** |
-| **Track A Status** | **All 16 Track A weeks delivered** (Weeks 12–16 delivered early; Track B Weeks 7–16 continue on schedule) |
-| **Automated Test Suite** | **164 / 164 PASSED** (`pytest -q` in `backend/`) |
+| **Track A Status** | **All 16 Track A weeks delivered** (Weeks 11–16 delivered early) |
+| **Track B Status** | **Weeks 1–10 delivered** (Weeks 11–16 on schedule) |
+| **Automated Test Suite** | **187 / 187 PASSED** (`pytest -q` in `backend/`) |
 
 ```
 Track A Progress: [████████████████████] 100% (16 / 16 weeks delivered)
-Track B Progress: [████████████░░░░░░░░] 6 / 16 weeks (Weeks 7–16 in progress)
+Track B Progress: [████████████░░░░░░░░] 10 / 16 weeks (Weeks 11–16 on schedule)
 Month 1 Progress: [████████████████████] 100% (Weeks 1–4 COMPLETED)
-Month 2 Progress: [███████████████░░░░░] Weeks 5–6 COMPLETED; Weeks 7–8 Track A done
-Month 3 Progress: [██████████░░░░░░░░░░] Weeks 9–12 Track A done
+Month 2 Progress: [████████████████████] 100% (Weeks 5–8 COMPLETED)
+Month 3 Progress: [██████████░░░░░░░░░░] Weeks 9–10 COMPLETED; Weeks 11–12 Track A done
 Month 4 Progress: [██████████░░░░░░░░░░] Weeks 13–16 Track A done
 ```
 
@@ -37,10 +38,10 @@ Month 4 Progress: [██████████░░░░░░░░░░]
 | | **Week 4** | Compliance UI & Ingestion | RAG Compliance Inspector Search UI | Batch Order Uploader & Regression Tests| `COMPLETED` ✅ |
 | **Month 2** | **Week 5** | Spatial Map & LangGraph | Haversine Matrix & Leaflet Map Shell| LangGraph StateGraph & Router Agent| `COMPLETED` ✅ |
 | | **Week 6** | VRPTW Solver & FSM | Deterministic VRPTW Solver Core | In-Transit FSM & Telemetry Tracking| `COMPLETED` ✅ |
-| | **Week 7** | Map Polylines & Guardrails | Route Visualizer & Split Manifest | RAG Similarity Guardrails & Scores | `IN PROGRESS` ⏳ *(Track A Done)* |
-| | **Week 8** | Resequencing & Policy Agent | Drag-and-Drop Resequencing UI/API | Policy & Compliance Agent + RAG Check| `IN PROGRESS` ⏳ *(Track A Done)* |
-| **Month 3** | **Week 9** | Optimization Agent & Driver | LangGraph Optimization Agent (Solver Tool)| Mobile Driver View & Actions | `IN PROGRESS` ⏳ *(Track A Done)* |
-| | **Week 10** | Downstream ETAs & Copilot UI| Downstream Dynamic Recalculation | Copilot Sliding Drawer & Traces | `IN PROGRESS` ⏳ *(Track A Done)* |
+| | **Week 7** | Map Polylines & Guardrails | Route Visualizer & Split Manifest | RAG Similarity Guardrails & Scores | `COMPLETED` ✅ |
+| | **Week 8** | Resequencing & Policy Agent | Drag-and-Drop Resequencing UI/API | Policy & Compliance Agent + RAG Check| `COMPLETED` ✅ |
+| **Month 3** | **Week 9** | Optimization Agent & Driver | LangGraph Optimization Agent (Solver Tool)| Mobile Driver View & Actions | `COMPLETED` ✅ |
+| | **Week 10** | Downstream ETAs & Copilot UI| Downstream Dynamic Recalculation | Copilot Sliding Drawer & Traces | `COMPLETED` ✅ |
 | | **Week 11** | RAG Route Explainer & Proposals| RAG Route Explanations & Summaries | Interactive Proposal Cards & Diff | `PLANNED` *(Track A Done early)* |
 | | **Week 12** | SLA Alerts & KPI Dashboard | SLA Breach Alerts & Recovery FSM | Executive KPI Analytics Dashboard UI| `PLANNED` *(Track A Done early)* |
 | **Month 4** | **Week 13** | Operational KPIs & Filter | Operational Metrics Calc Engine | Multi-Dimensional Analytics Filter | `PLANNED` *(Track A Done early)* |
@@ -155,29 +156,36 @@ Month 4 Progress: [██████████░░░░░░░░░░]
   - [x] Automated Test Suite: `backend/tests/test_transit_fsm.py` (11/11 passed, **122/122 full suite passed, 100%**)
 
 #### Week 7: Route Visualizer & Split Manifest (US-003)
-- **Status**: Track A `COMPLETED` ✅ · Track B `IN PROGRESS`
+- **Status**: `COMPLETED` ✅ (Track A & Track B delivered)
 - **Manthan Nimodiya (Track A)**:
   - [x] Route Planner page (`frontend/src/components/routes/RoutePlannerSection.tsx`): pick hub, departure time, orders and vehicles, then optimize
   - [x] Colour-coded route polylines with numbered stop pins and ETA popups (`RoutePlanMap.tsx`); hovering a route fades the others
   - [x] Split manifest per vehicle: driver, capacity bar (% full), km, duration, return time, per-stop ETA and window
   - [x] Headline numbers: routes, total km vs separate trips, late stops; unplannable orders listed with the solver's reason
 - **Abhayraj Jaiswal (Track B)**:
-  - [ ] RAG similarity guardrails & scores
+  - [x] Zero-hallucination guardrail engine (`backend/app/services/copilot/guardrails.py`): calibrated similarity threshold (`0.18`), strict "policy not found" fallback, confidence normalised to 0–100%
+  - [x] SOP citation cards (`PolicyCitationCard`): document ID, section, heading and excerpt
+  - [x] `rag_similarity_guardrail` node appended to the StateGraph execution trace
+  - [x] `POST /api/v1/copilot/guardrails/evaluate`; `backend/tests/test_rag_guardrails.py` (5 tests)
 
 #### Week 8: Drag-and-Drop Resequencing (US-003)
-- **Status**: Track A `COMPLETED` ✅ · Track B `IN PROGRESS`
+- **Status**: `COMPLETED` ✅ (Track A & Track B delivered)
 - **Manthan Nimodiya (Track A)**:
   - [x] Drag stops to re-order them or move them onto another vehicle; ▲/▼ buttons as keyboard-friendly fallback
   - [x] ETAs recalculated instantly in the browser, confirmed by `POST /api/v1/routes/evaluate`
   - [x] Time-window violation badges (late / over capacity / over shift) on the stop and route
   - [x] "Approve & dispatch" assigns shipments, vehicles go IN_TRANSIT, drivers ON_TRIP; Live Tracking follows the approved order (`route_sequence`)
 - **Abhayraj Jaiswal (Track B)**:
-  - [ ] Policy & Compliance agent + RAG check
+  - [x] Policy & Compliance agent (`backend/app/services/copilot/policy_agent.py`) with cited SOP rules and a severity-weighted score
+  - [x] Driver hours of service (`SOP-DR-001 §2`), payload/volume limits (`SOP-VS-001 §1`), cold-chain holdover (`SOP-CC-001 §5`)
+  - [x] Hazmat: shipments identified by UN `hazard_class`; driver must hold a verified `hazmat_endorsed` qualification (`SOP-HZ-001 §2`); incompatible classes (3 + 8) may not share a load (`§5`)
+  - [x] Unknown vehicle/driver/shipment IDs are rejected (422); a manifest with no driver is reported as an incomplete evaluation, never compliant
+  - [x] `POST /api/v1/copilot/policy/validate-route`; `backend/tests/test_policy_agent.py` (12 tests)
 
 ### Month 3: Agents, Live ETAs & Explanations
 
 #### Week 9: Optimization Agent with Tool Calling (US-005)
-- **Status**: Track A `COMPLETED` ✅ · Track B `IN PROGRESS`
+- **Status**: `COMPLETED` ✅ (Track A & Track B delivered)
 - **Manthan Nimodiya (Track A)**:
   - [x] `backend/app/services/copilot/optimization_agent.py`: three JSON-schema tools (`reassign_stops`, `apply_delay`, `reoptimize_route`) that call the VRPTW solver and ETA engine
   - [x] Deterministic planner (Router Agent intent + breakdown/delay parsing) by default; optional Claude tool-calling planner when `ANTHROPIC_API_KEY` is set
@@ -185,16 +193,20 @@ Month 4 Progress: [██████████░░░░░░░░░░]
   - [x] `POST /api/v1/routes/disruption` returns a proposal (changes, ETAs before → after, late minutes before → after) that the dispatcher approves or declines
   - [x] UI: "What if it breaks down?" per route and a free-text "Ask the optimization agent" box with an approve/decline proposal card
 - **Abhayraj Jaiswal (Track B)**:
-  - [ ] Mobile driver view & actions
+  - [x] Mobile driver cockpit (`frontend/src/components/driver/MobileDriverCockpit.tsx`): loads the signed-in driver's manifest from the API (cached for offline use); large arrive / deliver / fail / delay actions
+  - [x] Offline action queue in `localStorage` with replay on reconnect; actions the server rejects stay queued with their error
+  - [x] `GET /api/v1/transit/driver/manifest` (resolved from the driver's own account, no fallback to another driver) and `POST /api/v1/transit/driver/offline-sync` with per-action error isolation
+  - [x] `backend/tests/test_mobile_driver_api.py` (6 tests)
 
 #### Week 10: Downstream ETA Recalculation & Notifications
-- **Status**: Track A `COMPLETED` ✅ · Track B `IN PROGRESS`
+- **Status**: `COMPLETED` ✅ (Track A & Track B delivered)
 - **Manthan Nimodiya (Track A)**:
   - [x] `backend/app/services/optimizer/eta_engine.py`: completed stops keep actual times; a delay shifts the next stop and later stops absorb it where they were waiting for a window
   - [x] `POST /api/v1/routes/recalculate`
   - [x] Live Tracking toast "ETAs updated on <vehicle>" when a delay moves stops (`SlaAlerts.tsx`)
 - **Abhayraj Jaiswal (Track B)**:
-  - [ ] Copilot sliding drawer & traces
+  - [x] Floating AI Copilot sliding drawer (`frontend/src/components/copilot/CopilotSlidingDrawer.tsx`): global trigger pill, prompt chips, latency and confidence meters, execution trace viewer
+  - [x] Mounted app-wide in `App.tsx`; driver header toggle between *My stops* (mobile cockpit) and *Map* (Live Tracking)
 
 #### Week 11: RAG Route Explanations & Driver Instructions
 - **Status**: Track A `COMPLETED` ✅ (delivered early)
