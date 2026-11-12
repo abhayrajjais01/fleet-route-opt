@@ -243,7 +243,7 @@
 ---
 
 ### Weeks 7–16 (Track A): Route Planner, Optimization Agent, Live ETAs, Reports & Release — delivered Nov 12, 2026
-- **Status**: Track A `COMPLETED` ✅ (Weeks 7–10 on schedule; Weeks 11–16 delivered early). Track B Weeks 7–16 continue on their own schedule.
+- **Status**: Track A `COMPLETED` ✅ (Weeks 7–10 on schedule; Weeks 11–16 delivered early). Track B Weeks 7–10 are logged below; Weeks 11–16 continue on schedule.
 - **Focus Area**: Turning the Week 6 solver into a dispatcher workflow (plan → re-order → explain → approve → track), an agent that re-plans after disruptions, live SLA alerts, operational reporting, and a containerised backend.
 
 #### Track A (Manthan Nimodiya):
@@ -310,11 +310,11 @@
 #### Track B (Abhayraj Jaiswal):
 1. **Policy & Compliance Agent (`backend/app/services/copilot/policy_agent.py`)**:
    - Multi-regulatory automated route validation engine (`PolicyComplianceAgent.evaluate_manifest`).
-   - **Driver Hours of Service (HOS)**: Validates continuous driving (<= 8h), total shift duty (<= 10h), and daily spread (<= 14h) per Motor Transport Workers Act 1961 (`SOP-DR-001 §2`).
+   - **Driver Hours of Service (HOS)**: Flags a route longer than the driver's certified daily limit (`max_driving_hours_per_day`, default 8 h) and any route over 5 h without the mandatory 30-minute break, per the Motor Transport Workers Act 1961 (`SOP-DR-001 §2`).
    - **Vehicle Payload & Volumetric Capacity**: Detects vehicle overload violations against certified gross vehicle limits per `SOP-VS-001 §1`.
    - **Hazardous Materials (Hazmat)**: Hazmat cargo is identified by its UN `hazard_class`; the driver must have a verified `hazmat_endorsed` qualification (`SOP-HZ-001 §2`), and Class 3 / Class 8 goods may not be co-loaded (`SOP-HZ-001 §5`).
    - **Incomplete manifests**: unknown vehicle, driver or shipment IDs are rejected (HTTP 422); with no driver the result is marked incomplete and never compliant.
-   - **Cold Chain Holdover**: Detects perishable consignment transit durations exceeding active refrigeration holdover window (180 mins) per `SOP-CC-001 §5`.
+   - **Cold Chain Holdover**: Flags temperature-sensitive consignments on routes longer than the 4-hour passive holdover window per `SOP-CC-001 §5`.
 2. **RESTful Policy Validation Endpoint (`backend/app/api/v1/copilot.py`)**:
    - `POST /api/v1/copilot/policy/validate-route`: Dispatcher-authenticated endpoint returning overall compliance score (0–100%), violation severity breakdown (LOW / MEDIUM / HIGH / CRITICAL), and cited SOP rules.
 3. **Automated Unit Tests (`backend/tests/test_policy_agent.py`)**:
@@ -358,6 +358,10 @@
    - Driver header toggle between *My stops* (mobile cockpit) and *Map* (Live Tracking).
 3. **Tracking Map Crash Hotfix**:
    - Resolved undefined `insets.left` map crash on Driver profile and added `'ARRIVED'` transition to `advanceFSM` (commit `fbbe588`).
-4. **Verification & Testing**:
-   - **Full Backend Pytest Suite (after merging Track A Weeks 7–16)**: **187 / 187 passed**.
-   - **Frontend**: `tsc` 0 errors, production build clean.
+4. **Integration with Track A Weeks 7–16 (PR #24, Nov 12)**:
+   - Merged `main` (Track A delivery + UI redesign) into the Track B branch; the cockpit, driver view toggle and Copilot drawer were re-fitted into the new app shell.
+   - Addressed all 10 Codex review findings: driver manifest identity, offline FAIL/DELAY replay, hazmat classification / endorsement / segregation, unresolved manifest references, cockpit sync host, rejected-action retention, and loading the server manifest in the cockpit.
+   - New `drivers.hazmat_endorsed` and `shipments.hazard_class` columns, added to existing databases by the startup migration; the demo driver login is linked to its driver record in the seed script.
+5. **Verification & Testing**:
+   - **Full Backend Pytest Suite**: **187 / 187 passed**.
+   - **Frontend**: `tsc` 0 errors, production build clean; driver *My stops* and *Map* views checked in the browser.

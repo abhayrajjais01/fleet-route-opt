@@ -21,15 +21,17 @@ To ensure a true, equal **50-50 division** across both **GenAI / LLM Engineering
 ## Overall Roadmap Status
 
 ```
-Overall Progress: [█████░░░░░░░░░░░░░░░] 25.0% (Month 1 Completed: 4 / 16 Weeks Done)
-Month 1 Progress: [████████████████████] 100.0% (Weeks 1, 2, 3, and 4 COMPLETED)
-Month 2 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0% (Starting Next)
-Month 3 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
-Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░] 0.0%
+Track A Progress: [████████████████████] 100% (16 / 16 weeks delivered; Weeks 11–16 early)
+Track B Progress: [████████████░░░░░░░░] 62.5% (10 / 16 weeks delivered)
+Month 1 Progress: [████████████████████] 100% (Weeks 1–4 COMPLETED)
+Month 2 Progress: [████████████████████] 100% (Weeks 5–8 COMPLETED)
+Month 3 Progress: [██████████░░░░░░░░░░] Weeks 9–10 COMPLETED; Weeks 11–12 Track A done
+Month 4 Progress: [██████████░░░░░░░░░░] Weeks 13–16 Track A done
 ```
 
-- **Current Active Milestone**: Ready to begin **Month 2, Week 5: Spatial Graph & LangGraph Router (Oct 5 – Oct 9, 2026)**.
-- **Regression Suite**: **49 / 49 tests passing cleanly (100%)**.
+- **Status as of Nov 12, 2026**: Weeks 1–10 delivered by both tracks. Track A (Manthan) also delivered Weeks 11–16 ahead of schedule.
+- **Current Active Milestone**: Week 10 wrap-up (Nov 9 – Nov 13, 2026); next is **Month 3, Week 11: Track B Action Proposal Cards & Diff View (Nov 16 – Nov 20, 2026)**.
+- **Regression Suite**: **187 / 187 backend tests passing**; frontend `tsc` 0 errors and production build clean.
 
 ---
 
@@ -102,7 +104,8 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 
 ### Month 2: Deterministic Optimization & Map vs. LangGraph Router & FSM
 
-#### Week 5: Spatial Graph & LangGraph Router (US-004 & US-005) — UPCOMING
+#### Week 5: Spatial Graph & LangGraph Router (US-004 & US-005)
+- **Status**: `COMPLETED` ✅
 - **Manthan Nimodiya (Track A)**:
   - Haversine distance & travel duration engine with road detour correction factors.
   - Multi-point distance matrix generator with caching for arbitrary waypoint batches.
@@ -113,9 +116,10 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - **Router Agent**: Natural language intent classification (breakdown, delay, policy query, re-route).
   - Offline deterministic fallback agent guaranteeing 100% operation without API keys.
   - Router agent unit tests.
-- **Weekly Integration Sync**: Plot delivery stops on Leaflet map while Router Agent classifies dispatcher inquiries.
+- **Weekly Integration Sync**: Plot delivery stops on Leaflet map while Router Agent classifies dispatcher inquiries. *(Completed)*
 
 #### Week 6: VRPTW Solver Core & In-Transit FSM (US-003 & US-008)
+- **Status**: `COMPLETED` ✅
 - **Manthan Nimodiya (Track A)**:
   - Deterministic VRPTW Solver: Clarke-Wright Savings algorithm with 2-opt local search optimization heuristic.
   - Enforce hard constraints: vehicle capacity (weight & volume), customer time windows `[open, close]`, driver shift limits.
@@ -125,9 +129,11 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - Driver action API: `/api/v1/trips/{id}/transition` (`ARRIVED`, `COMPLETED`, `FAILED`, `DELAYED`).
   - Real-time trip status tracker component with FSM progress bar and animated state transitions.
   - Vehicle telemetry simulator advancing truck position along simulated route coordinates.
-- **Weekly Integration Sync**: Ingest 50 shipments, run VRPTW solver, display route manifest, and simulate in-transit status updates via the FSM.
+- **Weekly Integration Sync**: Ingest 50 shipments, run VRPTW solver, display route manifest, and simulate in-transit status updates via the FSM. *(Completed)*
+- **As delivered**: FSM states are `UNASSIGNED` → `ASSIGNED` → `IN_TRANSIT` → `ARRIVED` → `DELIVERED` / `FAILED` (+ redispatch), with per-action endpoints under `/api/v1/transit/shipments/{id}/…` (`depart`, `arrive`, `deliver`, `fail`, `delay`, `redispatch`) instead of a single `/trips/{id}/transition`.
 
 #### Week 7: Route Polylines & Zero-Hallucination Guardrails (US-004 & US-006)
+- **Status**: `COMPLETED` ✅
 - **Manthan Nimodiya (Track A)**:
   - Interactive Route Visualizer: Leaflet polyline rendering with distinct colors per vehicle route.
   - Stop markers with sequence numbers (1, 2, 3...) and arrival ETA popups.
@@ -138,9 +144,10 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - Out-of-domain query detection: return `"Policy not found in verified knowledge base"` when confidence < threshold.
   - Confidence score calculation (0–100%) returned with every RAG response.
   - Citation generator: attach source document title, section number, and exact text snippet to every answer.
-- **Weekly Integration Sync**: Visualize multi-vehicle routes on the map and test the AI Copilot with both valid policy questions and out-of-domain queries to verify guardrails.
+- **Weekly Integration Sync**: Visualize multi-vehicle routes on the map and test the AI Copilot with both valid policy questions and out-of-domain queries to verify guardrails. *(Completed)*
 
 #### Week 8: Route Resequencing Workspace & Policy Agent (US-006 & US-007)
+- **Status**: `COMPLETED` ✅
 - **Manthan Nimodiya (Track A)**:
   - Drag-and-drop stop resequencing in the route manifest table.
   - Dynamic route recalculation API: recalculates total distance, ETAs, and violations on manual reorder.
@@ -151,13 +158,15 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - Rule checks: driver maximum daily driving hours (10h limit, 30m break after 5h), Hazmat transport restrictions.
   - Multi-agent LangGraph workflow: Dispatcher Query → Router Agent → Policy Agent → Output.
   - Policy agent unit tests with simulated violation scenarios.
-- **Weekly Integration Sync**: Manually drag a stop to create a time window violation, verify that the Policy Agent flags the breach, and review the cited SOP regulation.
+- **Weekly Integration Sync**: Manually drag a stop to create a time window violation, verify that the Policy Agent flags the breach, and review the cited SOP regulation. *(Completed)*
+- **As delivered**: the Policy Agent checks the driver's daily limit (default 8 h) and the 5 h continuous-driving break, vehicle payload/volume, cold-chain 4 h holdover, and hazmat (UN `hazard_class`, `hazmat_endorsed` driver, Class 3 + 8 segregation). Unknown IDs are rejected and a manifest without a driver is reported incomplete.
 
 ---
 
 ### Month 3: Optimization Agent & Driver View vs. Copilot & Analytics
 
 #### Week 9: Optimization Agent & Driver Mobile View (US-005 & US-008)
+- **Status**: `COMPLETED` ✅
 - **Manthan Nimodiya (Track A)**:
   - **Optimization Agent**: LangGraph agent that evaluates route changes when disruptions occur.
   - Tool-calling integration: agent invokes the deterministic VRPTW solver as a tool.
@@ -168,9 +177,11 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - Driver's assigned stop list for the day with turn-by-turn sequence and customer delivery windows.
   - Action buttons: `"Arrived at Stop"`, `"Mark Delivered"`, `"Report Disruption"`.
   - Offline mode: cache current trip data in localStorage for areas with poor cellular reception.
-- **Weekly Integration Sync**: Report a vehicle breakdown from the Driver View, verify that the Optimization Agent triggers the solver, and inspect the reassigned stops.
+- **Weekly Integration Sync**: Report a vehicle breakdown from the Driver View, verify that the Optimization Agent triggers the solver, and inspect the reassigned stops. *(Completed)*
+- **As delivered**: the driver view loads its manifest from `GET /api/v1/transit/driver/manifest` (the signed-in driver's own record only), caches it offline, and replays a `localStorage` action queue through `POST /api/v1/transit/driver/offline-sync`; rejected actions stay queued.
 
 #### Week 10: Dynamic Recalculation & AI Copilot Drawer (US-005 & US-007)
+- **Status**: `COMPLETED` ✅
 - **Manthan Nimodiya (Track A)**:
   - Downstream ETA recalculation engine: dynamically adjusts all subsequent stop ETAs when a delay is reported.
   - SLA breach risk scoring: calculates probability of missing downstream customer windows based on current delay magnitude.
@@ -180,9 +191,11 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - Interactive chat interface with conversation history and suggested quick-prompt chips.
   - Reasoning trace viewer: expandable accordion showing multi-agent execution steps (Router → Policy → Optimization).
   - Streaming response display with latency indicator.
-- **Weekly Integration Sync**: Open AI Copilot drawer, type `"Vehicle V-101 is delayed by 45 minutes on Highway 4"`, and verify that downstream ETAs update while Copilot displays its reasoning trace.
+- **Weekly Integration Sync**: Open AI Copilot drawer, type `"Vehicle V-101 is delayed by 45 minutes on Highway 4"`, and verify that downstream ETAs update while Copilot displays its reasoning trace. *(Completed)*
 
 #### Week 11: Route Explainer & Action Proposals with Diff View (US-005 & US-006)
+- **Status**: Track A `COMPLETED` ✅ (delivered early, Nov 12) · Track B `PLANNED`
+- **Track A as delivered (Weeks 11–16)**: route explainer (`route_explainer.py`, `POST /api/v1/routes/explain`), SLA breach classes and alerts (`POST /api/v1/routes/sla-check`, `SlaAlerts.tsx`), operational metrics and Reports page (`/api/v1/reports/metrics`), CSV/PDF exports, benchmarks (`scripts/benchmark.py`), and backend Docker + Postgres compose. See `weekly_work_log.md` for details.
 - **Manthan Nimodiya (Track A)**:
   - **Route Explainer Agent**: LangGraph agent generating plain-English explanations of why a particular route was chosen.
   - Trade-off summarization: explains why a route is longer in distance to avoid a traffic bottleneck or satisfy a priority delivery window.
@@ -195,6 +208,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 - **Weekly Integration Sync**: Request route optimization via Copilot, view the structured proposal card with visual diff, click "Accept", and verify that active routes update.
 
 #### Week 12: SLA Breach Warning & Executive KPI Dashboard (US-007 & US-008)
+- **Status**: Track A `COMPLETED` ✅ (delivered early, Nov 12) · Track B `PLANNED`
 - **Manthan Nimodiya (Track A)**:
   - Predictive SLA breach detection: flags deliveries at risk of missing customer time windows before the breach occurs.
   - Automated alert generator: classifies risk severity (low, medium, critical).
@@ -211,6 +225,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 ### Month 4: Cost Analysis, Reporting, DevOps & Final Presentation
 
 #### Week 13: Operational Cost Engine & Advanced Analytics (US-003 & US-008)
+- **Status**: Track A `COMPLETED` ✅ (delivered early, Nov 12) · Track B `PLANNED`
 - **Manthan Nimodiya (Track A)**:
   - Fuel consumption & cost calculation based on vehicle-specific fuel efficiency (km/L) and route topography factors.
   - Driver labor cost calculator based on driving hours and overtime rates.
@@ -224,6 +239,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 - **Weekly Integration Sync**: Verify that fuel and labor cost calculations reflect vehicle assignments and that the executive report exports accurately.
 
 #### Week 14: PDF Manifest Generator & Security Hardening (US-008)
+- **Status**: Track A `COMPLETED` ✅ (delivered early, Nov 12) · Track B `PLANNED`
 - **Manthan Nimodiya (Track A)**:
   - Printable PDF Route Manifest generator with QR codes for driver delivery confirmation.
   - Bill of Lading (BOL) document generator for commercial shipments.
@@ -235,6 +251,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 - **Weekly Integration Sync**: Generate a PDF route manifest with printable stop list and verify end-to-end audit log coverage.
 
 #### Week 15: Performance Benchmarks & Stress Testing
+- **Status**: Track A `COMPLETED` ✅ (delivered early, Nov 12) · Track B `PLANNED`
 - **Manthan Nimodiya (Track A)**:
   - VRPTW solver scalability benchmark: 10, 25, 50, 100, 200 stops across 2 to 20 vehicles.
   - RAG retrieval benchmark under concurrent load (10 to 100 concurrent requests).
@@ -246,6 +263,7 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
 - **Weekly Integration Sync**: Execute full regression test suite with 100% pass rate and confirm that all performance criteria (VRPTW < 5s, RAG < 3s) are satisfied.
 
 #### Week 16: Containerization, Production Runbook & Viva Delivery
+- **Status**: Track A `COMPLETED` ✅ (delivered early, Nov 12) · Track B `PLANNED`
 - **Manthan Nimodiya (Track A)**:
   - Production Docker Compose configuration: Backend + PostgreSQL + Redis (cache).
   - Environment configuration templates (`.env.example`) and secrets management documentation.
@@ -254,4 +272,4 @@ Month 4 Progress: [░░░░░░░░░░░░░░░░░░░░]
   - Multi-stage Dockerfile for Vite/React frontend with Nginx reverse proxy.
   - Comprehensive User Manual and API Reference documentation.
   - End-to-end video demonstration walkthrough and final project presentation slides.
-- **Final Integration Sync**: Single-command startup (`docker compose up --build`), verify complete system functionality from clean state, and conduct dry run of project viva presentation.\n
+- **Final Integration Sync**: Single-command startup (`docker compose up --build`), verify complete system functionality from clean state, and conduct dry run of project viva presentation.

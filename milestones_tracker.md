@@ -155,7 +155,7 @@ Month 4 Progress: [██████████░░░░░░░░░░]
   - [x] Interactive Driver Cockpit (`LiveTrackingSection.tsx`, `transitApi.ts`): proof-of-delivery handover modal, failure reporting modal, and delay logger
   - [x] Automated Test Suite: `backend/tests/test_transit_fsm.py` (11/11 passed, **122/122 full suite passed, 100%**)
 
-#### Week 7: Route Visualizer & Split Manifest (US-003)
+#### Week 7: Route Visualizer & Split Manifest vs. Zero-Hallucination Guardrails (US-003 & US-006)
 - **Status**: `COMPLETED` ✅ (Track A & Track B delivered)
 - **Manthan Nimodiya (Track A)**:
   - [x] Route Planner page (`frontend/src/components/routes/RoutePlannerSection.tsx`): pick hub, departure time, orders and vehicles, then optimize
@@ -168,7 +168,7 @@ Month 4 Progress: [██████████░░░░░░░░░░]
   - [x] `rag_similarity_guardrail` node appended to the StateGraph execution trace
   - [x] `POST /api/v1/copilot/guardrails/evaluate`; `backend/tests/test_rag_guardrails.py` (5 tests)
 
-#### Week 8: Drag-and-Drop Resequencing (US-003)
+#### Week 8: Drag-and-Drop Resequencing vs. Policy & Compliance Agent (US-003 & US-006)
 - **Status**: `COMPLETED` ✅ (Track A & Track B delivered)
 - **Manthan Nimodiya (Track A)**:
   - [x] Drag stops to re-order them or move them onto another vehicle; ▲/▼ buttons as keyboard-friendly fallback
@@ -177,14 +177,14 @@ Month 4 Progress: [██████████░░░░░░░░░░]
   - [x] "Approve & dispatch" assigns shipments, vehicles go IN_TRANSIT, drivers ON_TRIP; Live Tracking follows the approved order (`route_sequence`)
 - **Abhayraj Jaiswal (Track B)**:
   - [x] Policy & Compliance agent (`backend/app/services/copilot/policy_agent.py`) with cited SOP rules and a severity-weighted score
-  - [x] Driver hours of service (`SOP-DR-001 §2`), payload/volume limits (`SOP-VS-001 §1`), cold-chain holdover (`SOP-CC-001 §5`)
+  - [x] Driver hours of service against the driver's daily limit (default 8 h) plus the 5 h continuous-driving break (`SOP-DR-001 §2`), payload/volume limits (`SOP-VS-001 §1`), 4 h cold-chain holdover (`SOP-CC-001 §5`)
   - [x] Hazmat: shipments identified by UN `hazard_class`; driver must hold a verified `hazmat_endorsed` qualification (`SOP-HZ-001 §2`); incompatible classes (3 + 8) may not share a load (`§5`)
   - [x] Unknown vehicle/driver/shipment IDs are rejected (422); a manifest with no driver is reported as an incomplete evaluation, never compliant
   - [x] `POST /api/v1/copilot/policy/validate-route`; `backend/tests/test_policy_agent.py` (12 tests)
 
 ### Month 3: Agents, Live ETAs & Explanations
 
-#### Week 9: Optimization Agent with Tool Calling (US-005)
+#### Week 9: Optimization Agent with Tool Calling vs. Mobile Driver View (US-005 & US-008)
 - **Status**: `COMPLETED` ✅ (Track A & Track B delivered)
 - **Manthan Nimodiya (Track A)**:
   - [x] `backend/app/services/copilot/optimization_agent.py`: three JSON-schema tools (`reassign_stops`, `apply_delay`, `reoptimize_route`) that call the VRPTW solver and ETA engine
@@ -198,7 +198,7 @@ Month 4 Progress: [██████████░░░░░░░░░░]
   - [x] `GET /api/v1/transit/driver/manifest` (resolved from the driver's own account, no fallback to another driver) and `POST /api/v1/transit/driver/offline-sync` with per-action error isolation
   - [x] `backend/tests/test_mobile_driver_api.py` (6 tests)
 
-#### Week 10: Downstream ETA Recalculation & Notifications
+#### Week 10: Downstream ETA Recalculation vs. AI Copilot Sliding Drawer (US-005 & US-007)
 - **Status**: `COMPLETED` ✅ (Track A & Track B delivered)
 - **Manthan Nimodiya (Track A)**:
   - [x] `backend/app/services/optimizer/eta_engine.py`: completed stops keep actual times; a delay shifts the next stop and later stops absorb it where they were waiting for a window
@@ -254,6 +254,7 @@ Month 4 Progress: [██████████░░░░░░░░░░]
 - **Abhayraj Jaiswal (Track B)**:
   - [ ] Frontend Docker, CI and walkthrough
 
-#### Track A test summary
-- New suites: `test_route_operations.py` (27), `test_reports.py` (8), `test_performance.py` (3)
-- **Full backend suite: 164 / 164 passed**; frontend `tsc` 0 errors and `pnpm build` clean
+#### Test summary (Nov 12, 2026, after merging Track A Weeks 7–16 with Track B Weeks 7–10)
+- Track A new suites: `test_route_operations.py` (27), `test_reports.py` (8), `test_performance.py` (3)
+- Track B new suites: `test_rag_guardrails.py` (5), `test_policy_agent.py` (12), `test_mobile_driver_api.py` (6)
+- **Full backend suite: 187 / 187 passed**; frontend `tsc` 0 errors and production build clean
