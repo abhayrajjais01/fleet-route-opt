@@ -43,7 +43,7 @@ export default function ReportsSection() {
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex bg-white rounded-lg p-0.5 ring-1 ring-slate-200">
             {[7, 14, 30, 60].map(d => (
-              <button key={d} onClick={() => set({ days: d })} className={`px-3 py-1.5 text-sm rounded-md ${filters.days === d ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'}`}>{d} days</button>
+              <button key={d} onClick={() => set({ days: d })} className={`px-3 py-1.5 text-sm rounded-md ${filters.days === d ? 'bg-violet-50 text-violet-800 ring-1 ring-violet-200' : 'text-slate-600 hover:text-slate-900'}`}>{d} days</button>
             ))}
           </div>
           <Select id="rep-hub" label="All hubs" value={filters.hub} options={data?.options.hubs ?? []} onChange={v => set({ hub: v })} />
@@ -51,7 +51,7 @@ export default function ReportsSection() {
           <Select id="rep-driver" label="All drivers" value={filters.driver} options={data?.options.drivers ?? []} onChange={v => set({ driver: v })} />
           <div className="flex-1" />
           <button onClick={() => exportFile('csv')} disabled={!data || !!exporting} className="px-3 py-1.5 rounded-lg bg-white ring-1 ring-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">{exporting === 'csv' ? 'Exporting…' : 'Export CSV'}</button>
-          <button onClick={() => exportFile('pdf')} disabled={!data || !!exporting} className="px-3 py-1.5 rounded-lg bg-slate-900 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">{exporting === 'pdf' ? 'Preparing…' : 'Download PDF summary'}</button>
+          <button onClick={() => exportFile('pdf')} disabled={!data || !!exporting} className="px-3 py-1.5 rounded-lg bg-violet-600 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">{exporting === 'pdf' ? 'Preparing…' : 'Download PDF summary'}</button>
         </div>
 
         {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
@@ -65,7 +65,7 @@ export default function ReportsSection() {
                 <div key={t.key} className="rounded-xl bg-white ring-1 ring-slate-200 px-4 py-3" title={data.definitions[t.def]}>
                   <p className="text-xs text-slate-500">{t.label}</p>
                   <p className="text-2xl font-semibold text-slate-900 tabular-nums mt-0.5">{t.fmt(data.kpis[t.key])}</p>
-                  <p className="text-[11px] text-slate-400 mt-1 leading-snug">{data.definitions[t.def]}</p>
+                  <p className="text-xs text-slate-400 mt-1 leading-snug">{data.definitions[t.def]}</p>
                 </div>
               ))}
             </div>
@@ -150,21 +150,21 @@ function OtifChart({ daily }: { daily: (Kpis & { date: string })[] }) {
         onMouseLeave={() => setHover(null)}>
         {ticks.map(t => (
           <g key={t}>
-            <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e2e8f0" strokeWidth="1" />
-            <text x={L - 6} y={y(t) + 4} textAnchor="end" fontSize="11" fill="#64748b">{Math.round(t)}%</text>
+            <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke="#e3e7e1" strokeWidth="1" />
+            <text x={L - 6} y={y(t) + 4} textAnchor="end" fontSize="11" fill="#77837c">{Math.round(t)}%</text>
           </g>
         ))}
         {daily.map((d, i) => (i % labelEvery === 0 || i === daily.length - 1) && (
-          <text key={d.date} x={x(i)} y={H - 8} textAnchor="middle" fontSize="11" fill="#64748b">{d.date.slice(5)}</text>
+          <text key={d.date} x={x(i)} y={H - 8} textAnchor="middle" fontSize="11" fill="#77837c">{d.date.slice(5)}</text>
         ))}
-        <path d={`${path} L${x(daily.length - 1)},${y(min)} L${x(0)},${y(min)} Z`} fill="#7c3aed" opacity="0.08" />
-        <path d={path} fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinejoin="round" />
-        {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={T} y2={H - B} stroke="#94a3b8" strokeDasharray="3 3" />}
-        {hover !== null && <circle cx={x(hover)} cy={y(daily[hover].otif_pct)} r="4.5" fill="#7c3aed" stroke="#fff" strokeWidth="2" />}
-        <circle cx={x(daily.length - 1)} cy={y(daily[daily.length - 1].otif_pct)} r="3.5" fill="#7c3aed" />
+        <path d={`${path} L${x(daily.length - 1)},${y(min)} L${x(0)},${y(min)} Z`} fill="#477866" opacity="0.08" />
+        <path d={path} fill="none" stroke="#477866" strokeWidth="2" strokeLinejoin="round" />
+        {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={T} y2={H - B} stroke="#a0a9a2" strokeDasharray="3 3" />}
+        {hover !== null && <circle cx={x(hover)} cy={y(daily[hover].otif_pct)} r="4.5" fill="#477866" stroke="#fff" strokeWidth="2" />}
+        <circle cx={x(daily.length - 1)} cy={y(daily[daily.length - 1].otif_pct)} r="3.5" fill="#477866" />
       </svg>
       {h && hover !== null && (
-        <div className="absolute pointer-events-none rounded-lg bg-slate-900 text-white text-xs px-2.5 py-1.5 shadow-lg"
+        <div className="absolute pointer-events-none rounded-lg bg-slate-800 text-white text-xs px-2.5 py-1.5 shadow-lg"
           style={{ left: `${(x(hover) / W) * 100}%`, top: 0, transform: `translateX(${hover > daily.length / 2 ? '-105%' : '5%'})` }}>
           <p className="font-medium">{h.date}</p>
           <p>OTIF {h.otif_pct}% · on time {h.on_time_pct}%</p>
