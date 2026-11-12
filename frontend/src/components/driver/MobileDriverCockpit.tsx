@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import type { Driver, Hub, Shipment, Vehicle } from '../../lib/types'
 import { arriveAtStop, deliverShipment, failDelivery, reportDelay as apiReportDelay } from '../../lib/transitApi'
+import { API_V1 } from '../../lib/api'
 
 interface MobileDriverCockpitProps {
   shipments: Shipment[]
@@ -18,7 +19,19 @@ interface QueuedAction {
   shipmentId: number
   payload: any
   timestamp: string
+  lastError?: string // set when the server rejected it on the last sync; kept for retry/review
 }
+
+// Subset of GET /transit/driver/manifest used by the cockpit
+interface ServerManifest {
+  driver_name: string
+  vehicle_id: number | null
+  vehicle_plate: string | null
+  hub_code: string | null
+  stops: Array<Pick<Shipment, 'tracking_number' | 'customer_name' | 'destination_address' | 'latitude' | 'longitude' | 'weight_kg' | 'volume_m3' | 'time_window_start' | 'time_window_end' | 'priority' | 'status'> & { shipment_id: number; sequence_index: number }>
+}
+
+const MANIFEST_CACHE_KEY = 'fleet_driver_manifest_cache'
 
 export default function MobileDriverCockpit({
   shipments,
@@ -41,6 +54,42 @@ export default function MobileDriverCockpit({
   const [activeTab, setActiveTab] = useState<'manifest' | 'cockpit' | 'queue'>('cockpit')
   const [actionLoading, setActionLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  // The signed-in driver's manifest from the server (cached for offline use); null in local demo mode
+  const [manifest, setManifest] = useState<ServerManifest | null>(() => {
+    try {
+      const saved = localStorage.getItem(MANIFEST_CACHE_KEY)
+      return saved ? JSON.parse(saved) : null
+    } catch {
+      return null
+    }
+  })
+  // Status changes made on this device, applied on top of the server manifest
+  const [localStatus, setLocalStatus] = useState<Record<number, Shipment['status']>>({})
+
+  useEffect(() => {
+    if (!authToken) return
+    let cancelled = false
+    fetch(`${API_V1}/transit/driver/manifest`, { headers: { Authorization: `Bearer ${authToken}` } })
+      .then(res => (res.ok ? res.json() : null))
+      .then((data: ServerManifest | null) => {
+        if (cancelled || !data) return
+        setManifest(data)
+        setLocalStatus({})
+        try { localStorage.setItem(MANIFEST_CACHE_KEY, JSON.stringify(data)) } catch { /* storage unavailable */ }
+      })
+      .catch(() => { /* offline: keep the cached manifest */ })
+    return () => { cancelled = true }
+  }, [authToken])
+
+  function updateStatus(id: number, status: Shipment['status']) {
+    setLocalStatus(prev => ({ ...prev, [id]: status }))
+    onUpdateShipmentStatus(id, status)
+  }
+
+  const driverName = manifest?.driver_name ?? driver?.full_name ?? null
+  const vehiclePlate = manifest?.vehicle_plate ?? vehicle?.plate_number ?? null
+  const hubCode = manifest?.hub_code ?? hub?.code ?? null
 
   // Delivery Modal
   const [deliverModalStop, setDeliverModalStop] = useState<Shipment | null>(null)
@@ -78,12 +127,23 @@ export default function MobileDriverCockpit({
   }, [offlineQueue, authToken])
 
   // Driver stops for assigned vehicle
-  const assignedStops = useMemo(() => {
+  const assignedStops = useMemo<Shipment[]>(() => {
+    if (manifest) {
+      return [...manifest.stops]
+        .sort((a, b) => a.sequence_index - b.sequence_index)
+        .map(st => ({
+          ...st,
+          id: st.shipment_id,
+          hub_id: 0,
+          assigned_vehicle_id: manifest.vehicle_id,
+          status: localStatus[st.shipment_id] ?? st.status,
+        }))
+    }
     if (!vehicle) return []
     return shipments
       .filter(s => s.assigned_vehicle_id === vehicle.id)
       .sort((a, b) => a.time_window_start.localeCompare(b.time_window_start))
-  }, [shipments, vehicle])
+  }, [manifest, localStatus, shipments, vehicle])
 
   const nextStop = assignedStops.find(s => s.status === 'ASSIGNED' || s.status === 'IN_TRANSIT' || s.status === 'ARRIVED') ?? null
   const completedCount = assignedStops.filter(s => s.status === 'DELIVERED').length
@@ -92,16 +152,17 @@ export default function MobileDriverCockpit({
   // Batch sync offline queue to backend
   async function syncOfflineQueue() {
     if (offlineQueue.length === 0 || !authToken) return
+    const sent = offlineQueue
     setActionLoading(true)
     try {
-      const res = await fetch('/api/v1/transit/driver/offline-sync', {
+      const res = await fetch(`${API_V1}/transit/driver/offline-sync`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${authToken}`,
         },
         body: JSON.stringify({
-          actions: offlineQueue.map(a => ({
+          actions: sent.map(a => ({
             action_id: a.id,
             action_type: a.actionType,
             shipment_id: a.shipmentId,
@@ -112,12 +173,26 @@ export default function MobileDriverCockpit({
       })
 
       if (res.ok) {
-        const data = await res.json()
-        setOfflineQueue([])
-        setActionMessage({
-          type: 'success',
-          text: `Synced ${data.applied_count} offline actions successfully!`,
-        })
+        const data: { applied_count: number; failed_count: number; results: Array<{ action_id: string; success: boolean; error?: string | null }> } = await res.json()
+        const outcome = new Map(data.results.map(r => [r.action_id, r]))
+        const sentIds = new Set(sent.map(a => a.id))
+        // Remove only what the server applied; rejected actions stay queued with their error.
+        // Actions queued while this request was in flight are left untouched.
+        setOfflineQueue(prev => prev.flatMap(a => {
+          if (!sentIds.has(a.id)) return [a]
+          const r = outcome.get(a.id)
+          if (r?.success) return []
+          return [{ ...a, lastError: r?.error ?? 'Not processed by server' }]
+        }))
+        if (data.failed_count > 0) {
+          const firstError = data.results.find(r => !r.success)?.error
+          setActionMessage({
+            type: 'error',
+            text: `Synced ${data.applied_count}; ${data.failed_count} action(s) were rejected and kept in the queue${firstError ? `: ${firstError}` : ''}`,
+          })
+        } else {
+          setActionMessage({ type: 'success', text: `Synced ${data.applied_count} offline actions successfully!` })
+        }
       }
     } catch (err: any) {
       console.error('Offline sync error:', err)
@@ -136,15 +211,15 @@ export default function MobileDriverCockpit({
     if (isOnline && authToken) {
       try {
         await arriveAtStop(s.id, lat, lng, 'Driver checked in on mobile', authToken)
-        onUpdateShipmentStatus(s.id, 'ARRIVED')
+        updateStatus(s.id, 'ARRIVED')
         setActionMessage({ type: 'success', text: `Checked in at ${s.customer_name}!` })
       } catch (err: any) {
         queueOfflineAction('ARRIVE', s.id, { latitude: lat, longitude: lng, notes: 'Queued arrive' })
-        onUpdateShipmentStatus(s.id, 'ARRIVED')
+        updateStatus(s.id, 'ARRIVED')
       }
     } else {
       queueOfflineAction('ARRIVE', s.id, { latitude: lat, longitude: lng, notes: 'Queued arrive' })
-      onUpdateShipmentStatus(s.id, 'ARRIVED')
+      updateStatus(s.id, 'ARRIVED')
     }
     setActionLoading(false)
   }
@@ -160,15 +235,15 @@ export default function MobileDriverCockpit({
     if (isOnline && authToken) {
       try {
         await deliverShipment(s.id, recipient, sig, 'Handed over on mobile cockpit', authToken)
-        onUpdateShipmentStatus(s.id, 'DELIVERED')
+        updateStatus(s.id, 'DELIVERED')
         setActionMessage({ type: 'success', text: `Delivered to ${recipient}!` })
       } catch (err: any) {
         queueOfflineAction('DELIVER', s.id, { recipient_name: recipient, signature_text: sig })
-        onUpdateShipmentStatus(s.id, 'DELIVERED')
+        updateStatus(s.id, 'DELIVERED')
       }
     } else {
       queueOfflineAction('DELIVER', s.id, { recipient_name: recipient, signature_text: sig })
-      onUpdateShipmentStatus(s.id, 'DELIVERED')
+      updateStatus(s.id, 'DELIVERED')
     }
 
     setDeliverModalStop(null)
@@ -186,15 +261,15 @@ export default function MobileDriverCockpit({
     if (isOnline && authToken) {
       try {
         await failDelivery(s.id, failReason as any, failNotes || 'Mobile reported issue', authToken)
-        onUpdateShipmentStatus(s.id, 'FAILED')
+        updateStatus(s.id, 'FAILED')
         setActionMessage({ type: 'error', text: `Marked stop failed: ${failReason}` })
       } catch (err: any) {
         queueOfflineAction('FAIL', s.id, { reason_code: failReason, notes: failNotes })
-        onUpdateShipmentStatus(s.id, 'FAILED')
+        updateStatus(s.id, 'FAILED')
       }
     } else {
       queueOfflineAction('FAIL', s.id, { reason_code: failReason, notes: failNotes })
-      onUpdateShipmentStatus(s.id, 'FAILED')
+      updateStatus(s.id, 'FAILED')
     }
 
     setFailModalStop(null)
@@ -239,15 +314,15 @@ export default function MobileDriverCockpit({
       <header className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-bold text-sm">
-            {driver?.full_name ? driver.full_name.slice(0, 2).toUpperCase() : 'DR'}
+            {driverName ? driverName.slice(0, 2).toUpperCase() : 'DR'}
           </div>
           <div>
             <h1 className="text-sm font-bold text-white flex items-center gap-1.5">
-              {driver?.full_name || 'Driver Rajesh'}
+              {driverName || 'Driver'}
               <span className={`inline-block w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
             </h1>
             <p className="text-[11px] text-slate-400">
-              {vehicle?.plate_number || 'MH-02-TR-7001'} · {hub?.code || 'HUB-MUM-01'}
+              {vehiclePlate || 'No vehicle'} · {hubCode || '—'}
             </p>
           </div>
         </div>
@@ -257,9 +332,11 @@ export default function MobileDriverCockpit({
             <button
               onClick={syncOfflineQueue}
               disabled={actionLoading}
+              title={offlineQueue.filter(a => a.lastError).map(a => `${a.actionType} #${a.shipmentId}: ${a.lastError}`).join('\n') || 'Tap to sync now'}
               className="px-2 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-semibold flex items-center gap-1"
             >
               <span>⚡</span> {offlineQueue.length} queued
+              {offlineQueue.some(a => a.lastError) && <span className="text-rose-300">· {offlineQueue.filter(a => a.lastError).length} rejected</span>}
             </button>
           )}
           {onClose && (
@@ -382,7 +459,7 @@ export default function MobileDriverCockpit({
             <span className="text-3xl">🎉</span>
             <h3 className="text-sm font-bold text-white mt-2">All Assigned Stops Completed</h3>
             <p className="text-xs text-slate-400 mt-1">
-              You have completed all scheduled deliveries. You may return to {hub?.code || 'the depot'}.
+              You have completed all scheduled deliveries. You may return to {hubCode || 'the depot'}.
             </p>
           </div>
         )}

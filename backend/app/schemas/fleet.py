@@ -89,6 +89,7 @@ class DriverBase(BaseModel):
     phone_number: str = Field(..., min_length=5, max_length=50)
     status: DriverStatus = DriverStatus.OFF_DUTY
     max_driving_hours_per_day: float = Field(default=8.0, gt=0, le=14)
+    hazmat_endorsed: bool = Field(default=False, description="Verified dangerous-goods endorsement (SOP-HZ-001 §2)")
     assigned_hub_id: int
     user_id: Optional[int] = None
     current_vehicle_id: Optional[int] = None

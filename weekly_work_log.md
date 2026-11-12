@@ -240,16 +240,52 @@
    - **Combined Full Suite**: **122 / 122 passed (100% pass rate)**.
    - Frontend production build (`pnpm run build`): **Built cleanly in 860ms with 0 errors**.
 
+---
+
+### Weeks 7–16 (Track A): Route Planner, Optimization Agent, Live ETAs, Reports & Release — delivered Nov 12, 2026
+- **Status**: Track A `COMPLETED` ✅ (Weeks 7–10 on schedule; Weeks 11–16 delivered early). Track B Weeks 7–16 continue on their own schedule.
+- **Focus Area**: Turning the Week 6 solver into a dispatcher workflow (plan → re-order → explain → approve → track), an agent that re-plans after disruptions, live SLA alerts, operational reporting, and a containerised backend.
+
+#### Track A (Manthan Nimodiya):
+1. **Week 7: Route visualizer & split manifest** (`frontend/src/components/routes/`)
+   - New **Route Planner** page: choose hub, departure time, orders and vehicles, then optimize.
+   - Colour-coded polylines and numbered pins per vehicle (`RoutePlanMap.tsx`); hovering a manifest fades the other routes.
+   - Manifest per vehicle with driver, capacity bar, km, duration, return time and per-stop ETA/window; headline km vs separate trips.
+2. **Week 8: Drag-and-drop resequencing**
+   - Drag stops within or between vehicles (▲/▼ buttons as a keyboard fallback). ETAs update instantly in the browser and are confirmed by `POST /api/v1/routes/evaluate`.
+   - Violation badges for late stops, over-capacity and over-shift routes.
+   - **Approve & dispatch** assigns the shipments, sets vehicles IN_TRANSIT and drivers ON_TRIP, and Live Tracking follows the approved order (`route_sequence`).
+3. **Week 9: Optimization Agent** (`backend/app/services/copilot/optimization_agent.py`)
+   - Tool-calling agent with three JSON-schema tools: `reassign_stops`, `apply_delay`, `reoptimize_route`.
+   - Deterministic planner by default (Router Agent intent + breakdown/delay parsing); optional Claude planner when `ANTHROPIC_API_KEY` is set and the `anthropic` package is installed.
+   - Breakdown handling: cheapest feasible insertion into the other vehicles, then spare vehicles at the hub; anything impossible is reported by stop name with the reason.
+   - `POST /api/v1/routes/disruption` returns a proposal the dispatcher approves or declines (UI: "What if it breaks down?" and "Ask the optimization agent").
+4. **Week 10: Downstream ETA recalculation** (`backend/app/services/optimizer/eta_engine.py`)
+   - Completed stops keep their actual times; a delay shifts the next stop and later stops absorb it where they were waiting for a window to open.
+   - `POST /api/v1/routes/recalculate`; Live Tracking shows an "ETAs updated" toast.
+5. **Week 11: RAG route explanations** (`backend/app/services/optimizer/route_explainer.py`)
+   - Route summary, a reason for every stop, and driver instructions (direction, km, minutes, arrival and hand-over times).
+   - Built only from computed ETAs plus SOP clauses retrieved from the RAG store, with citations. `POST /api/v1/routes/explain`.
+6. **Week 12: SLA breach detection & alerts**
+   - SLA classes ON_TIME / AT_RISK (15 min margin) / PREDICTED_BREACH / SLA_BREACHED / FAILED; trip states ROUTE_BLOCKED and ROUTE_PROPOSED.
+   - `POST /api/v1/routes/sla-check` (worst first); Live Tracking toasts for predicted breach, breach and blocked route, with an optional alert tone (`SlaAlerts.tsx`).
+7. **Week 13: Operational metrics engine** (`backend/app/services/analytics/`)
+   - OTIF, on-time %, SLA breaches, transit time, route efficiency, fuel burn, cost per tonne-km, utilisation; by hub and vehicle type.
+   - 30 days of dispatch history replayed through the real solver and ETA engine (seeded, repeatable).
+   - `GET /api/v1/reports/metrics` with days / hub / vehicle type / driver / fuel price / driver cost filters; **Reports** page with KPI tiles and an OTIF-by-day chart.
+8. **Week 14: Exports**: `GET /api/v1/reports/export.csv` and `GET /api/v1/reports/summary.pdf` (ReportLab), wired to export buttons that respect the filters.
+9. **Week 15: Benchmarks & hardening**: `python -m scripts.benchmark` (all PRD targets pass: VRPTW 50 stops ≈ 3 ms vs < 5 s; RAG search < 1 ms vs < 100 ms; agent re-route ≈ 5–17 ms vs < 3 s); composite indexes on vehicles and drivers; `test_performance.py`.
+10. **Week 16: Backend Docker & Postgres**: multi-stage `backend/Dockerfile` (non-root, healthcheck), `docker-compose.yml` with `postgres:16-alpine`, entrypoint that waits for the DB, creates tables, migrates and seeds; OpenAPI tags and descriptions at `/docs`.
+11. **Fixes found while integrating with Week 6 Track B**
+   - Live Tracking crashed because `TrackingMap` was missing the `insets` prop; the shipment status map was missing `ARRIVED`. Both fixed.
+   - Driver actions on trips dispatched from the browser were rejected by the server FSM (shipment still UNASSIGNED there) and silently did nothing. Server sync is now best-effort: the simulation always updates and a server rejection is shown as a notice.
+12. **Testing**: `test_route_operations.py` (27), `test_reports.py` (8), `test_performance.py` (3). **Full suite: 164 / 164 passed**; frontend `tsc` 0 errors, `pnpm build` clean; flows verified in the browser (optimize, re-order, breakdown proposal, explain, dispatch, delay → ETA and SLA toasts, reports filters and exports, driver role).
 
 ---
 
 ### Week 7: Map Polylines & Guardrails (Oct 19 – Oct 23, 2026) — COMPLETED ✅
-- **Status**: `COMPLETED` ✅ (Track B Implemented; Track A Mock Interfaces Provided)
+- **Status**: `COMPLETED` ✅ (Track B; Track A is covered in the Weeks 7–16 entry above)
 - **Focus Area**: Interactive Route Polylines visualizer & Split Manifest view on Leaflet canvas vs. Zero-Hallucination Guardrails & RAG Similarity confidence scoring (US-004 & US-006).
-
-#### Track A (Manthan Nimodiya - Mock/Stub Interfaces per Choice A2):
-1. **Mock Route Visualizer (`backend/app/services/optimizer/mock_stubs.py`, `frontend/src/lib/trackA_stubs.ts`)**:
-   - `MockRouteVisualizer`: Multi-vehicle route polyline payload structure with sequenced stop pins and vehicle capacity percentage progress bars.
 
 #### Track B (Abhayraj Jaiswal):
 1. **Zero-Hallucination Guardrail Engine (`backend/app/services/copilot/guardrails.py`)**:
@@ -268,34 +304,27 @@
 ---
 
 ### Week 8: Resequencing & Policy Agent (Oct 26 – Oct 30, 2026) — COMPLETED ✅
-- **Status**: `COMPLETED` ✅ (Track B Implemented; Track A Mock Interfaces Provided)
+- **Status**: `COMPLETED` ✅ (Track B; Track A is covered in the Weeks 7–16 entry above)
 - **Focus Area**: Drag-and-Drop Route Resequencing UI and recalculation API vs. Policy & Compliance Agent integrating labor laws and Hazmat verification (US-006 & US-007).
-
-#### Track A (Manthan Nimodiya - Mock/Stub Interfaces per Choice A2):
-1. **Mock Route Resequencer (`backend/app/services/optimizer/mock_stubs.py`, `frontend/src/lib/trackA_stubs.ts`)**:
-   - `MockRouteResequencer`: Stop re-ordering payload contract, arrival ETA delta recalculation, and capacity/time window breach detection.
 
 #### Track B (Abhayraj Jaiswal):
 1. **Policy & Compliance Agent (`backend/app/services/copilot/policy_agent.py`)**:
    - Multi-regulatory automated route validation engine (`PolicyComplianceAgent.evaluate_manifest`).
    - **Driver Hours of Service (HOS)**: Validates continuous driving (<= 8h), total shift duty (<= 10h), and daily spread (<= 14h) per Motor Transport Workers Act 1961 (`SOP-DR-001 §2`).
    - **Vehicle Payload & Volumetric Capacity**: Detects vehicle overload violations against certified gross vehicle limits per `SOP-VS-001 §1`.
-   - **Hazardous Materials (Hazmat)**: Enforces driver commercial transport endorsements and CMVR Rule 132/137 certifications for Hazmat cargo per `SOP-HZ-001 §2`.
+   - **Hazardous Materials (Hazmat)**: Hazmat cargo is identified by its UN `hazard_class`; the driver must have a verified `hazmat_endorsed` qualification (`SOP-HZ-001 §2`), and Class 3 / Class 8 goods may not be co-loaded (`SOP-HZ-001 §5`).
+   - **Incomplete manifests**: unknown vehicle, driver or shipment IDs are rejected (HTTP 422); with no driver the result is marked incomplete and never compliant.
    - **Cold Chain Holdover**: Detects perishable consignment transit durations exceeding active refrigeration holdover window (180 mins) per `SOP-CC-001 §5`.
 2. **RESTful Policy Validation Endpoint (`backend/app/api/v1/copilot.py`)**:
    - `POST /api/v1/copilot/policy/validate-route`: Dispatcher-authenticated endpoint returning overall compliance score (0–100%), violation severity breakdown (LOW / MEDIUM / HIGH / CRITICAL), and cited SOP rules.
 3. **Automated Unit Tests (`backend/tests/test_policy_agent.py`)**:
-   - 6 comprehensive unit tests verifying 100% scores for compliant manifests, precise HOS violations, overload detections, hazmat non-endorsement blocks, cold chain limits, and REST API access controls.
+   - 12 tests: compliant manifests, HOS, overload, hazmat classification and endorsement, incompatible co-loading, cold chain, unresolved IDs, missing driver, and the REST endpoint.
 
 ---
 
 ### Week 9: Optimization Agent & Driver Mobile View (Nov 2 – Nov 6, 2026) — COMPLETED ✅
-- **Status**: `COMPLETED` ✅ (Track B Implemented; Track A Mock Interfaces Provided)
+- **Status**: `COMPLETED` ✅ (Track B; Track A is covered in the Weeks 7–16 entry above)
 - **Focus Area**: LangGraph Optimization Agent (Solver Tool) vs. Mobile Driver View & Offline Sync Action API (US-005 & US-008).
-
-#### Track A (Manthan Nimodiya - Mock/Stub Interfaces per Choice A2):
-1. **Mock Optimization Agent Tool (`backend/app/services/optimizer/mock_stubs.py`, `frontend/src/lib/trackA_stubs.ts`)**:
-   - `MockOptimizationAgentTool`: Generates structured disruption recovery proposals for vehicle breakdowns and route closures.
 
 #### Track B (Abhayraj Jaiswal):
 1. **Mobile Driver Cockpit (`frontend/src/components/driver/MobileDriverCockpit.tsx`)**:
@@ -303,22 +332,18 @@
    - Today's sequenced stop manifest with customer contact, phone dialer shortcut, address, and package details.
    - Large, thumb-friendly driver action bar (`ARRIVED`, `DELIVERED`, `REPORT ISSUE / DELAY / FAIL`).
    - LocalStorage offline action queue storing driver transitions when disconnected in rural or poor-connectivity zones.
-   - Automatic background replay sync on network reconnection with visual online/offline status pill.
+   - Automatic background replay sync on network reconnection with visual online/offline status pill; actions the server rejects stay in the queue with the error shown.
 2. **Backend Mobile Transit Endpoints (`backend/app/api/v1/transit.py`)**:
-   - `GET /api/v1/transit/driver/manifest`: Returns driver vehicle, depot, assigned shipments, and sync token.
+   - `GET /api/v1/transit/driver/manifest`: Returns the signed-in driver's own vehicle, depot, shipments and sync token (resolved via the account link; 403 if no driver record matches, never another driver's data). The cockpit loads it and caches it for offline use.
    - `POST /api/v1/transit/driver/offline-sync`: Batch-replays queued client actions (`ARRIVE`, `DELIVER`, `FAIL`, `DELAY`) with per-action atomic error isolation and audit log sync.
 3. **Automated Unit Tests (`backend/tests/test_mobile_driver_api.py`)**:
-   - 4 comprehensive tests verifying driver manifest retrieval, batch offline sync replay, partial failure isolation, and mock solver integration.
+   - 6 tests: manifest retrieval, no fallback to another driver's manifest, ARRIVE/DELIVER and FAIL/DELAY replay, and partial-failure isolation.
 
 ---
 
 ### Week 10: Downstream ETAs & Copilot Sliding Drawer UI (Nov 9 – Nov 13, 2026) — COMPLETED ✅
-- **Status**: `COMPLETED` ✅ (Track B Implemented; Track A Mock Interfaces Provided)
+- **Status**: `COMPLETED` ✅ (Track B; Track A is covered in the Weeks 7–16 entry above)
 - **Focus Area**: Downstream ETA Dynamic Recalculation vs. AI Copilot Sliding Drawer UI & Execution Traces (US-005 & US-007).
-
-#### Track A (Manthan Nimodiya - Mock/Stub Interfaces per Choice A2):
-1. **Mock Downstream ETA Calculator (`backend/app/services/optimizer/mock_stubs.py`, `frontend/src/lib/trackA_stubs.ts`)**:
-   - `MockDownstreamETACalculator`: Computes cumulative delay ripple effects and predicts SLA breach risks on subsequent stops.
 
 #### Track B (Abhayraj Jaiswal):
 1. **AI Copilot Sliding Drawer Component (`frontend/src/components/copilot/CopilotSlidingDrawer.tsx`)**:
@@ -330,9 +355,9 @@
    - Zero-hallucination verification badges with expandable SOP citations.
 2. **App Shell Integration (`frontend/src/App.tsx`)**:
    - Mounted `<CopilotSlidingDrawer />` across all views with dynamic role passing.
-   - Added Driver view switcher between Mobile Cockpit and Live Map.
+   - Driver header toggle between *My stops* (mobile cockpit) and *Map* (Live Tracking).
 3. **Tracking Map Crash Hotfix**:
    - Resolved undefined `insets.left` map crash on Driver profile and added `'ARRIVED'` transition to `advanceFSM` (commit `fbbe588`).
 4. **Verification & Testing**:
-   - **Full Backend Pytest Suite**: **141 / 141 passed (100%) in 15s**.
-   - **Frontend Production Build**: `pnpm run build` completed cleanly in 832ms with **0 errors**.
+   - **Full Backend Pytest Suite (after merging Track A Weeks 7–16)**: **187 / 187 passed**.
+   - **Frontend**: `tsc` 0 errors, production build clean.

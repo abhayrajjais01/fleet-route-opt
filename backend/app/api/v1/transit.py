@@ -14,6 +14,7 @@ Exposes RESTful endpoints for driver actions:
 
 from typing import Dict, List
 from fastapi import APIRouter, Depends, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -40,6 +41,7 @@ from app.schemas.transit import (
     DriverOfflineSyncResponse,
     DriverOfflineSyncResultItem,
     DriverOfflineActionType,
+    TransitFailureReason,
 )
 from app.services.transit_fsm import TransitFSMService, VALID_FSM_TRANSITIONS
 
@@ -246,13 +248,18 @@ def get_driver_mobile_manifest(
     # 1. Resolve Driver entity
     driver: Optional[Driver] = None
     if current_user.role == UserRole.DRIVER:
-        # Match driver by user full name
-        driver = db.query(Driver).filter(
-            Driver.full_name.ilike(f"%{current_user.full_name.strip()}%")
-        ).first()
+        # A driver only ever sees their own manifest: resolve by the explicit account link,
+        # else by an exact (case-insensitive) name match. Never fall back to another driver.
+        driver = db.query(Driver).filter(Driver.user_id == current_user.id).first()
         if not driver:
-            # Fallback to first on-duty driver
-            driver = db.query(Driver).first()
+            driver = db.query(Driver).filter(
+                func.lower(func.trim(Driver.full_name)) == current_user.full_name.strip().lower()
+            ).first()
+        if not driver:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No driver record is linked to this account.",
+            )
     elif driver_id is not None:
         driver = db.query(Driver).filter(Driver.id == driver_id).first()
     else:
@@ -404,7 +411,7 @@ def sync_driver_offline_actions(
                 applied_count += 1
 
             elif action.action_type == DriverOfflineActionType.FAIL:
-                reason = action.payload.get("reason_code", "OTHER")
+                reason = TransitFailureReason(action.payload.get("reason_code", TransitFailureReason.OTHER.value))
                 notes = action.payload.get("notes", "Offline reported failure")
                 res = TransitFSMService.fail_delivery(
                     db=db,
@@ -427,7 +434,7 @@ def sync_driver_offline_actions(
             elif action.action_type == DriverOfflineActionType.DELAY:
                 minutes = int(action.payload.get("delay_minutes", 15))
                 reason = action.payload.get("reason", "Offline logged delay")
-                res = TransitFSMService.report_transit_delay(
+                res = TransitFSMService.report_delay(
                     db=db,
                     shipment_id=action.shipment_id,
                     actor=current_user,

@@ -103,6 +103,9 @@ class SOPRuleCitation(BaseModel):
 
 class PolicyComplianceReport(BaseModel):
     is_compliant: bool
+    # False when a check could not run (e.g. no driver assigned); never compliant then
+    evaluation_complete: bool = True
+    skipped_checks: List[str] = Field(default_factory=list)
     compliance_score_pct: float
     violations_count: int
     critical_violations_count: int

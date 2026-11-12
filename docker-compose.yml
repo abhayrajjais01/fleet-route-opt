@@ -1,0 +1,37 @@
+# ─── AI Fleet Route Optimizer · local stack ─────────────────────────────────────
+# Week 16 Track A: PostgreSQL + FastAPI backend.  Usage:  docker compose up --build
+# Track B (Abhayraj) adds the frontend service and CI on top of this file.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fleet
+      POSTGRES_PASSWORD: fleet_local_only
+      POSTGRES_DB: fleet_opt
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fleet -d fleet_opt"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # No host port: only the backend talks to the database. Uncomment to inspect it locally
+    # (pick another host port if a local PostgreSQL already uses 5432).
+    # ports:
+    #   - "5433:5432"
+
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://fleet:fleet_local_only@db:5432/fleet_opt
+      SECRET_KEY: ${SECRET_KEY:-change-me-for-anything-but-local-demo}
+      SEED_DEMO_DATA: "true"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:

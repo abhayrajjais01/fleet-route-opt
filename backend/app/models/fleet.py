@@ -16,6 +16,9 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     CheckConstraint,
+    Index,
+    Boolean,
+    false,
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -109,6 +112,8 @@ class Vehicle(Base, TimestampMixin):
         CheckConstraint("max_payload_kg > 0", name="chk_vehicle_payload"),
         CheckConstraint("max_volume_m3 > 0", name="chk_vehicle_volume"),
         CheckConstraint("fuel_efficiency_kpl > 0", name="chk_vehicle_fuel"),
+        # Week 15: planner and optimizer look up "available vehicles at hub X" on every request
+        Index("ix_vehicles_hub_status", "assigned_hub_id", "current_status"),
     )
 
     # Relational mappings
@@ -134,6 +139,9 @@ class Driver(Base, TimestampMixin):
     phone_number = Column(String(50), nullable=False)
     status = Column(Enum(DriverStatus), default=DriverStatus.OFF_DUTY, nullable=False)
     max_driving_hours_per_day = Column(Float, default=8.0, nullable=False) # DOT Hours of Service limit
+    # Verified dangerous-goods endorsement + training certificate (SOP-HZ-001 §2). A plain
+    # COMMERCIAL licence is not enough to carry hazmat.
+    hazmat_endorsed = Column(Boolean, default=False, server_default=false(), nullable=False)
 
     assigned_hub_id = Column(Integer, ForeignKey("hubs.id", ondelete="CASCADE"), nullable=False)
     current_vehicle_id = Column(Integer, ForeignKey("vehicles.id", ondelete="SET NULL"), nullable=True)
@@ -141,6 +149,8 @@ class Driver(Base, TimestampMixin):
     # SQL Constraint enforcing legal DOT maximum daily driving hour boundaries (1 to 14 hrs)
     __table_args__ = (
         CheckConstraint("max_driving_hours_per_day > 0 AND max_driving_hours_per_day <= 14", name="chk_driver_hours"),
+        # Week 15: "on-duty drivers at hub X" lookup for driver assignment
+        Index("ix_drivers_hub_status", "assigned_hub_id", "status"),
     )
 
     # Relational mappings

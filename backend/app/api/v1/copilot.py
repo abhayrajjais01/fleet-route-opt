@@ -22,7 +22,7 @@ from app.schemas.copilot import (
     RouteComplianceRequest,
 )
 from app.services.copilot.guardrails import evaluate_rag_guardrail, DEFAULT_GUARDRAIL_THRESHOLD
-from app.services.copilot.policy_agent import PolicyComplianceAgent
+from app.services.copilot.policy_agent import PolicyComplianceAgent, UnresolvedManifestError
 from app.services.copilot.state_graph import get_copilot_graph
 
 router = APIRouter()
@@ -193,10 +193,13 @@ def validate_route_policy_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FLEET_MANAGER, UserRole.DISPATCHER])),
 ) -> PolicyComplianceReport:
-    return PolicyComplianceAgent.evaluate_manifest(
-        db=db,
-        vehicle_id=request.vehicle_id,
-        driver_id=request.driver_id,
-        shipment_ids=request.shipment_ids,
-        estimated_duration_minutes=request.estimated_duration_minutes,
-    )
+    try:
+        return PolicyComplianceAgent.evaluate_manifest(
+            db=db,
+            vehicle_id=request.vehicle_id,
+            driver_id=request.driver_id,
+            shipment_ids=request.shipment_ids,
+            estimated_duration_minutes=request.estimated_duration_minutes,
+        )
+    except UnresolvedManifestError as err:
+        raise HTTPException(status_code=422, detail=str(err))

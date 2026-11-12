@@ -261,3 +261,45 @@ def test_trackA_mock_stubs():
     assert ripple[0].predicted_eta_min == 630
     assert ripple[0].sla_breach is True
 
+
+
+def test_driver_manifest_never_falls_back_to_another_driver(client, driver_env):
+    """A driver account with no matching driver record is rejected, not shown someone else's stops."""
+    db = driver_env["db"]
+    stranger = User(
+        email="driver_unlinked@fleet.io",
+        hashed_password=hash_password("password123"),
+        full_name="Unlinked Person",
+        role=UserRole.DRIVER,
+        is_active=True,
+    )
+    db.add(stranger)
+    db.commit()
+    token = create_access_token({"sub": stranger.email, "role": stranger.role.value})
+    resp = client.get("/api/v1/transit/driver/manifest", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 403
+
+
+def test_driver_offline_sync_fail_and_delay(client, driver_env):
+    """Queued FAIL and DELAY actions (plain JSON payloads) are applied, not rejected."""
+    s1_id, s2_id = driver_env["s1_id"], driver_env["s2_id"]
+    for sid in (s1_id, s2_id):
+        client.post(f"/api/v1/transit/shipments/{sid}/depart", json={}, headers=driver_env["headers"])
+        client.post(f"/api/v1/transit/shipments/{sid}/arrive", json={}, headers=driver_env["headers"])
+
+    resp = client.post(
+        "/api/v1/transit/driver/offline-sync",
+        json={"actions": [
+            {"action_id": "act-delay", "action_type": "DELAY", "shipment_id": s2_id,
+             "client_timestamp": "2026-11-11T10:00:00Z", "payload": {"delay_minutes": 30, "reason": "Traffic"}},
+            {"action_id": "act-fail", "action_type": "FAIL", "shipment_id": s1_id,
+             "client_timestamp": "2026-11-11T10:05:00Z",
+             "payload": {"reason_code": "CONSIGNEE_UNAVAILABLE", "notes": "Shop closed"}},
+        ]},
+        headers=driver_env["headers"],
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["failed_count"] == 0, data["results"]
+    assert data["applied_count"] == 2
+    assert data["results"][1]["new_status"] == "FAILED"

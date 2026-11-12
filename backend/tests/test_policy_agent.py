@@ -22,7 +22,7 @@ from app.core.security import hash_password, create_access_token
 from app.models.user import User, UserRole
 from app.models.fleet import Hub, Vehicle, VehicleStatus, VehicleType, Driver, DriverStatus, LicenseType
 from app.models.shipment import Shipment, ShipmentStatus, ShipmentPriority
-from app.services.copilot.policy_agent import PolicyComplianceAgent, ViolationSeverity
+from app.services.copilot.policy_agent import PolicyComplianceAgent, UnresolvedManifestError, ViolationSeverity
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 engine = create_engine(
@@ -148,6 +148,22 @@ def policy_env():
             time_window_start="08:00",
             time_window_end="11:00",
             priority=ShipmentPriority.EXPRESS,
+            hazard_class="3",
+            status=ShipmentStatus.ASSIGNED,
+            hub_id=hub.id,
+        )
+        s_corrosive = Shipment(
+            tracking_number="SHP-POL-05",
+            customer_name="Acme Industrial Supply",
+            destination_address="Thane West, Mumbai",
+            latitude=19.2000,
+            longitude=72.9700,
+            weight_kg=120.0,
+            volume_m3=0.6,
+            time_window_start="09:00",
+            time_window_end="12:00",
+            priority=ShipmentPriority.STANDARD,
+            hazard_class="8",
             status=ShipmentStatus.ASSIGNED,
             hub_id=hub.id,
         )
@@ -165,7 +181,7 @@ def policy_env():
             status=ShipmentStatus.ASSIGNED,
             hub_id=hub.id,
         )
-        db.add_all([s_normal, s_heavy, s_hazmat, s_cold_chain])
+        db.add_all([s_normal, s_heavy, s_hazmat, s_corrosive, s_cold_chain])
         db.commit()
 
         token = create_access_token({"sub": dispatcher.email, "role": dispatcher.role.value})
@@ -180,6 +196,7 @@ def policy_env():
             "s_normal_id": s_normal.id,
             "s_heavy_id": s_heavy.id,
             "s_hazmat_id": s_hazmat.id,
+            "s_corrosive_id": s_corrosive.id,
             "s_cold_chain_id": s_cold_chain.id,
         }
     finally:
@@ -305,3 +322,89 @@ def test_policy_validate_route_endpoint(client, policy_env):
     assert data["violations_count"] >= 1
     assert any(v["rule_code"] == "PAYLOAD_CAPACITY_EXCEEDED" for v in data["violations"])
     assert len(data["cited_rules"]) > 0
+
+
+def test_hazmat_detected_from_hazard_class_not_customer_text(policy_env):
+    """A classified shipment with an ordinary name is still treated as hazmat."""
+    db = policy_env["db"]
+    report = PolicyComplianceAgent.evaluate_manifest(
+        db=db,
+        vehicle_id=policy_env["v_large_id"],
+        driver_id=policy_env["d_std_id"],
+        shipment_ids=[policy_env["s_corrosive_id"]],
+        estimated_duration_minutes=120.0,
+    )
+    assert "HAZMAT_DRIVER_UNENDORSED" in [v.rule_code for v in report.violations]
+
+
+def test_commercial_licence_without_endorsement_is_not_hazmat_certified(policy_env):
+    """A COMMERCIAL licence alone does not satisfy SOP-HZ-001 §2; an endorsement does."""
+    db = policy_env["db"]
+    args = dict(
+        db=db,
+        vehicle_id=policy_env["v_large_id"],
+        driver_id=policy_env["d_comm_id"],
+        shipment_ids=[policy_env["s_hazmat_id"]],
+        estimated_duration_minutes=120.0,
+    )
+    report = PolicyComplianceAgent.evaluate_manifest(**args)
+    assert "HAZMAT_DRIVER_UNENDORSED" in [v.rule_code for v in report.violations]
+
+    driver = db.get(Driver, policy_env["d_comm_id"])
+    driver.hazmat_endorsed = True
+    db.commit()
+    report = PolicyComplianceAgent.evaluate_manifest(**args)
+    assert "HAZMAT_DRIVER_UNENDORSED" not in [v.rule_code for v in report.violations]
+
+
+def test_incompatible_hazmat_coload_violation(policy_env):
+    """Class 3 and Class 8 in the same load violate SOP-HZ-001 §5 even with an endorsed driver."""
+    db = policy_env["db"]
+    driver = db.get(Driver, policy_env["d_comm_id"])
+    driver.hazmat_endorsed = True
+    db.commit()
+    report = PolicyComplianceAgent.evaluate_manifest(
+        db=db,
+        vehicle_id=policy_env["v_large_id"],
+        driver_id=policy_env["d_comm_id"],
+        shipment_ids=[policy_env["s_hazmat_id"], policy_env["s_corrosive_id"]],
+        estimated_duration_minutes=120.0,
+    )
+    assert report.is_compliant is False
+    seg = [v for v in report.violations if v.rule_code == "HAZMAT_INCOMPATIBLE_COLOAD"]
+    assert seg and seg[0].sop_section == "§5"
+
+
+def test_unresolved_references_are_rejected(policy_env):
+    """Unknown vehicle, driver or shipment IDs are never certified compliant."""
+    db = policy_env["db"]
+    for kwargs in (
+        dict(vehicle_id=99999, driver_id=policy_env["d_std_id"], shipment_ids=[policy_env["s_normal_id"]]),
+        dict(vehicle_id=policy_env["v_small_id"], driver_id=99999, shipment_ids=[policy_env["s_normal_id"]]),
+        dict(vehicle_id=policy_env["v_small_id"], driver_id=policy_env["d_std_id"], shipment_ids=[policy_env["s_normal_id"], 99999]),
+    ):
+        with pytest.raises(UnresolvedManifestError):
+            PolicyComplianceAgent.evaluate_manifest(db=db, estimated_duration_minutes=60.0, **kwargs)
+
+
+def test_missing_driver_reports_incomplete_evaluation(policy_env):
+    """Without a driver the HOS checks cannot run, so the manifest is not reported compliant."""
+    report = PolicyComplianceAgent.evaluate_manifest(
+        db=policy_env["db"],
+        vehicle_id=policy_env["v_small_id"],
+        driver_id=None,
+        shipment_ids=[policy_env["s_normal_id"]],
+        estimated_duration_minutes=60.0,
+    )
+    assert report.is_compliant is False
+    assert report.evaluation_complete is False
+    assert report.skipped_checks
+
+
+def test_policy_validate_route_endpoint_rejects_unknown_ids(client, policy_env):
+    resp = client.post(
+        "/api/v1/copilot/policy/validate-route",
+        json={"vehicle_id": 99999, "driver_id": policy_env["d_std_id"], "shipment_ids": [policy_env["s_normal_id"]]},
+        headers=policy_env["headers"],
+    )
+    assert resp.status_code == 422

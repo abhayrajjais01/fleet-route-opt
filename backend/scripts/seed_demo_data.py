@@ -188,12 +188,17 @@ def seed():
                 "current_vehicle_id": None,
             },
         ]
+        # The demo driver login drives the first vehicle, so its manifest resolves to Rajesh Kumar
+        driver_user = db.query(User).filter(User.email == "driver@fleetopt.io").first()
+        drivers_data[0]["user_id"] = driver_user.id if driver_user else None
         for d_data in drivers_data:
             existing = db.query(Driver).filter(Driver.license_number == d_data["license_number"]).first()
             if not existing:
                 d = Driver(**d_data)
                 db.add(d)
                 print(f"  + Driver created: {d.full_name} ({d.status.value})")
+            elif d_data.get("user_id") and existing.user_id is None:
+                existing.user_id = d_data["user_id"]
         db.commit()
 
         # 5. Seed Shipments (Track B: Week 3)

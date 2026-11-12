@@ -11,7 +11,7 @@ import { clock } from '../../lib/geo'
 import type { StopState, TripView } from './simulation'
 
 export const STOP_COLOR: Record<StopState, string> = {
-  PENDING: '#94a3b8', NEXT: '#2563eb', ARRIVED: '#7c3aed', DELIVERED: '#16a34a', FAILED: '#dc2626', BLOCKED: '#f59e0b',
+  PENDING: '#a0a9a2', NEXT: '#506e92', ARRIVED: '#477866', DELIVERED: '#4d7858', FAILED: '#a25846', BLOCKED: '#c28f47',
 }
 
 export interface MapInsets { left: number; right: number; bottom: number; top: number }
@@ -79,13 +79,13 @@ export default function TrackingMap({ views, colors, selectedId, hoveredId, onSe
           return
         }
         const late = s.late && s.state !== 'DELIVERED' && s.state !== 'FAILED'
-        if (late) L.circleMarker(at, { radius: 20, color: '#f59e0b', weight: 2, fillOpacity: 0.08, interactive: false }).addTo(layer)
+        if (late) L.circleMarker(at, { radius: 20, color: '#c28f47', weight: 2, fillOpacity: 0.08, interactive: false }).addTo(layer)
         L.marker(at, { icon: pinIcon(STOP_COLOR[s.state], i + 1), zIndexOffset: 400 })
           .bindPopup(`<div style="font-family:'DM Sans',sans-serif;min-width:200px">
-            <p style="margin:0;font-weight:700;color:#0f172a">${i + 1}. ${escapeHtml(s.shipment.customer_name)}</p>
-            <p style="margin:2px 0 0;font-size:12px;color:#64748b">${escapeHtml(s.shipment.destination_address)}</p>
-            <p style="margin:8px 0 0;font-size:12px;color:#334155">ETA <b>${Number.isFinite(s.eta) ? clock(s.eta) : '—'}</b> · window ${escapeHtml(s.shipment.time_window_start)}–${escapeHtml(s.shipment.time_window_end)}</p>
-            ${late ? `<p style="margin:4px 0 0;font-size:12px;color:#b45309;font-weight:600">Expected ${Math.round(s.lateBy)} min after the window closes</p>` : ''}
+            <p style="margin:0;font-weight:700;color:#27302c">${i + 1}. ${escapeHtml(s.shipment.customer_name)}</p>
+            <p style="margin:2px 0 0;font-size:12px;color:#77837c">${escapeHtml(s.shipment.destination_address)}</p>
+            <p style="margin:8px 0 0;font-size:12px;color:#47524d">ETA <b>${Number.isFinite(s.eta) ? clock(s.eta) : '—'}</b> · window ${escapeHtml(s.shipment.time_window_start)}–${escapeHtml(s.shipment.time_window_end)}</p>
+            ${late ? `<p style="margin:4px 0 0;font-size:12px;color:#87602f;font-weight:600">Expected ${Math.round(s.lateBy)} min after the window closes</p>` : ''}
           </div>`)
           .addTo(layer)
       })
@@ -108,7 +108,7 @@ export default function TrackingMap({ views, colors, selectedId, hoveredId, onSe
       const faded = focusId !== null && !focused
       if (v.pathDone.length > 1) L.polyline(v.pathDone, { color, weight: focused ? 6 : 4, opacity: faded ? 0.2 : 0.9, lineCap: 'round', interactive: false }).addTo(trail)
       const moving = v.speedKmh > 0 && v.state !== 'ROUTE_BLOCKED'
-      const iconColor = v.state === 'ROUTE_BLOCKED' ? '#dc2626' : color
+      const iconColor = v.state === 'ROUTE_BLOCKED' ? '#a25846' : color
       const iconKey = `${iconColor}|${moving}|${selectedId === v.plan.id}|${focused}`
       const existing = vehicles.current.get(v.plan.id)
       const icon = () => vehicleIcon(iconColor, v.plan.vehicle.plate_number, moving, selectedId === v.plan.id, focused)

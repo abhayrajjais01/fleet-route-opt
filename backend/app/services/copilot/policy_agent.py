@@ -69,6 +69,18 @@ SOP_RULES = {
 }
 
 
+# Hazard-class pairs that SOP-HZ-001 §5 forbids in the same load (main UN class, order-free).
+INCOMPATIBLE_HAZARD_CLASSES = {frozenset({"3", "8"})}
+
+
+class UnresolvedManifestError(ValueError):
+    """Raised when the manifest references vehicles, drivers or shipments that do not exist."""
+
+
+def _main_hazard_class(hazard_class: str) -> str:
+    return hazard_class.strip().split(".")[0]
+
+
 class PolicyComplianceAgent:
     """
     Autonomous Compliance & Regulatory Verification Agent.
@@ -92,8 +104,26 @@ class PolicyComplianceAgent:
         recommendations: List[str] = []
 
         vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
-        driver = db.query(Driver).filter(Driver.id == driver_id).first() if driver_id else None
+        driver = db.query(Driver).filter(Driver.id == driver_id).first() if driver_id is not None else None
         shipments = db.query(Shipment).filter(Shipment.id.in_(shipment_ids)).all() if shipment_ids else []
+
+        # Never certify a manifest we could not fully resolve.
+        unresolved: List[str] = []
+        if not vehicle:
+            unresolved.append(f"vehicle {vehicle_id}")
+        if driver_id is not None and not driver:
+            unresolved.append(f"driver {driver_id}")
+        missing_shipments = sorted(set(shipment_ids) - {s.id for s in shipments})
+        if missing_shipments:
+            unresolved.append("shipment(s) " + ", ".join(str(i) for i in missing_shipments))
+        if unresolved:
+            raise UnresolvedManifestError("Unknown " + "; ".join(unresolved) + ".")
+
+        # Without a driver the HOS and hazmat-endorsement checks cannot run, so the
+        # evaluation is incomplete and the manifest cannot be reported compliant.
+        skipped_checks: List[str] = []
+        if driver is None:
+            skipped_checks.append("Driver hours of service (no driver assigned)")
 
         # ----------------------------------------------------
         # 1. Driver Hours-of-Service (HOS) Checks
@@ -201,16 +231,14 @@ class PolicyComplianceAgent:
         # ----------------------------------------------------
         # 3. Hazmat & Dangerous Goods Verification
         # ----------------------------------------------------
-        hazmat_shipments = [
-            s for s in shipments
-            if any(term in (s.destination_address + " " + s.customer_name).lower() for term in ["chemical", "battery", "pharma", "lab", "paint", "oil", "acid"])
-            or (s.priority == ShipmentPriority.EXPRESS and s.weight_kg > 400.0)
-        ]
+        hazmat_shipments = [s for s in shipments if s.hazard_class and s.hazard_class.strip()]
 
         if hazmat_shipments:
             rule_hz = SOP_RULES["HAZMAT_CERTIFICATION"]
             cited_rules.append(rule_hz)
-            if driver and driver.license_type != LicenseType.COMMERCIAL:
+            if driver is None:
+                skipped_checks.append("Hazmat driver endorsement (no driver assigned)")
+            elif not driver.hazmat_endorsed:
                 violations.append(
                     PolicyViolation(
                         rule_code="HAZMAT_DRIVER_UNENDORSED",
@@ -219,15 +247,44 @@ class PolicyComplianceAgent:
                         sop_heading=rule_hz.clause_heading,
                         severity=ViolationSeverity.CRITICAL,
                         description=(
-                            f"Driver {driver.full_name} holds '{driver.license_type.value}' licence, but the manifest contains "
-                            f"{len(hazmat_shipments)} hazardous/specialised consignment(s) requiring commercial Hazmat endorsement."
+                            f"Driver {driver.full_name} has no verified hazardous-goods endorsement on record, but the manifest "
+                            f"contains {len(hazmat_shipments)} dangerous-goods consignment(s) "
+                            f"(UN class {', '.join(sorted({s.hazard_class for s in hazmat_shipments}))})."
                         ),
-                        remediation="Assign a commercially certified driver qualified under CMVR 131 for dangerous goods.",
+                        remediation="Assign a driver with a verified Hazmat endorsement and training certificate (CMVR 131).",
                         impacted_entity_type="Driver",
                         impacted_entity_id=driver.id,
                     )
                 )
-                recommendations.append("Assign a Hazmat-certified commercial driver to this manifest.")
+                recommendations.append("Assign a Hazmat-endorsed driver to this manifest.")
+
+            # Co-loading: incompatible classes may not share the vehicle (SOP-HZ-001 §5)
+            by_class: Dict[str, List[Shipment]] = {}
+            for s in hazmat_shipments:
+                by_class.setdefault(_main_hazard_class(s.hazard_class), []).append(s)
+            for pair in INCOMPATIBLE_HAZARD_CLASSES:
+                a, b = sorted(pair)
+                if a in by_class and b in by_class:
+                    rule_seg = SOP_RULES["HAZMAT_SEGREGATION"]
+                    if rule_seg not in cited_rules:
+                        cited_rules.append(rule_seg)
+                    violations.append(
+                        PolicyViolation(
+                            rule_code="HAZMAT_INCOMPATIBLE_COLOAD",
+                            sop_doc_id=rule_seg.sop_doc_id,
+                            sop_section=rule_seg.section_number,
+                            sop_heading=rule_seg.clause_heading,
+                            severity=ViolationSeverity.CRITICAL,
+                            description=(
+                                f"Class {a} consignment(s) ({', '.join(x.tracking_number for x in by_class[a])}) are loaded with "
+                                f"Class {b} consignment(s) ({', '.join(x.tracking_number for x in by_class[b])}), which must not share a load."
+                            ),
+                            remediation=f"Move the Class {a} or Class {b} consignments to a separate vehicle.",
+                            impacted_entity_type="Shipment",
+                            impacted_entity_id=by_class[b][0].id,
+                        )
+                    )
+                    recommendations.append(f"Split Class {a} and Class {b} dangerous goods onto separate vehicles.")
 
         # ----------------------------------------------------
         # 4. Cold Chain & Holdover Window Verification
@@ -270,8 +327,13 @@ class PolicyComplianceAgent:
 
         critical_count = sum(1 for v in violations if v.severity == ViolationSeverity.CRITICAL)
 
+        if skipped_checks:
+            recommendations.append("Assign a driver and re-run validation; some checks could not be evaluated.")
+
         return PolicyComplianceReport(
-            is_compliant=(len(violations) == 0),
+            is_compliant=(len(violations) == 0 and not skipped_checks),
+            evaluation_complete=not skipped_checks,
+            skipped_checks=skipped_checks,
             compliance_score_pct=compliance_score,
             violations_count=len(violations),
             critical_violations_count=critical_count,
