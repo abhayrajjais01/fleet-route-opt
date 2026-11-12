@@ -40,6 +40,21 @@ async def lifespan(app: FastAPI):
     logger.info(f"Shutting down {settings.APP_NAME}...")
 
 
+# Tag descriptions shown as section intros in /docs (Week 16 OpenAPI polish)
+OPENAPI_TAGS = [
+    {"name": "Health & System", "description": "Liveness and readiness probes used by Docker, Render and the frontend status pill."},
+    {"name": "Fleet Asset Management", "description": "Hubs, vehicles and drivers: the constraints every route is planned against."},
+    {"name": "RAG Compliance Engine", "description": "Search the verified SOP knowledge base. Every result is a cited, verbatim passage."},
+    {"name": "Route Optimization (VRPTW)", "description": "Distance matrix, VRPTW solver, resequencing evaluation, downstream ETAs, SLA checks, "
+                                                         "route explanations and the disruption-handling Optimization Agent."},
+    {"name": "Operational Reports & Exports", "description": "OTIF, transit, efficiency, fuel and cost KPIs with CSV and PDF exports."},
+    {"name": "Authentication & RBAC", "description": "JWT login and role-based access control."},
+    {"name": "Shipment Orders & Ingestion", "description": "Shipment CRUD and CSV/JSON batch ingestion."},
+    {"name": "Immutable Audit Trail", "description": "Append-only log of every state change and override."},
+    {"name": "LangGraph AI Copilot", "description": "Multi-agent StateGraph copilot for dispatcher questions."},
+    {"name": "In-Transit FSM & Telemetry Tracking", "description": "Shipment lifecycle state machine and driver actions."},
+]
+
 # Create the core FastAPI instance with metadata and OpenAPI docs configuration
 app = FastAPI(
     title=settings.APP_NAME,
@@ -50,6 +65,7 @@ app = FastAPI(
     ),
     version="0.1.0",
     lifespan=lifespan,
+    openapi_tags=OPENAPI_TAGS,
     docs_url="/docs",      # Interactive Swagger UI endpoint at /docs
     redoc_url="/redoc",    # Alternative ReDoc documentation endpoint at /redoc
 )
