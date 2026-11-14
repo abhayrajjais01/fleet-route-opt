@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import type { Driver, Hub, Shipment, Vehicle } from '../../lib/types'
 import { arriveAtStop, deliverShipment, failDelivery, reportDelay as apiReportDelay } from '../../lib/transitApi'
 import { API_V1 } from '../../lib/api'
+import DriverRouteMap, { type DriverMapStop } from './DriverRouteMap'
 
 interface MobileDriverCockpitProps {
   shipments: Shipment[]
@@ -28,6 +29,8 @@ interface ServerManifest {
   vehicle_id: number | null
   vehicle_plate: string | null
   hub_code: string | null
+  hub_latitude?: number | null
+  hub_longitude?: number | null
   stops: Array<Pick<Shipment, 'tracking_number' | 'customer_name' | 'destination_address' | 'latitude' | 'longitude' | 'weight_kg' | 'volume_m3' | 'time_window_start' | 'time_window_end' | 'priority' | 'status'> & { shipment_id: number; sequence_index: number }>
 }
 
@@ -90,6 +93,27 @@ export default function MobileDriverCockpit({
   const driverName = manifest?.driver_name ?? driver?.full_name ?? null
   const vehiclePlate = manifest?.vehicle_plate ?? vehicle?.plate_number ?? null
   const hubCode = manifest?.hub_code ?? hub?.code ?? null
+  const depot = manifest?.hub_latitude != null && manifest?.hub_longitude != null
+    ? { lat: manifest.hub_latitude, lon: manifest.hub_longitude, code: manifest.hub_code ?? 'HUB' }
+    : hub ? { lat: hub.latitude, lon: hub.longitude, code: hub.code } : null
+
+  // Live location is opt-in: the browser only asks for permission when the driver taps "My location".
+  const [userPos, setUserPos] = useState<{ lat: number; lon: number; accuracy: number } | null>(null)
+  const [locating, setLocating] = useState<'off' | 'waiting' | 'on' | 'denied'>('off')
+  const watchId = React.useRef<number | null>(null)
+  function toggleLocation() {
+    if (watchId.current !== null) {
+      navigator.geolocation.clearWatch(watchId.current); watchId.current = null; setUserPos(null); setLocating('off'); return
+    }
+    if (!('geolocation' in navigator)) { setLocating('denied'); return }
+    setLocating('waiting')
+    watchId.current = navigator.geolocation.watchPosition(
+      p => { setUserPos({ lat: p.coords.latitude, lon: p.coords.longitude, accuracy: p.coords.accuracy }); setLocating('on') },
+      () => { if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current); watchId.current = null; setLocating('denied') },
+      { enableHighAccuracy: true, maximumAge: 10000 },
+    )
+  }
+  useEffect(() => () => { if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current) }, [])
 
   // Delivery Modal
   const [deliverModalStop, setDeliverModalStop] = useState<Shipment | null>(null)
@@ -146,6 +170,18 @@ export default function MobileDriverCockpit({
   }, [manifest, localStatus, shipments, vehicle])
 
   const nextStop = assignedStops.find(s => s.status === 'ASSIGNED' || s.status === 'IN_TRANSIT' || s.status === 'ARRIVED') ?? null
+  // The driver can browse any stop; actions stay on the current one so stops are still served in order.
+  const [viewStopId, setViewStopId] = useState<number | null>(null)
+  const shown = assignedStops.find(s => s.id === viewStopId) ?? nextStop
+  const shownIndex = shown ? assignedStops.findIndex(s => s.id === shown.id) : -1
+  const isShownCurrent = !!shown && shown.id === nextStop?.id
+  const mapStops: DriverMapStop[] = assignedStops
+    .filter(s => s.latitude != null && s.longitude != null)
+    .map((s, i) => ({ id: s.id, seq: i + 1, name: s.customer_name, address: s.destination_address, lat: s.latitude as number, lon: s.longitude as number, window: `${s.time_window_start}–${s.time_window_end}`, status: s.status }))
+  const browse = (step: number) => {
+    const target = assignedStops[shownIndex + step]
+    if (target) setViewStopId(target.id === nextStop?.id ? null : target.id)
+  }
   const completedCount = assignedStops.filter(s => s.status === 'DELIVERED').length
   const progressPct = assignedStops.length > 0 ? Math.round((completedCount / assignedStops.length) * 100) : 0
 
@@ -377,51 +413,84 @@ export default function MobileDriverCockpit({
         </div>
       </div>
 
+      {/* ── Route map: the approved plan, stops in order, truck at its last known point ── */}
+      {mapStops.length > 0 && (
+        <div className="relative h-72 border-b border-slate-800">
+          <DriverRouteMap depot={depot} stops={mapStops} currentId={nextStop?.id ?? null} selectedId={shown?.id ?? null}
+            plate={vehiclePlate ?? ''} userPos={userPos} onSelect={setViewStopId} />
+          <button onClick={toggleLocation}
+            className={`absolute top-2 right-2 z-[400] px-2.5 py-1 rounded-lg text-[11px] font-semibold shadow ${locating === 'on' ? 'bg-sky-500 text-white' : 'bg-white/95 text-slate-700'}`}>
+            {locating === 'on' ? '● Live location on' : locating === 'waiting' ? 'Locating…' : locating === 'denied' ? 'Location unavailable' : '◎ My location'}
+          </button>
+          <div className="absolute bottom-2 left-2 z-[400] flex items-center gap-2 px-2 py-1 rounded-lg bg-white/95 text-[10px] text-slate-600 shadow">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-600" />Current</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-500" />Upcoming</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-600" />Done</span>
+          </div>
+        </div>
+      )}
+
       {/* ── Main View Content ── */}
       <div className="flex-1 p-4 space-y-4 overflow-y-auto">
         {/* Cockpit Card for Next Stop */}
-        {nextStop ? (
+        {shown ? (
           <div className="rounded-2xl bg-gradient-to-b from-slate-800 to-slate-800/80 border border-slate-700 p-4 shadow-xl">
-            <div className="flex items-center justify-between mb-2">
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                Current Active Stop
+            <div className="flex items-center justify-between mb-2 gap-2">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border ${isShownCurrent ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-slate-700/60 text-slate-300 border-slate-600'}`}>
+                {isShownCurrent ? 'Current Active Stop' : `Stop ${shownIndex + 1} of ${assignedStops.length} · ${shown.status.replace(/_/g, ' ')}`}
               </span>
-              <span className="font-mono text-xs text-amber-400 font-semibold">
-                Window: {nextStop.time_window_start} – {nextStop.time_window_end}
-              </span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => browse(-1)} disabled={shownIndex <= 0} aria-label="Previous stop"
+                  className="w-7 h-7 rounded-lg bg-slate-700/60 hover:bg-slate-700 text-slate-200 disabled:opacity-30 disabled:hover:bg-slate-700/60">‹</button>
+                <button onClick={() => browse(1)} disabled={shownIndex >= assignedStops.length - 1} aria-label="Next stop"
+                  className="w-7 h-7 rounded-lg bg-slate-700/60 hover:bg-slate-700 text-slate-200 disabled:opacity-30 disabled:hover:bg-slate-700/60">›</button>
+              </div>
             </div>
+            <p className="font-mono text-xs text-amber-400 font-semibold mb-1">
+              Window: {shown.time_window_start} – {shown.time_window_end}
+            </p>
 
-            <h2 className="text-lg font-bold text-white leading-tight">{nextStop.customer_name}</h2>
+            <h2 className="text-lg font-bold text-white leading-tight">{shown.customer_name}</h2>
             <p className="text-xs text-slate-300 mt-1 flex items-start gap-1.5">
-              <span>📍</span> {nextStop.destination_address}
+              <span>📍</span> {shown.destination_address}
             </p>
 
             <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-400 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">
               <div>
                 <span className="block text-[10px] text-slate-500">Weight & Vol</span>
-                <span className="font-semibold text-slate-200">{nextStop.weight_kg} kg · {nextStop.volume_m3} m³</span>
+                <span className="font-semibold text-slate-200">{shown.weight_kg} kg · {shown.volume_m3} m³</span>
               </div>
               <div>
                 <span className="block text-[10px] text-slate-500">Tracking #</span>
-                <span className="font-mono text-slate-200">{nextStop.tracking_number}</span>
+                <span className="font-mono text-slate-200">{shown.tracking_number}</span>
               </div>
             </div>
 
-            {/* Consignee Phone Call */}
-            <div className="mt-3">
+            {/* Navigate along the planned route + call the consignee */}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <a
+                href={`https://www.google.com/maps/dir/?api=1&destination=${shown.latitude},${shown.longitude}&travelmode=driving`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1.5 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-xs font-semibold text-blue-200 border border-blue-500/40 transition-colors"
+              >
+                <span>🧭</span> Navigate
+              </a>
               <a
                 href="tel:+919820011223"
-                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-slate-700/60 hover:bg-slate-700 text-xs font-semibold text-blue-300 border border-slate-600 transition-colors"
+                className="flex items-center justify-center gap-1.5 py-2 rounded-xl bg-slate-700/60 hover:bg-slate-700 text-xs font-semibold text-blue-300 border border-slate-600 transition-colors"
               >
-                <span>📞</span> Call Consignee (+91-98200-11223)
+                <span>📞</span> Call consignee
               </a>
             </div>
 
+            {isShownCurrent ? (
+              <>
             {/* Big Action Buttons */}
             <div className="mt-4 grid grid-cols-2 gap-2.5">
-              {nextStop.status !== 'ARRIVED' ? (
+              {shown.status !== 'ARRIVED' ? (
                 <button
-                  onClick={() => handleArrive(nextStop)}
+                  onClick={() => handleArrive(shown)}
                   disabled={actionLoading}
                   className="col-span-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-900/30 active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
                 >
@@ -429,7 +498,7 @@ export default function MobileDriverCockpit({
                 </button>
               ) : (
                 <button
-                  onClick={() => setDeliverModalStop(nextStop)}
+                  onClick={() => setDeliverModalStop(shown)}
                   disabled={actionLoading}
                   className="col-span-2 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-900/30 active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
                 >
@@ -438,7 +507,7 @@ export default function MobileDriverCockpit({
               )}
 
               <button
-                onClick={() => handleReportDelay(nextStop, 15, 'Traffic congestion on road')}
+                onClick={() => handleReportDelay(shown, 15, 'Traffic congestion on road')}
                 disabled={actionLoading}
                 className="py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold active:scale-[0.98] transition-transform"
               >
@@ -446,13 +515,20 @@ export default function MobileDriverCockpit({
               </button>
 
               <button
-                onClick={() => setFailModalStop(nextStop)}
+                onClick={() => setFailModalStop(shown)}
                 disabled={actionLoading}
                 className="py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-semibold active:scale-[0.98] transition-transform"
               >
                 ⚠ Report Issue
               </button>
             </div>
+              </>
+            ) : (
+              <div className="mt-4 rounded-xl bg-slate-900/60 border border-slate-800 p-3 text-xs text-slate-400 flex items-center justify-between gap-2">
+                <span>{shown.status === 'DELIVERED' ? 'Delivered.' : shown.status === 'FAILED' ? 'Marked as failed.' : 'Actions unlock when this becomes your current stop.'}</span>
+                {nextStop && <button onClick={() => setViewStopId(null)} className="font-semibold text-blue-300 hover:text-blue-200 whitespace-nowrap">Back to current stop →</button>}
+              </div>
+            )}
           </div>
         ) : (
           <div className="rounded-2xl bg-slate-800/40 border border-slate-700 p-6 text-center">
@@ -476,7 +552,12 @@ export default function MobileDriverCockpit({
               return (
                 <div
                   key={stop.id}
-                  className={`rounded-xl border p-3 flex items-center justify-between text-xs transition-colors ${
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={stop.id === shown?.id}
+                  onClick={() => setViewStopId(isCurrent ? null : stop.id)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewStopId(isCurrent ? null : stop.id) } }}
+                  className={`rounded-xl border p-3 flex items-center justify-between text-xs transition-colors cursor-pointer hover:border-slate-600 ${stop.id === shown?.id && !isCurrent ? 'ring-2 ring-blue-400/60' : ''} ${
                     isCurrent
                       ? 'bg-slate-800 border-blue-500/50 shadow-md'
                       : stop.status === 'DELIVERED'

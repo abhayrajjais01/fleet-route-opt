@@ -337,6 +337,8 @@ def get_driver_mobile_manifest(
         hub_id=hub.id if hub else None,
         hub_name=hub.name if hub else None,
         hub_code=hub.code if hub else None,
+        hub_latitude=float(hub.latitude) if hub and hub.latitude is not None else None,
+        hub_longitude=float(hub.longitude) if hub and hub.longitude is not None else None,
         total_stops=len(stops_items),
         completed_stops=completed,
         pending_stops=pending,
