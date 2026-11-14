@@ -102,6 +102,8 @@ def apply_database_migrations() -> None:
     to include newly added Python enum members (such as 'ARRIVED' in shipmentstatus)
     that SQLAlchemy Base.metadata.create_all() does not modify on existing tables.
     """
+    _add_missing_columns()
+
     if engine.dialect.name == "postgresql":
         try:
             with engine.connect() as conn:
@@ -110,3 +112,30 @@ def apply_database_migrations() -> None:
                 logger.info("PostgreSQL enum migration: 'ARRIVED' registered in shipmentstatus enum.")
         except Exception as e:
             logger.warning(f"PostgreSQL enum migration notice: {e}")
+
+
+# Columns added after the first release. create_all() creates missing tables but never
+# alters existing ones, so these are added in place (works on SQLite and PostgreSQL).
+_ADDED_COLUMNS = [
+    ("drivers", "hazmat_endorsed", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("shipments", "hazard_class", "VARCHAR(10)"),
+]
+
+
+def _add_missing_columns() -> None:
+    from sqlalchemy import inspect
+
+    try:
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
+        with engine.connect() as conn:
+            for table, column, ddl in _ADDED_COLUMNS:
+                if table not in tables:
+                    continue
+                existing = {c["name"] for c in inspector.get_columns(table)}
+                if column not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                    logger.info(f"Schema migration: added {table}.{column}")
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Column migration notice: {e}")

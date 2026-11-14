@@ -17,6 +17,8 @@ from sqlalchemy import (
     ForeignKey,
     CheckConstraint,
     Index,
+    Boolean,
+    false,
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -137,6 +139,9 @@ class Driver(Base, TimestampMixin):
     phone_number = Column(String(50), nullable=False)
     status = Column(Enum(DriverStatus), default=DriverStatus.OFF_DUTY, nullable=False)
     max_driving_hours_per_day = Column(Float, default=8.0, nullable=False) # DOT Hours of Service limit
+    # Verified dangerous-goods endorsement + training certificate (SOP-HZ-001 §2). A plain
+    # COMMERCIAL licence is not enough to carry hazmat.
+    hazmat_endorsed = Column(Boolean, default=False, server_default=false(), nullable=False)
 
     assigned_hub_id = Column(Integer, ForeignKey("hubs.id", ondelete="CASCADE"), nullable=False)
     current_vehicle_id = Column(Integer, ForeignKey("vehicles.id", ondelete="SET NULL"), nullable=True)

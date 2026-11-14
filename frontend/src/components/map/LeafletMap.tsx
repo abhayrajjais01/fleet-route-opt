@@ -28,22 +28,22 @@ export interface MapHandle { focusStop: (id: number) => void; focusHub: (id: num
 
 function hubPopup(h: MapHub, stopCount: number): string {
   return `<div style="font-family:'DM Sans',sans-serif;min-width:190px">
-    <p style="margin:0;font:600 10px 'DM Mono',monospace;color:#64748b">${escapeHtml(h.code)} · DISTRIBUTION HUB</p>
+    <p style="margin:0;font:600 10px 'JetBrains Mono',monospace;color:#64748b">${escapeHtml(h.code)} · DISTRIBUTION HUB</p>
     <p style="margin:2px 0 4px;font-weight:700;color:#0f172a">${escapeHtml(h.name)}</p>
     <p style="margin:0;color:#475569;font-size:12px">${escapeHtml(h.address)}</p>
     <p style="margin:6px 0 0;color:#475569;font-size:11px">🕒 ${escapeHtml(h.operating_hours ?? '—')} · 📦 ${stopCount} stop${stopCount === 1 ? '' : 's'}</p>
-    <p style="margin:2px 0 0;color:#94a3b8;font:10px 'DM Mono',monospace">${h.latitude.toFixed(4)}, ${h.longitude.toFixed(4)}</p>
+    <p style="margin:2px 0 0;color:#94a3b8;font:10px 'JetBrains Mono',monospace">${h.latitude.toFixed(4)}, ${h.longitude.toFixed(4)}</p>
   </div>`
 }
 
 function stopPopup(s: MapStop, metric?: StopMetric): string {
   const color = PRIORITY_COLOR[s.priority] ?? PRIORITY_COLOR.STANDARD
   const eta = metric
-    ? `<p style="margin:6px 0 0;padding:4px 6px;border-radius:6px;background:#eef2ff;color:#3730a3;font-size:11px">From hub: <b>${metric.roadKm.toFixed(1)} km</b> by road · ~<b>${Math.round(metric.minutes)} min</b></p>`
+    ? `<p style="margin:6px 0 0;padding:4px 6px;border-radius:6px;background:#f5f3ff;color:#5b21b6;font-size:11px">From hub: <b>${metric.roadKm.toFixed(1)} km</b> by road · ~<b>${Math.round(metric.minutes)} min</b></p>`
     : ''
   return `<div style="font-family:'DM Sans',sans-serif;min-width:200px">
     <p style="margin:0;display:flex;gap:6px;align-items:center">
-      <span style="font:700 11px 'DM Mono',monospace;color:#0f172a">${escapeHtml(s.tracking_number)}</span>
+      <span style="font:700 11px 'JetBrains Mono',monospace;color:#0f172a">${escapeHtml(s.tracking_number)}</span>
       <span style="padding:1px 5px;border-radius:4px;background:${color}1a;color:${color};font-size:9px;font-weight:700">${escapeHtml(s.priority)}</span>
     </p>
     <p style="margin:2px 0 4px;font-weight:700;color:#0f172a">${escapeHtml(s.customer_name)}</p>

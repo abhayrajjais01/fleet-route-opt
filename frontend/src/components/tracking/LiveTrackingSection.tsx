@@ -9,7 +9,7 @@ import type { AuditEntry, Driver, Hub, Shipment, ShipmentStatus, UserRole, Vehic
 import { clock, estimateLeg, legsAlong, toMinutes, type LatLng } from '../../lib/geo'
 import { optimizeRoutes } from '../../lib/routesApi'
 import { emptyEvents, feedFor, viewAt, type FeedItem, type StopView, type TripEvents, type TripPlan, type TripState, type TripView } from './simulation'
-import TrackingMap, { STOP_COLOR } from './TrackingMap'
+import TrackingMap, { type MapInsets, STOP_COLOR } from './TrackingMap'
 import { FsmProgressBar } from './FsmProgressBar'
 import SlaAlerts from './SlaAlerts'
 import {
@@ -20,7 +20,7 @@ import {
   type TransitFailureReason,
 } from '../../lib/transitApi'
 
-const TRIP_COLORS = ['#178a72', '#c4862f', '#4a78b8', '#6f9438', '#a65c8c']
+const TRIP_COLORS = ['#7c3aed', '#0891b2', '#ea580c', '#db2777', '#16a34a']
 const DEFAULT_DEPART = '08:30'
 const DAY_START = 6 * 60, DAY_END = 21 * 60
 const RATES = [
@@ -33,8 +33,8 @@ const RATES = [
 const TRIP_STATE: Record<TripState, { label: string; color: string }> = {
   SCHEDULED: { label: 'Scheduled', color: '#64748b' },
   IN_TRANSIT: { label: 'On the road', color: '#2563eb' },
-  RETURNING: { label: 'Returning', color: '#4f46e5' },
-  COMPLETED: { label: 'Completed', color: '#059669' },
+  RETURNING: { label: 'Returning', color: '#7c3aed' },
+  COMPLETED: { label: 'Completed', color: '#16a34a' },
   ROUTE_BLOCKED: { label: 'Blocked', color: '#dc2626' },
 }
 const STOP_LABEL: Record<string, string> = { PENDING: 'Upcoming', NEXT: 'Heading here', ARRIVED: 'On site', DELIVERED: 'Delivered', FAILED: 'Failed', BLOCKED: 'Needs re-route' }
@@ -288,8 +288,15 @@ export default function LiveTrackingSection({
   const atRisk = visible.reduce((n, v) => n + v.atRisk, 0)
   const onTheRoad = visible.filter(v => v.state === 'IN_TRANSIT' || v.state === 'RETURNING').length
 
+  const insets: MapInsets = useMemo(() => ({
+    left: isDriver ? 0 : 336,
+    right: selected ? 400 : 0,
+    bottom: 80,
+    top: 0,
+  }), [isDriver, selected])
+
   return (
-    <div className="relative w-full h-full overflow-hidden bg-slate-100 select-none">
+    <div className="relative w-full h-full overflow-hidden bg-slate-900 select-none">
       {/* ── Background map ── */}
       <TrackingMap
         views={visible}
@@ -298,7 +305,7 @@ export default function LiveTrackingSection({
         hoveredId={hoveredId}
         onSelect={id => setSelectedId(id)}
         focusKey={plans.map(p => p.id).join()}
-        insets={{ left: isDriver ? 0 : 336, right: selected ? 400 : 0, bottom: 80, top: 0 }}
+        insets={insets}
       />
       <SlaAlerts views={visible} />
 
@@ -307,11 +314,11 @@ export default function LiveTrackingSection({
         <div className="absolute top-4 left-4 z-20 w-80 max-h-[calc(100%-110px)] flex flex-col rounded-2xl bg-white/95 backdrop-blur shadow-xl border border-slate-200/80 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-slate-800">Today's trips</p>
-              <p className="text-xs text-slate-500">{onTheRoad} on the road · {delivered}/{allStops.length} delivered</p>
+              <p className="text-xs font-semibold text-slate-800">Fleet telemetry</p>
+              <p className="text-[11px] text-slate-500">{onTheRoad} on the road · {delivered}/{allStops.length} delivered</p>
             </div>
             {atRisk > 0 && (
-              <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+              <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
                 {atRisk} at SLA risk
               </span>
             )}
@@ -344,7 +351,7 @@ export default function LiveTrackingSection({
                       <span className="font-mono text-xs font-semibold text-slate-900">{v.plan.vehicle.plate_number}</span>
                       <span className="text-xs text-slate-400">·</span>
                       <span className="text-xs text-slate-600 truncate flex-1">{v.plan.driver?.full_name ?? 'Unassigned'}</span>
-                      <span className="text-[11px] font-medium px-1.5 py-0.5 rounded" style={{ color: TRIP_STATE[v.state].color, background: `${TRIP_STATE[v.state].color}15` }}>
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ color: TRIP_STATE[v.state].color, background: `${TRIP_STATE[v.state].color}15` }}>
                         {TRIP_STATE[v.state].label}
                       </span>
                     </div>
@@ -353,10 +360,10 @@ export default function LiveTrackingSection({
                       <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                         <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: colors[v.plan.id] }} />
                       </div>
-                      <span className="text-[11px] text-slate-400 font-mono tabular-nums">{pct}%</span>
+                      <span className="text-[10px] text-slate-400 font-mono tabular-nums">{pct}%</span>
                     </div>
 
-                    <div className="mt-1 flex items-center justify-between text-xs text-slate-500">
+                    <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
                       <span>{v.stops.filter(s => s.state === 'DELIVERED').length}/{v.stops.length} stops</span>
                       {v.nextStop && v.state !== 'ROUTE_BLOCKED' && (
                         <span>Next: {v.nextStop.shipment.customer_name.slice(0, 16)} · {clock(v.nextStop.eta)}</span>
@@ -398,7 +405,7 @@ export default function LiveTrackingSection({
         <button
           onClick={() => setPlaying(p => !p)}
           title="Space to play / pause"
-          className="w-8 h-8 flex items-center justify-center rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors"
+          className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors"
         >
           {playing ? (
             <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
@@ -481,7 +488,7 @@ export default function LiveTrackingSection({
                 disabled={actionLoading}
                 className="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
               >
-                {actionLoading ? 'Confirming...' : 'Confirm delivery'}
+                {actionLoading ? 'Confirming...' : 'Confirm Delivery ✓'}
               </button>
             </div>
           </div>
@@ -688,20 +695,20 @@ function Overview({ trip, simMin, actions }: { trip: TripView; simMin: number; a
                 onClick={() => actions.arrive(trip)}
                 className="flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 shadow-xs"
               >
-                Mark arrived
+                Mark Arrived 📍
               </button>
             )}
             <button
               onClick={() => actions.deliver(trip)}
               className="flex-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs"
             >
-              Confirm delivery
+              Confirm Delivery ✓
             </button>
             <button
               onClick={() => actions.fail(trip)}
               className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white border border-rose-300 text-rose-700 hover:bg-rose-50"
             >
-              Can't deliver
+              Fail ✕
             </button>
           </div>
         </div>

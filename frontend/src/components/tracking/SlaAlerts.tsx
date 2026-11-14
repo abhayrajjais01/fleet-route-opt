@@ -82,7 +82,7 @@ export default function SlaAlerts({ views }: { views: TripView[] }) {
     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 w-[360px] max-w-[calc(100%-32px)] flex flex-col gap-2 pointer-events-none" aria-live="polite">
       <button
         onClick={() => { if (!audio.current) audio.current = new AudioContext(); setSound(v => !v) }}
-        className="pointer-events-auto self-center px-2.5 py-1 rounded-full bg-white/90 backdrop-blur ring-1 ring-slate-900/5 shadow-sm text-xs text-slate-600 hover:text-slate-900">
+        className="pointer-events-auto self-center px-2.5 py-1 rounded-full bg-white/90 backdrop-blur ring-1 ring-slate-900/5 shadow-sm text-[11px] text-slate-600 hover:text-slate-900">
         {sound ? 'Alert sound on' : 'Alert sound off'}
       </button>
       {toasts.map(t => (
@@ -90,7 +90,7 @@ export default function SlaAlerts({ views }: { views: TripView[] }) {
           <div className="flex items-start gap-2.5">
             <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${STYLE[t.level].dot}`} />
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-slate-500">{STYLE[t.level].label}</p>
+              <p className="text-[11px] font-medium text-slate-500">{STYLE[t.level].label}</p>
               <p className="text-sm font-semibold text-slate-900">{t.title}</p>
               <p className="text-xs text-slate-600 mt-0.5">{t.body}</p>
             </div>

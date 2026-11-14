@@ -64,6 +64,8 @@ class Shipment(Base, TimestampMixin):
     time_window_start = Column(String(10), default="09:00", nullable=False)
     time_window_end = Column(String(10), default="17:00", nullable=False)
 
+    # UN dangerous-goods hazard class ("3", "8", "2.1", ...); NULL for ordinary cargo (SOP-HZ-001)
+    hazard_class = Column(String(10), nullable=True)
     priority = Column(Enum(ShipmentPriority), default=ShipmentPriority.STANDARD, nullable=False, index=True)
     status = Column(Enum(ShipmentStatus), default=ShipmentStatus.UNASSIGNED, nullable=False, index=True)
 

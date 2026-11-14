@@ -69,7 +69,7 @@ export default function DispatchPlanner({ shipments, hubs, vehicles, drivers, in
                 <button key={s.id} onClick={() => setShipmentId(s.id)} className={`w-full text-left rounded-xl px-3 py-2.5 transition-colors ${on ? 'bg-violet-50 ring-1 ring-violet-200' : 'hover:bg-slate-50'}`}>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-slate-900 truncate flex-1">{s.customer_name}</span>
-                    {urgent && <span className="text-xs font-semibold" style={{ color: PRIORITY_COLOR[s.priority] }}>{s.priority.toLowerCase()}</span>}
+                    {urgent && <span className="text-[11px] font-semibold" style={{ color: PRIORITY_COLOR[s.priority] }}>{s.priority.toLowerCase()}</span>}
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">{s.weight_kg} kg · {s.time_window_start}–{s.time_window_end}</p>
                 </button>
@@ -93,7 +93,9 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
   onOpenTracking: () => void
 }) {
   const hasCoords = Number.isFinite(shipment.latitude) && Number.isFinite(shipment.longitude)
-  const hub = hubs.find(h => h.id === shipment.hub_id) ?? null
+  // The dispatcher may plan from another hub (e.g. a closer one); vehicles and drivers follow the chosen hub.
+  const [hubId, setHubId] = useState(shipment.hub_id)
+  const hub = hubs.find(h => h.id === hubId) ?? null
   const locked = shipment.status !== 'UNASSIGNED' && shipment.status !== 'CLUSTERED'
   const [departure, setDeparture] = useState(shipment.dispatch_time ?? '08:30')
   const [vehicleId, setVehicleId] = useState<number | null>(shipment.assigned_vehicle_id ?? null)
@@ -114,17 +116,21 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
   }, [shipment.id, hasCoords, hubs])
 
   // Vehicles: best fit = eligible vehicle with the highest payload utilisation.
-  const vehicleRows = vehicles.filter(v => v.assigned_hub_id === shipment.hub_id).map(v => {
+  // Hard blocks (can't be overridden): over payload / volume, in maintenance or decommissioned.
+  // Availability (already on a trip) is the dispatcher's call: selectable, flagged for review.
+  const vehicleRows = vehicles.filter(v => v.assigned_hub_id === hubId).map(v => {
     const wPct = (shipment.weight_kg / v.max_payload_kg) * 100
     const vPct = (shipment.volume_m3 / v.max_volume_m3) * 100
     let verdict: Verdict = 'pass'
     let note = `${Math.round(wPct)}% of payload`
-    if (v.id !== shipment.assigned_vehicle_id && v.current_status !== 'AVAILABLE') { verdict = 'fail'; note = v.current_status === 'IN_TRANSIT' ? 'Already on a trip' : 'In maintenance' }
+    if (v.current_status === 'MAINTENANCE' || v.current_status === 'DECOMMISSIONED') { verdict = 'fail'; note = v.current_status === 'MAINTENANCE' ? 'In maintenance' : 'Decommissioned' }
     else if (wPct > 100 || vPct > 100) { verdict = 'fail'; note = wPct > 100 ? `Over payload by ${Math.round(shipment.weight_kg - v.max_payload_kg)} kg` : 'Not enough cargo space' }
+    else if (v.id !== shipment.assigned_vehicle_id && v.current_status === 'IN_TRANSIT') { verdict = 'warn'; note = `On a trip · override: leaves after it returns · ${Math.round(wPct)}% of payload` }
     else if (v.fuel_pct < 25) { verdict = 'warn'; note = `${Math.round(wPct)}% of payload · fuel ${v.fuel_pct}%` }
     return { v, wPct, vPct, verdict, note }
   })
-  const bestVehicle = [...vehicleRows].filter(r => r.verdict !== 'fail').sort((a, b) => b.wPct - a.wPct)[0]?.v ?? null
+  const rank = (v: Verdict) => (v === 'pass' ? 0 : v === 'warn' ? 1 : 2)
+  const bestVehicle = [...vehicleRows].filter(r => r.verdict !== 'fail').sort((a, b) => rank(a.verdict) - rank(b.verdict) || b.wPct - a.wPct)[0]?.v ?? null
   const vehicle = vehicles.find(v => v.id === vehicleId) ?? bestVehicle
 
   useEffect(() => {
@@ -137,16 +143,20 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
   const tripMinutes = routeLegs ? routeLegs[0].minutes + routeLegs[1].minutes : 0
   const tripKm = routeLegs ? routeLegs[0].km + routeLegs[1].km : 0
 
-  const driverRows = drivers.filter(d => d.assigned_hub_id === shipment.hub_id).map(d => {
+  // Hard blocks: a mandatory rest break, or a trip longer than the legal daily driving limit.
+  // On another trip / off duty are overrides the dispatcher can make (flagged for review).
+  const driverRows = drivers.filter(d => d.assigned_hub_id === hubId).map(d => {
     let verdict: Verdict = 'pass'
     let note = `★ ${d.rating} · ${d.max_driving_hours_per_day}h/day`
     const assignedHere = vehicle && d.current_vehicle_id === vehicle.id
-    if (!assignedHere && d.status !== 'ON_DUTY') { verdict = 'fail'; note = d.status === 'ON_TRIP' ? 'On another trip' : d.status === 'RESTING' ? 'Resting' : 'Off duty' }
+    if (!assignedHere && d.status === 'RESTING') { verdict = 'fail'; note = 'On a mandatory rest break' }
     else if (tripMinutes > d.max_driving_hours_per_day * 60) { verdict = 'fail'; note = `Trip needs ${fmtDur(tripMinutes)}, limit ${d.max_driving_hours_per_day}h` }
+    else if (!assignedHere && d.status === 'ON_TRIP') { verdict = 'warn'; note = 'On another trip · override: takes this after' }
+    else if (!assignedHere && d.status === 'OFF_DUTY') { verdict = 'warn'; note = 'Off duty · override: call in' }
     else if (tripMinutes > d.max_driving_hours_per_day * 60 * 0.8) { verdict = 'warn'; note = 'Uses most of today\'s driving hours' }
     return { d, verdict, note }
   })
-  const bestDriver = [...driverRows].filter(r => r.verdict !== 'fail').sort((a, b) => b.d.rating - a.d.rating)[0]?.d ?? null
+  const bestDriver = [...driverRows].filter(r => r.verdict !== 'fail').sort((a, b) => rank(a.verdict) - rank(b.verdict) || b.d.rating - a.d.rating)[0]?.d ?? null
   const driver = drivers.find(d => d.id === driverId) ?? (locked && vehicle ? drivers.find(d => d.current_vehicle_id === vehicle.id) : null) ?? bestDriver
 
   const departMin = toMinutes(departure)
@@ -175,8 +185,8 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
       detail: dRow ? `${fmtDur(tripMinutes)} round trip, limit ${dRow.d.max_driving_hours_per_day}h a day` : 'No driver on duty at this hub' },
     { key: 'window', title: 'Arrives in the window', verdict: !routeLegs ? 'warn' : lateMin > 0 ? (shipment.priority === 'EXPRESS' || shipment.priority === 'HIGH' ? 'fail' : 'warn') : 'pass',
       detail: routeLegs ? (lateMin > 0 ? `${fmtDur(lateMin)} late: leave earlier` : `Arrives ${clock(eta)}${waitMin > 0 ? `, waits ${fmtDur(waitMin)}` : ''}`) : 'Calculating route…' },
-    { key: 'readiness', title: 'Vehicle is ready', verdict: !vehicle ? 'fail' : vehicle.current_status === 'MAINTENANCE' ? 'fail' : vehicle.fuel_pct < 25 ? 'warn' : 'pass',
-      detail: vehicle ? `Fuel ${vehicle.fuel_pct}%, needs about ${(tripKm / vehicle.fuel_efficiency_kpl).toFixed(1)} L` : '—' },
+    { key: 'readiness', title: 'Vehicle is ready', verdict: !vehicle ? 'fail' : vehicle.current_status === 'MAINTENANCE' ? 'fail' : vehicle.fuel_pct < 25 || (vehicle.current_status === 'IN_TRANSIT' && vehicle.id !== shipment.assigned_vehicle_id) ? 'warn' : 'pass',
+      detail: vehicle ? `${vehicle.current_status === 'IN_TRANSIT' && vehicle.id !== shipment.assigned_vehicle_id ? 'On another trip now (override): leaves after it returns. ' : ''}Fuel ${vehicle.fuel_pct}%, needs about ${(tripKm / vehicle.fuel_efficiency_kpl).toFixed(1)} L` : '—' },
   ]
   const overall = worst(checks.map(c => c.verdict))
   const canDispatch = !locked && hasCoords && !!vehicle && !!driver && overall !== 'fail'
@@ -223,11 +233,13 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
           {/* Decisions */}
           <div className="px-3 py-2">
             <Decision icon={ICONS.hub} label="From" value={hub.name} sub={hubLegs[hub.id] ? `${hubLegs[hub.id].km.toFixed(1)} km · ${fmtDur(hubLegs[hub.id].minutes)} to the customer` : 'Measuring distance…'}
-              verdict={closerHub ? 'warn' : 'pass'} open={open === 'hub'} onToggle={() => toggle('hub')}>
+              verdict={closerHub ? 'warn' : 'pass'} open={open === 'hub'} onToggle={() => !locked && toggle('hub')} locked={locked}>
               {hubs.map(h => (
-                <Option key={h.id} selected={h.id === hub.id} disabled title={h.name} note={hubLegs[h.id] ? `${hubLegs[h.id].km.toFixed(1)} km · ${fmtDur(hubLegs[h.id].minutes)}` : '…'} />
+                <Option key={h.id} selected={h.id === hub.id} disabled={locked} title={h.name} note={hubLegs[h.id] ? `${hubLegs[h.id].km.toFixed(1)} km · ${fmtDur(hubLegs[h.id].minutes)}` : '…'}
+                  badge={h.id === shipment.hub_id ? 'Order\'s hub' : undefined}
+                  onClick={() => { setHubId(h.id); setVehicleId(null); setDriverId(null); setOpen(null) }} />
               ))}
-              {closerHub && <p className="px-3 pt-1 text-xs text-amber-700">{closerHub.name} is closer. Consider moving this order there.</p>}
+              {closerHub && <p className="px-3 pt-1 text-xs text-amber-700">{closerHub.name} is closer. Pick it above to plan from there.</p>}
             </Decision>
 
             <Decision icon={ICONS.vehicle} label="Vehicle" value={vehicle?.name ?? 'No vehicle free'} sub={vRow ? `${vRow.v.plate_number} · ${vRow.note}` : 'Every vehicle at this hub is busy'}
@@ -293,7 +305,7 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
             <div className="flex items-center gap-3">
               <span className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">✓</span>
               <div className="flex-1"><p className="text-sm font-medium text-slate-900">{justDispatched ? 'Dispatched' : 'Already scheduled'}</p><p className="text-xs text-slate-500">{vehicle?.plate_number} leaves at {departure}</p></div>
-              <button onClick={onOpenTracking} className="px-3 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">Track it</button>
+              <button onClick={onOpenTracking} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700">Track it</button>
             </div>
           ) : (
             <>
@@ -345,7 +357,7 @@ function Option({ title, note, selected, disabled, badge, meter, onClick }: { ti
     <button onClick={onClick} disabled={disabled && !selected} className={`w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg ${selected ? 'bg-white ring-1 ring-violet-300' : 'hover:bg-white'} disabled:opacity-50 disabled:cursor-not-allowed`}>
       <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${selected ? 'border-violet-600 bg-violet-600 shadow-[inset_0_0_0_2px_white]' : 'border-slate-300'}`} />
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2"><span className="text-sm text-slate-900 truncate">{title}</span>{badge && <span className="text-xs font-medium text-violet-700 bg-violet-50 px-1.5 rounded">{badge}</span>}</div>
+        <div className="flex items-center gap-2"><span className="text-sm text-slate-900 truncate">{title}</span>{badge && <span className="text-[11px] font-medium text-violet-700 bg-violet-50 px-1.5 rounded">{badge}</span>}</div>
         <p className="text-xs text-slate-500 truncate">{note}</p>
         {meter !== undefined && <div className="mt-1 h-1 rounded-full bg-slate-200 overflow-hidden"><div className="h-full rounded-full bg-violet-500" style={{ width: `${meter}%` }} /></div>}
       </div>
@@ -362,11 +374,11 @@ function WindowStrip({ depart, eta, open, close, back }: { depart: number; eta: 
       <div className="relative h-8">
         <div className="absolute top-2.5 h-3 rounded bg-emerald-100" style={{ left: x(open), width: `calc(${x(close)} - ${x(open)})` }} />
         <div className="absolute top-[15px] h-0.5 bg-slate-300" style={{ left: x(depart), width: `calc(${x(back)} - ${x(depart)})` }} />
-        {[{ m: depart, c: '#0f172a' }, { m: eta, c: eta > close ? '#dc2626' : '#4f46e5' }, { m: back, c: '#94a3b8' }].map((p, i) => (
+        {[{ m: depart, c: '#0f172a' }, { m: eta, c: eta > close ? '#dc2626' : '#7c3aed' }, { m: back, c: '#94a3b8' }].map((p, i) => (
           <span key={i} className="absolute top-[10px] w-3 h-3 -ml-1.5 rounded-full border-2 border-white shadow" style={{ left: x(p.m), background: p.c }} />
         ))}
       </div>
-      <div className="flex justify-between text-xs text-slate-400"><span>leave {clock(depart)}</span><span className="text-emerald-700">window {clock(open)}–{clock(close)}</span><span>back {clock(back)}</span></div>
+      <div className="flex justify-between text-[11px] text-slate-400"><span>leave {clock(depart)}</span><span className="text-emerald-700">window {clock(open)}–{clock(close)}</span><span>back {clock(back)}</span></div>
     </div>
   )
 }

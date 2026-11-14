@@ -6,6 +6,8 @@ import LiveTrackingSection from './components/tracking/LiveTrackingSection'
 import ErrorBoundary from './components/ErrorBoundary'
 import DispatchPlanner, { type DispatchDecision } from './components/workflow/DispatchPlanner'
 import NetworkMapSection from './components/map/NetworkMapSection'
+import CopilotSlidingDrawer from './components/copilot/CopilotSlidingDrawer'
+import MobileDriverCockpit from './components/driver/MobileDriverCockpit'
 import RoutePlannerSection, { type RouteDispatch } from './components/routes/RoutePlannerSection'
 import ReportsSection from './components/reports/ReportsSection'
 import type { UserRole, VehicleType, VehicleStatus, DriverStatus, LicenseType, ShipmentStatus, ShipmentPriority, AuditAction, AdminSection, Vehicle, Driver, Hub, Shipment, User, AuditEntry } from './lib/types'
@@ -87,52 +89,42 @@ async function fetchAuthToken(role: UserRole = 'ADMIN'): Promise<string | null> 
 }
 
 // ─── STATUS STYLING ───────────────────────────────────────────────────────────
-// Calm, muted tones: green = settled, blue = moving, ochre = needs a decision, clay = something went wrong.
-const TONE = {
-  good: { bg: '#ecfdf5', text: '#047857', dot: '#34d399' },
-  info: { bg: '#eff6ff', text: '#1d4ed8', dot: '#60a5fa' },
-  accent: { bg: '#eef2ff', text: '#4338ca', dot: '#818cf8' },
-  attention: { bg: '#fffbeb', text: '#b45309', dot: '#fbbf24' },
-  critical: { bg: '#fef2f2', text: '#b91c1c', dot: '#f87171' },
-  neutral: { bg: '#f1f5f9', text: '#475569', dot: '#94a3b8' },
-}
 const SC: Record<string, { bg: string; text: string; dot: string }> = {
-  AVAILABLE: TONE.good, IN_TRANSIT: TONE.info, MAINTENANCE: TONE.attention, DECOMMISSIONED: TONE.neutral,
-  ON_DUTY: TONE.info, OFF_DUTY: TONE.neutral, ON_TRIP: TONE.accent, RESTING: TONE.attention,
-  UNASSIGNED: TONE.attention, CLUSTERED: TONE.accent, ASSIGNED: TONE.info, ARRIVED: TONE.accent, DELIVERED: TONE.good, FAILED: TONE.critical,
-  EXPRESS: TONE.critical, HIGH: TONE.attention, STANDARD: TONE.neutral, LOW: TONE.neutral,
-  ADMIN: TONE.accent, FLEET_MANAGER: TONE.accent, DISPATCHER: TONE.info, DRIVER: TONE.good,
-  ACTIVE: TONE.good, INACTIVE: TONE.neutral,
+  AVAILABLE: { bg: '#f0fdf4', text: '#15803d', dot: '#22c55e' }, IN_TRANSIT: { bg: '#eff6ff', text: '#1d4ed8', dot: '#3b82f6' },
+  MAINTENANCE: { bg: '#fff7ed', text: '#c2410c', dot: '#f97316' }, DECOMMISSIONED: { bg: '#f9fafb', text: '#6b7280', dot: '#9ca3af' },
+  ON_DUTY: { bg: '#eff6ff', text: '#1d4ed8', dot: '#3b82f6' }, OFF_DUTY: { bg: '#f9fafb', text: '#6b7280', dot: '#9ca3af' },
+  ON_TRIP: { bg: '#f5f3ff', text: '#6d28d9', dot: '#8b5cf6' }, RESTING: { bg: '#fffbeb', text: '#b45309', dot: '#f59e0b' },
+  UNASSIGNED: { bg: '#fef2f2', text: '#b91c1c', dot: '#ef4444' }, CLUSTERED: { bg: '#f5f3ff', text: '#6d28d9', dot: '#8b5cf6' },
+  ASSIGNED: { bg: '#eff6ff', text: '#1d4ed8', dot: '#3b82f6' }, DELIVERED: { bg: '#f0fdf4', text: '#15803d', dot: '#22c55e' },
+  FAILED: { bg: '#fef2f2', text: '#b91c1c', dot: '#ef4444' },
+  EXPRESS: { bg: '#fef2f2', text: '#b91c1c', dot: '#ef4444' }, HIGH: { bg: '#fff7ed', text: '#c2410c', dot: '#f97316' },
+  STANDARD: { bg: '#eff6ff', text: '#1d4ed8', dot: '#3b82f6' }, LOW: { bg: '#f9fafb', text: '#6b7280', dot: '#9ca3af' },
+  ADMIN: { bg: '#fef2f2', text: '#b91c1c', dot: '#ef4444' }, FLEET_MANAGER: { bg: '#f5f3ff', text: '#6d28d9', dot: '#8b5cf6' },
+  DISPATCHER: { bg: '#eff6ff', text: '#1d4ed8', dot: '#3b82f6' }, DRIVER: { bg: '#f0fdf4', text: '#15803d', dot: '#22c55e' },
 }
-const sentence = (s: string) => { const t = s.replace(/_/g, ' ').toLowerCase(); return t.charAt(0).toUpperCase() + t.slice(1) }
 
 function Badge({ s }: { s: string }) {
-  const c = SC[s] ?? TONE.neutral
-  return <span style={{ background: c.bg, color: c.text }} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"><span style={{ background: c.dot }} className="w-1.5 h-1.5 rounded-full" />{sentence(s)}</span>
+  const c = SC[s] ?? { bg: '#f9fafb', text: '#6b7280', dot: '#9ca3af' }
+  return <span style={{ background: c.bg, color: c.text, border: `1px solid ${c.text}22` }} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap"><span style={{ background: c.dot }} className="w-1.5 h-1.5 rounded-full" />{s.replace(/_/g, ' ')}</span>
 }
 function Bar({ pct }: { pct: number }) {
-  const c = pct > 60 ? '#34d399' : pct > 30 ? '#fbbf24' : '#f87171'
-  return <div className="flex items-center gap-2"><div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: c }} /></div><span className="tabular-nums text-xs text-slate-400 w-8 text-right">{pct}%</span></div>
+  const c = pct > 60 ? '#22c55e' : pct > 30 ? '#f59e0b' : '#ef4444'
+  return <div className="flex items-center gap-2"><div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: c }} /></div><span className="font-mono text-[10px] text-slate-400 w-7">{pct}%</span></div>
 }
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-[2px]" onClick={onClose}>
-      <div role="dialog" aria-modal="true" className="calm-enter bg-white rounded-2xl shadow-xl ring-1 ring-slate-900/5 w-full max-w-md" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 pt-5 pb-3"><p className="text-base font-semibold text-slate-800">{title}</p><button onClick={onClose} aria-label="Close" className="w-8 h-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600">✕</button></div>
-        <div className="px-6 pb-6">{children}</div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200"><p className="font-bold text-slate-800">{title}</p><button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg">✕</button></div>
+        <div className="p-5">{children}</div>
       </div>
     </div>
   )
 }
-const inputCls = "w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-700 bg-white outline-none placeholder:text-slate-400 focus:border-violet-300 focus:ring-4 focus:ring-violet-50 transition"
+const inputCls = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition"
 const selCls = inputCls + " bg-white"
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="space-y-1"><label className="text-xs font-semibold text-slate-500">{label}</label>{children}</div>
+  return <div className="space-y-1"><label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{label}</label>{children}</div>
 }
 
 // ─── COPILOT DASHBOARD (Main Page) ────────────────────────────────────────────
@@ -217,23 +209,23 @@ function CopilotDashboard({ vehicles, drivers, shipments, hubs, audit, setSectio
   const onTrip = vehicles.filter(v => v.current_status === 'IN_TRANSIT').length
   const statBar = [
     { label: 'Vehicles on trip', value: `${onTrip}/${operational.length}`, sub: `${vehicles.filter(v => v.current_status === 'MAINTENANCE').length} in maintenance`, color: '#4f46e5', bg: '#eef2ff' },
-    { label: 'Shipments dispatched', value: shipments.filter(s => s.status === 'IN_TRANSIT' || s.status === 'ASSIGNED').length, sub: `${shipments.filter(s => s.status === 'IN_TRANSIT').length} in transit`, color: '#4f46e5', bg: '#eef2ff' },
+    { label: 'Shipments dispatched', value: shipments.filter(s => s.status === 'IN_TRANSIT' || s.status === 'ASSIGNED').length, sub: `${shipments.filter(s => s.status === 'IN_TRANSIT').length} in transit`, color: '#7c3aed', bg: '#f5f3ff' },
     { label: 'Unassigned', value: shipments.filter(s => s.status === 'UNASSIGNED').length, sub: 'need a plan', color: '#dc2626', bg: '#fef2f2' },
     { label: 'Drivers on duty', value: drivers.filter(d => d.status === 'ON_DUTY' || d.status === 'ON_TRIP').length, sub: `of ${drivers.length} registered`, color: '#059669', bg: '#ecfdf5' },
     { label: 'Fleet utilisation', value: `${operational.length ? Math.round((onTrip / operational.length) * 100) : 0}%`, sub: 'vehicles on trip', color: '#0891b2', bg: '#ecfeff' },
   ]
 
   return (
-    <div className="flex flex-col h-full overflow-hidden px-6 pt-5 pb-6 gap-4">
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Stat bar */}
       <div className="flex-shrink-0 flex flex-wrap items-stretch gap-3 px-5 py-4 border-b border-slate-200 bg-white">
         {statBar.map(s => (
           <div key={s.label} className="flex-1 basis-[170px] min-w-0 rounded-xl border border-slate-200 px-4 py-3 flex items-center gap-3">
             <span className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: s.bg }}><span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} /></span>
             <div className="min-w-0">
-              <p className="text-xs text-slate-500 truncate">{s.label}</p>
+              <p className="text-[11px] text-slate-500 truncate">{s.label}</p>
               <p className="text-xl font-bold text-slate-900 leading-tight tabular-nums">{s.value}</p>
-              <p className="text-[11px] text-slate-400 truncate">{s.sub}</p>
+              <p className="text-[10px] text-slate-400 truncate">{s.sub}</p>
             </div>
           </div>
         ))}
@@ -247,23 +239,23 @@ function CopilotDashboard({ vehicles, drivers, shipments, hubs, audit, setSectio
       <div className="flex flex-1 overflow-hidden">
         {/* Recent activity sidebar */}
         <div className="w-52 flex-shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-slate-100">
-            <p className="text-[11px] font-bold text-slate-500">Live Shipments</p>
+          <div className="px-4 py-3 border-b border-slate-100">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Live Shipments</p>
           </div>
           <div className="flex-1 overflow-y-auto">
             {shipments.filter(s => s.status !== 'DELIVERED').map(s => (
-              <div key={s.id} className="px-5 py-3.5 border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-default">
+              <div key={s.id} className="px-4 py-3 border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-default">
                 <div className="flex items-center justify-between mb-0.5">
-                  <span className="font-mono text-[11px] font-bold text-blue-700">{s.tracking_number}</span>
+                  <span className="font-mono text-[10px] font-bold text-blue-700">{s.tracking_number}</span>
                   <Badge s={s.status} />
                 </div>
-                <p className="text-xs text-slate-600 truncate">{s.customer_name}</p>
-                <p className="text-[11px] text-slate-400">{s.weight_kg}kg · <span style={{ color: SC[s.priority]?.text ?? '#334155' }}>{s.priority}</span></p>
+                <p className="text-[11px] text-slate-600 truncate">{s.customer_name}</p>
+                <p className="text-[10px] text-slate-400">{s.weight_kg}kg · <span style={{ color: SC[s.priority]?.text ?? '#374151' }}>{s.priority}</span></p>
               </div>
             ))}
           </div>
-          <div className="px-5 py-3.5 border-t border-slate-100">
-            <button onClick={() => setSection('audit')} className="text-xs text-slate-400 hover:text-slate-600 transition-colors">View audit log →</button>
+          <div className="px-4 py-3 border-t border-slate-100">
+            <button onClick={() => setSection('audit')} className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors">View audit log →</button>
           </div>
         </div>
 
@@ -279,15 +271,15 @@ function CopilotDashboard({ vehicles, drivers, shipments, hubs, audit, setSectio
                   <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-line ${m.sender === 'assistant' ? 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm shadow-sm' : 'bg-blue-600 text-white rounded-tr-sm'}`}>
                     {m.content.split('**').map((p, i) => i % 2 === 1 ? <strong key={i}>{p}</strong> : <span key={i}>{p}</span>)}
                   </div>
-                  {m.trace && <p className="text-[11px] text-slate-400 tabular-nums px-1">{m.trace}</p>}
-                  <p className="text-[11px] text-slate-400 px-1">{m.timestamp}</p>
+                  {m.trace && <p className="text-[10px] font-mono text-slate-400 px-1">{m.trace}</p>}
+                  <p className="text-[10px] text-slate-400 px-1">{m.timestamp}</p>
                 </div>
               </div>
             ))}
             {loading && (
               <div className="flex gap-3">
                 <div className="w-8 h-8 rounded-full bg-violet-100 flex items-center justify-center text-xs font-bold text-violet-700">AI</div>
-                <div className="px-5 py-3.5 bg-white border border-slate-200 rounded-2xl rounded-tl-sm shadow-sm flex gap-2 items-center">
+                <div className="px-4 py-3 bg-white border border-slate-200 rounded-2xl rounded-tl-sm shadow-sm flex gap-2 items-center">
                   {[0, 1, 2].map(i => <span key={i} className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
                 </div>
               </div>
@@ -298,7 +290,7 @@ function CopilotDashboard({ vehicles, drivers, shipments, hubs, audit, setSectio
           {/* Quick actions */}
           <div className="flex-shrink-0 px-6 py-2 flex gap-2 flex-wrap border-t border-slate-200 bg-white">
             {quickActions.map(a => (
-              <button key={a.q} onClick={() => send(a.q)} className="text-xs px-3 py-1.5 border border-slate-200 rounded-full text-slate-600 hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50 transition-colors">{a.label}</button>
+              <button key={a.q} onClick={() => send(a.q)} className="text-[11px] px-3 py-1.5 border border-slate-200 rounded-full text-slate-600 hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50 transition-colors">{a.label}</button>
             ))}
           </div>
 
@@ -356,58 +348,58 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
     setModal(null); setHf(blankH)
   }
 
-  const tabCls = (t: string) => `px-4 py-1.5 text-sm rounded-lg transition-colors ${tab === t ? 'bg-white text-slate-800 font-medium shadow-xs ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`
+  const tabCls = (t: string) => `px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${tab === t ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`
 
   return (
-    <div className="flex flex-col h-full overflow-hidden px-6 pt-5 pb-6 gap-4">
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 flex-shrink-0">
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="grid grid-cols-4 gap-3 p-5 pb-0 flex-shrink-0">
         {[
           { label: 'Total Vehicles', value: vehicles.length, sub: `${vehicles.filter(v => v.current_status === 'AVAILABLE').length} available`, color: '#2563eb' },
-          { label: 'In Transit', value: vehicles.filter(v => v.current_status === 'IN_TRANSIT').length, sub: 'currently active', color: '#4f46e5' },
-          { label: 'Total Drivers', value: drivers.length, sub: `${drivers.filter(d => d.status === 'ON_DUTY' || d.status === 'ON_TRIP').length} on duty`, color: '#047857' },
+          { label: 'In Transit', value: vehicles.filter(v => v.current_status === 'IN_TRANSIT').length, sub: 'currently active', color: '#7c3aed' },
+          { label: 'Total Drivers', value: drivers.length, sub: `${drivers.filter(d => d.status === 'ON_DUTY' || d.status === 'ON_TRIP').length} on duty`, color: '#15803d' },
           { label: 'Hubs', value: hubs.length, sub: 'all operational', color: '#d97706' },
         ].map(k => (
-          <div key={k.label} className="rounded-2xl bg-white ring-1 ring-slate-200 px-5 py-4">
-            <p className="text-sm text-slate-500">{k.label}</p>
-            <p className="text-2xl font-semibold text-slate-800 tabular-nums mt-1">{k.value}</p>
-            <p className="text-xs text-slate-400 mt-0.5">{k.sub}</p>
+          <div key={k.label} className="border border-slate-200 rounded-xl p-4 bg-white">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">{k.label}</p>
+            <p className="text-2xl font-black" style={{ color: k.color }}>{k.value}</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">{k.sub}</p>
           </div>
         ))}
       </div>
-      <div className="flex items-center justify-between flex-shrink-0">
-        <div className="flex gap-1 p-1 rounded-xl bg-slate-100/70">
+      <div className="flex items-center justify-between px-5 pt-4 border-b border-slate-200 flex-shrink-0">
+        <div className="flex gap-1">
           {(['vehicles', 'drivers', 'hubs'] as const).map(t => <button key={t} onClick={() => { setTab(t); setSearch('') }} className={tabCls(t)}>{t.charAt(0).toUpperCase() + t.slice(1)}</button>)}
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 rounded-xl bg-white ring-1 ring-slate-200 px-3 py-2">
+        <div className="flex items-center gap-2 pb-2">
+          <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2.5 py-1.5">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-slate-400"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search" className="text-sm outline-none w-48 bg-transparent text-slate-700 placeholder:text-slate-400" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" className="text-xs outline-none w-32 text-slate-600 placeholder-slate-400" />
           </div>
-          <button onClick={() => { if (tab === 'vehicles') { setVf(blankV); setModal('add-v') } else if (tab === 'drivers') { setDf(blankD); setModal('add-d') } else { setHf(blankH); setModal('add-h') } }} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors">
+          <button onClick={() => { if (tab === 'vehicles') { setVf(blankV); setModal('add-v') } else if (tab === 'drivers') { setDf(blankD); setModal('add-d') } else { setHf(blankH); setModal('add-h') } }} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Add {tab.slice(0, -1).charAt(0).toUpperCase() + tab.slice(1, -1)}
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-auto rounded-2xl bg-white ring-1 ring-slate-200">
+      <div className="flex-1 overflow-auto">
         {tab === 'vehicles' && (
-          <table className="w-full text-sm [&_td]:whitespace-nowrap">
-            <thead className="sticky top-0 bg-white z-10"><tr className="border-b border-slate-100">{['ID', 'Name', 'Plate', 'Type', 'Status', 'Payload', 'Fuel Eff.', 'Hub', 'Fuel', ''].map(h => <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3 whitespace-nowrap">{h}</th>)}</tr></thead>
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-slate-50"><tr className="border-b border-slate-200">{['ID', 'Name', 'Plate', 'Type', 'Status', 'Payload', 'Fuel Eff.', 'Hub', 'Fuel', ''].map(h => <th key={h} className="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
               {filtV.map(v => (
                 <tr key={v.id} className="hover:bg-slate-50 group">
-                  <td className="px-5 py-3.5 text-slate-400 tabular-nums">V{v.id}</td>
-                  <td className="px-5 py-3.5 font-medium text-slate-800">{v.name}</td>
-                  <td className="px-5 py-3.5 text-slate-600 tabular-nums">{v.plate_number}</td>
-                  <td className="px-5 py-3.5 text-slate-500">{sentence(v.vehicle_type)}</td>
-                  <td className="px-5 py-3.5"><Badge s={v.current_status} /></td>
-                  <td className="px-5 py-3.5 text-slate-600 tabular-nums">{v.max_payload_kg}kg</td>
-                  <td className="px-5 py-3.5 text-slate-600 tabular-nums">{v.fuel_efficiency_kpl} kpl</td>
-                  <td className="px-5 py-3.5 text-slate-500">{hubs.find(h => h.id === v.assigned_hub_id)?.code ?? '—'}</td>
-                  <td className="px-5 py-3.5 w-28"><Bar pct={v.fuel_pct} /></td>
-                  <td className="px-5 py-3.5"><div className="flex gap-2 opacity-0 group-hover:opacity-100">
-                    <button onClick={() => { setEditTarget(v); setVf({ name: v.name, plate_number: v.plate_number, vehicle_type: v.vehicle_type, max_payload_kg: v.max_payload_kg, max_volume_m3: v.max_volume_m3, fuel_efficiency_kpl: v.fuel_efficiency_kpl, current_status: v.current_status, assigned_hub_id: v.assigned_hub_id, fuel_pct: v.fuel_pct }); setModal('edit-v') }} className="text-violet-600 hover:text-violet-800 font-medium">Edit</button>
-                    <button onClick={() => { setVehicles(vehicles.filter(x => x.id !== v.id)); addAudit({ actor_name: 'Admin', action_type: 'ASSET_DELETED', entity_type: 'VEHICLE', entity_id: v.id, details: `Vehicle ${v.plate_number} removed` }) }} className="text-slate-400 hover:text-red-600 font-medium">Remove</button>
+                  <td className="px-4 py-3 font-mono text-slate-400">V{v.id}</td>
+                  <td className="px-4 py-3 font-medium text-slate-800">{v.name}</td>
+                  <td className="px-4 py-3 font-mono text-slate-600">{v.plate_number}</td>
+                  <td className="px-4 py-3 text-slate-500">{v.vehicle_type}</td>
+                  <td className="px-4 py-3"><Badge s={v.current_status} /></td>
+                  <td className="px-4 py-3 font-mono text-slate-600">{v.max_payload_kg}kg</td>
+                  <td className="px-4 py-3 font-mono text-slate-600">{v.fuel_efficiency_kpl} kpl</td>
+                  <td className="px-4 py-3 text-slate-500">{hubs.find(h => h.id === v.assigned_hub_id)?.code ?? '—'}</td>
+                  <td className="px-4 py-3 w-28"><Bar pct={v.fuel_pct} /></td>
+                  <td className="px-4 py-3"><div className="flex gap-2 opacity-0 group-hover:opacity-100">
+                    <button onClick={() => { setEditTarget(v); setVf({ name: v.name, plate_number: v.plate_number, vehicle_type: v.vehicle_type, max_payload_kg: v.max_payload_kg, max_volume_m3: v.max_volume_m3, fuel_efficiency_kpl: v.fuel_efficiency_kpl, current_status: v.current_status, assigned_hub_id: v.assigned_hub_id, fuel_pct: v.fuel_pct }); setModal('edit-v') }} className="text-blue-600 hover:text-blue-800 font-medium">Edit</button>
+                    <button onClick={() => { setVehicles(vehicles.filter(x => x.id !== v.id)); addAudit({ actor_name: 'Admin', action_type: 'ASSET_DELETED', entity_type: 'VEHICLE', entity_id: v.id, details: `Vehicle ${v.plate_number} removed` }) }} className="text-red-500 hover:text-red-700 font-medium">Del</button>
                   </div></td>
                 </tr>
               ))}
@@ -415,22 +407,22 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
           </table>
         )}
         {tab === 'drivers' && (
-          <table className="w-full text-sm [&_td]:whitespace-nowrap">
-            <thead className="sticky top-0 bg-white z-10"><tr className="border-b border-slate-100">{['ID', 'Name', 'License', 'Type', 'Phone', 'Status', 'Rating', 'Hub', ''].map(h => <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3 whitespace-nowrap">{h}</th>)}</tr></thead>
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-slate-50"><tr className="border-b border-slate-200">{['ID', 'Name', 'License', 'Type', 'Phone', 'Status', 'Rating', 'Hub', ''].map(h => <th key={h} className="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
               {filtD.map(d => (
                 <tr key={d.id} className="hover:bg-slate-50 group">
-                  <td className="px-5 py-3.5 text-slate-400 tabular-nums">D{d.id}</td>
-                  <td className="px-5 py-3.5 font-medium text-slate-800">{d.full_name}</td>
-                  <td className="px-5 py-3.5 text-slate-600 tabular-nums">{d.license_number}</td>
-                  <td className="px-5 py-3.5 text-slate-500">{sentence(d.license_type)}</td>
-                  <td className="px-5 py-3.5 text-slate-500">{d.phone_number}</td>
-                  <td className="px-5 py-3.5"><Badge s={d.status} /></td>
-                  <td className="px-5 py-3.5 text-slate-600 tabular-nums">★ {d.rating}</td>
-                  <td className="px-5 py-3.5 text-slate-500">{hubs.find(h => h.id === d.assigned_hub_id)?.code ?? '—'}</td>
-                  <td className="px-5 py-3.5"><div className="flex gap-2 opacity-0 group-hover:opacity-100">
-                    <button onClick={() => { setEditTarget(d); setDf({ full_name: d.full_name, license_number: d.license_number, license_type: d.license_type, phone_number: d.phone_number, status: d.status, max_driving_hours_per_day: d.max_driving_hours_per_day, assigned_hub_id: d.assigned_hub_id, current_vehicle_id: d.current_vehicle_id, rating: d.rating }); setModal('edit-d') }} className="text-violet-600 hover:text-violet-800 font-medium">Edit</button>
-                    <button onClick={() => setDrivers(drivers.filter(x => x.id !== d.id))} className="text-slate-400 hover:text-red-600 font-medium">Remove</button>
+                  <td className="px-4 py-3 font-mono text-slate-400">D{d.id}</td>
+                  <td className="px-4 py-3 font-medium text-slate-800">{d.full_name}</td>
+                  <td className="px-4 py-3 font-mono text-slate-600">{d.license_number}</td>
+                  <td className="px-4 py-3 text-slate-500">{d.license_type}</td>
+                  <td className="px-4 py-3 text-slate-500">{d.phone_number}</td>
+                  <td className="px-4 py-3"><Badge s={d.status} /></td>
+                  <td className="px-4 py-3 font-mono text-slate-600">★ {d.rating}</td>
+                  <td className="px-4 py-3 text-slate-500">{hubs.find(h => h.id === d.assigned_hub_id)?.code ?? '—'}</td>
+                  <td className="px-4 py-3"><div className="flex gap-2 opacity-0 group-hover:opacity-100">
+                    <button onClick={() => { setEditTarget(d); setDf({ full_name: d.full_name, license_number: d.license_number, license_type: d.license_type, phone_number: d.phone_number, status: d.status, max_driving_hours_per_day: d.max_driving_hours_per_day, assigned_hub_id: d.assigned_hub_id, current_vehicle_id: d.current_vehicle_id, rating: d.rating }); setModal('edit-d') }} className="text-blue-600 hover:text-blue-800 font-medium">Edit</button>
+                    <button onClick={() => setDrivers(drivers.filter(x => x.id !== d.id))} className="text-red-500 hover:text-red-700 font-medium">Del</button>
                   </div></td>
                 </tr>
               ))}
@@ -438,19 +430,19 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
           </table>
         )}
         {tab === 'hubs' && (
-          <table className="w-full text-sm [&_td]:whitespace-nowrap">
-            <thead className="sticky top-0 bg-white z-10"><tr className="border-b border-slate-100">{['Code', 'Name', 'Address', 'Phone', 'Hours', ''].map(h => <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3">{h}</th>)}</tr></thead>
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-slate-50"><tr className="border-b border-slate-200">{['Code', 'Name', 'Address', 'Phone', 'Hours', ''].map(h => <th key={h} className="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-4 py-2.5">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
               {filtH.map(h => (
                 <tr key={h.id} className="hover:bg-slate-50 group">
-                  <td className="px-5 py-3.5 text-slate-500">{h.code}</td>
-                  <td className="px-5 py-3.5 font-medium text-slate-800">{h.name}</td>
-                  <td className="px-5 py-3.5 text-slate-500 max-w-xs truncate">{h.address}</td>
-                  <td className="px-5 py-3.5 text-slate-500">{h.contact_phone}</td>
-                  <td className="px-5 py-3.5 text-slate-500">{h.operating_hours}</td>
-                  <td className="px-5 py-3.5"><div className="flex gap-2 opacity-0 group-hover:opacity-100">
-                    <button onClick={() => { setEditTarget(h); setHf({ name: h.name, code: h.code, address: h.address, latitude: h.latitude, longitude: h.longitude, contact_phone: h.contact_phone, operating_hours: h.operating_hours }); setModal('edit-h') }} className="text-violet-600 hover:text-violet-800 font-medium">Edit</button>
-                    <button onClick={() => setHubs(hubs.filter(x => x.id !== h.id))} className="text-slate-400 hover:text-red-600 font-medium">Remove</button>
+                  <td className="px-4 py-3 font-mono font-medium text-blue-700">{h.code}</td>
+                  <td className="px-4 py-3 font-medium text-slate-800">{h.name}</td>
+                  <td className="px-4 py-3 text-slate-500 max-w-xs truncate">{h.address}</td>
+                  <td className="px-4 py-3 text-slate-500">{h.contact_phone}</td>
+                  <td className="px-4 py-3 text-slate-500">{h.operating_hours}</td>
+                  <td className="px-4 py-3"><div className="flex gap-2 opacity-0 group-hover:opacity-100">
+                    <button onClick={() => { setEditTarget(h); setHf({ name: h.name, code: h.code, address: h.address, latitude: h.latitude, longitude: h.longitude, contact_phone: h.contact_phone, operating_hours: h.operating_hours }); setModal('edit-h') }} className="text-blue-600 hover:text-blue-800 font-medium">Edit</button>
+                    <button onClick={() => setHubs(hubs.filter(x => x.id !== h.id))} className="text-red-500 hover:text-red-700 font-medium">Del</button>
                   </div></td>
                 </tr>
               ))}
@@ -469,7 +461,7 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
             </div>
             <div className="grid grid-cols-3 gap-3"><Field label="Payload (kg)"><input type="number" className={inputCls} value={vf.max_payload_kg} onChange={e => setVf(p => ({ ...p, max_payload_kg: +e.target.value }))} /></Field><Field label="Volume (m³)"><input type="number" className={inputCls} value={vf.max_volume_m3} onChange={e => setVf(p => ({ ...p, max_volume_m3: +e.target.value }))} /></Field><Field label="Fuel Eff."><input type="number" className={inputCls} value={vf.fuel_efficiency_kpl} onChange={e => setVf(p => ({ ...p, fuel_efficiency_kpl: +e.target.value }))} /></Field></div>
             <Field label="Hub"><select className={selCls} value={vf.assigned_hub_id} onChange={e => setVf(p => ({ ...p, assigned_hub_id: +e.target.value }))}>{hubs.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select></Field>
-            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm rounded-xl text-slate-600 hover:bg-slate-100">Cancel</button><button onClick={saveVehicle} className="px-4 py-2 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-medium">Save</button></div>
+            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={saveVehicle} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">Save</button></div>
           </div>
         </Modal>
       )}
@@ -481,7 +473,7 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
               <Field label="License Type"><select className={selCls} value={df.license_type} onChange={e => setDf(p => ({ ...p, license_type: e.target.value as LicenseType }))}>{['CLASS_A', 'CLASS_B', 'COMMERCIAL'].map(t => <option key={t} value={t}>{t}</option>)}</select></Field></div>
             <div className="grid grid-cols-2 gap-3"><Field label="Status"><select className={selCls} value={df.status} onChange={e => setDf(p => ({ ...p, status: e.target.value as DriverStatus }))}>{['ON_DUTY', 'OFF_DUTY', 'ON_TRIP', 'RESTING'].map(s => <option key={s} value={s}>{s}</option>)}</select></Field><Field label="Max Hours/Day"><input type="number" className={inputCls} value={df.max_driving_hours_per_day} onChange={e => setDf(p => ({ ...p, max_driving_hours_per_day: +e.target.value }))} /></Field></div>
             <Field label="Hub"><select className={selCls} value={df.assigned_hub_id} onChange={e => setDf(p => ({ ...p, assigned_hub_id: +e.target.value }))}>{hubs.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select></Field>
-            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm rounded-xl text-slate-600 hover:bg-slate-100">Cancel</button><button onClick={saveDriver} className="px-4 py-2 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-medium">Save</button></div>
+            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={saveDriver} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">Save</button></div>
           </div>
         </Modal>
       )}
@@ -492,7 +484,7 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
             <Field label="Address"><input className={inputCls} value={hf.address} onChange={e => setHf(p => ({ ...p, address: e.target.value }))} /></Field>
             <div className="grid grid-cols-2 gap-3"><Field label="Latitude"><input type="number" className={inputCls} value={hf.latitude} onChange={e => setHf(p => ({ ...p, latitude: +e.target.value }))} /></Field><Field label="Longitude"><input type="number" className={inputCls} value={hf.longitude} onChange={e => setHf(p => ({ ...p, longitude: +e.target.value }))} /></Field></div>
             <div className="grid grid-cols-2 gap-3"><Field label="Phone"><input className={inputCls} value={hf.contact_phone} onChange={e => setHf(p => ({ ...p, contact_phone: e.target.value }))} /></Field><Field label="Hours"><input className={inputCls} value={hf.operating_hours} onChange={e => setHf(p => ({ ...p, operating_hours: e.target.value }))} /></Field></div>
-            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm rounded-xl text-slate-600 hover:bg-slate-100">Cancel</button><button onClick={saveHub} className="px-4 py-2 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-medium">Save</button></div>
+            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={saveHub} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">Save</button></div>
           </div>
         </Modal>
       )}
@@ -843,73 +835,73 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden px-6 pt-5 pb-6 gap-4">
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 flex-shrink-0">
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="grid grid-cols-4 gap-3 p-5 pb-0 flex-shrink-0">
         {(['UNASSIGNED', 'IN_TRANSIT', 'DELIVERED', 'FAILED'] as ShipmentStatus[]).map(s => (
-          <div key={s} className="rounded-2xl bg-white ring-1 ring-slate-200 px-5 py-4">
-            <p className="text-sm text-slate-500">{sentence(s)}</p>
-            <p className="text-2xl font-semibold text-slate-800 tabular-nums mt-1">{shipments.filter(x => x.status === s).length}</p>
+          <div key={s} className="border border-slate-200 rounded-xl p-4 bg-white">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1">{s.replace(/_/g, ' ')}</p>
+            <p className="text-2xl font-black" style={{ color: (SC[s] ?? { text: '#374151' }).text }}>{shipments.filter(x => x.status === s).length}</p>
           </div>
         ))}
       </div>
       {duplicateKeys.length > 0 && (
-        <div className="p-3 pl-4 bg-amber-50 rounded-2xl flex items-center justify-between flex-shrink-0">
+        <div className="mx-5 mt-4 p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-center justify-between shadow-sm flex-shrink-0">
           <div className="flex items-center gap-2">
-            <span className="text-amber-800 font-medium text-sm">Some tracking numbers appear more than once.</span>
+            <span className="text-amber-700 font-bold text-xs">⚠️ Duplicate Tracking Numbers Detected:</span>
             <span className="text-xs text-amber-900">
               {duplicateKeys.length} courier ID{duplicateKeys.length > 1 ? 's' : ''} duplicated ({duplicateKeys.join(', ')}).
             </span>
           </div>
           <button
             onClick={handleDeduplicateRoster}
-            className="px-3.5 py-1.5 bg-white ring-1 ring-amber-200 hover:bg-amber-50 text-amber-800 text-sm font-medium rounded-xl transition"
+            className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm transition"
           >
-            Remove duplicates
+            Deduplicate Roster (Remove Duplicates)
           </button>
         </div>
       )}
-      <div className="flex items-center justify-between flex-shrink-0">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 mt-2 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 rounded-xl bg-white ring-1 ring-slate-200 px-3 py-2">
+          <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-slate-400"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search" className="text-sm outline-none w-48 bg-transparent text-slate-700 placeholder:text-slate-400" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" className="text-xs outline-none w-36 text-slate-600 placeholder-slate-400" />
           </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="rounded-xl bg-white ring-1 ring-slate-200 px-3 py-2 text-sm text-slate-600 outline-none">
-            <option value="ALL">All statuses</option>
-            {['UNASSIGNED', 'CLUSTERED', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED', 'FAILED'].map(s => <option key={s} value={s}>{sentence(s)}</option>)}
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-600 outline-none bg-white">
+            <option value="ALL">All Status</option>
+            {['UNASSIGNED', 'CLUSTERED', 'ASSIGNED', 'IN_TRANSIT', 'DELIVERED', 'FAILED'].map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => { setBatchModal(true); setBatchPreview([]); setBatchErrors([]); setBatchSuccessMsg('') }} className="flex items-center gap-1.5 bg-white ring-1 ring-slate-200 hover:ring-violet-200 text-slate-700 text-sm font-medium px-4 py-2 rounded-xl transition">
+          <button onClick={() => { setBatchModal(true); setBatchPreview([]); setBatchErrors([]); setBatchSuccessMsg('') }} className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-lg transition-colors shadow-sm shadow-emerald-200">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            Import CSV / JSON
+            Batch Ingestion (CSV / JSON)
           </button>
-          <button onClick={() => { setForm(blank); setModal('add') }} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors">
+          <button onClick={() => { setForm(blank); setModal('add') }} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm shadow-blue-200">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-            New shipment
+            New Shipment → AI Workflow
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-auto rounded-2xl bg-white ring-1 ring-slate-200">
-        <table className="w-full text-sm [&_td]:whitespace-nowrap">
-          <thead className="sticky top-0 bg-white z-10"><tr className="border-b border-slate-100">{['Tracking #', 'Customer', 'Destination', 'Weight', 'Priority', 'Window', 'Status', 'Hub', ''].map(h => <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3 whitespace-nowrap">{h}</th>)}</tr></thead>
+      <div className="flex-1 overflow-auto">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-slate-50 z-10"><tr className="border-b border-slate-200">{['Tracking #', 'Customer', 'Destination', 'Weight', 'Priority', 'Window', 'Status', 'Hub', ''].map(h => <th key={h} className="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">
             {filt.map(s => (
-              <tr key={s.id} className={`hover:bg-slate-50 group transition-colors ${justAdded === s.id ? 'bg-violet-50/60' : ''}`}>
-                <td className="px-5 py-3.5 text-slate-500 tabular-nums">{s.tracking_number}</td>
-                <td className="px-5 py-3.5 font-medium text-slate-800">{s.customer_name}</td>
-                <td className="px-5 py-3.5 text-slate-500 max-w-[150px] truncate">{s.destination_address}</td>
-                <td className="px-5 py-3.5 text-slate-600 tabular-nums">{s.weight_kg}kg</td>
-                <td className="px-5 py-3.5"><Badge s={s.priority} /></td>
-                <td className="px-5 py-3.5 text-slate-500 tabular-nums">{s.time_window_start}–{s.time_window_end}</td>
-                <td className="px-5 py-3.5"><Badge s={s.status} /></td>
-                <td className="px-5 py-3.5 text-slate-500">{hubs.find(h => h.id === s.hub_id)?.code ?? '—'}</td>
-                <td className="px-5 py-3.5">
+              <tr key={s.id} className={`hover:bg-slate-50 group transition-colors ${justAdded === s.id ? 'bg-blue-50' : ''}`}>
+                <td className="px-4 py-3 font-mono font-bold text-blue-700">{s.tracking_number}</td>
+                <td className="px-4 py-3 font-medium text-slate-800">{s.customer_name}</td>
+                <td className="px-4 py-3 text-slate-500 max-w-[150px] truncate">{s.destination_address}</td>
+                <td className="px-4 py-3 font-mono text-slate-600">{s.weight_kg}kg</td>
+                <td className="px-4 py-3"><Badge s={s.priority} /></td>
+                <td className="px-4 py-3 font-mono text-slate-500">{s.time_window_start}–{s.time_window_end}</td>
+                <td className="px-4 py-3"><Badge s={s.status} /></td>
+                <td className="px-4 py-3 text-slate-500">{hubs.find(h => h.id === s.hub_id)?.code ?? '—'}</td>
+                <td className="px-4 py-3">
                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => onTriggerWorkflow(s)} className="text-violet-600 hover:text-violet-800 font-medium whitespace-nowrap">Plan</button>
+                    <button onClick={() => onTriggerWorkflow(s)} className="text-violet-600 hover:text-violet-800 font-bold text-[11px] whitespace-nowrap">🤖 AI Workflow</button>
                     {s.status !== 'DELIVERED' && s.status !== 'FAILED' && <button onClick={() => advanceFSM(s)} className="text-emerald-600 hover:text-emerald-800 font-medium">→</button>}
-                    <button onClick={() => { setEditTarget(s); setForm({ tracking_number: s.tracking_number, customer_name: s.customer_name, destination_address: s.destination_address, weight_kg: s.weight_kg, volume_m3: s.volume_m3, time_window_start: s.time_window_start, time_window_end: s.time_window_end, priority: s.priority, status: s.status, hub_id: s.hub_id }); setModal('edit') }} className="text-violet-600 hover:text-violet-800 font-medium">Edit</button>
-                    <button onClick={() => setShipments(shipments.filter(x => x.id !== s.id))} className="text-slate-400 hover:text-red-600 font-medium">Remove</button>
+                    <button onClick={() => { setEditTarget(s); setForm({ tracking_number: s.tracking_number, customer_name: s.customer_name, destination_address: s.destination_address, weight_kg: s.weight_kg, volume_m3: s.volume_m3, time_window_start: s.time_window_start, time_window_end: s.time_window_end, priority: s.priority, status: s.status, hub_id: s.hub_id }); setModal('edit') }} className="text-blue-600 font-medium">Edit</button>
+                    <button onClick={() => setShipments(shipments.filter(x => x.id !== s.id))} className="text-red-500 font-medium">Del</button>
                   </div>
                 </td>
               </tr>
@@ -919,12 +911,12 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
       </div>
 
       {batchModal && (
-        <Modal title="Import orders" onClose={() => setBatchModal(false)}>
+        <Modal title="📦 Batch Order Ingestion (CSV / JSON) — US-002" onClose={() => setBatchModal(false)}>
           <div className="space-y-4">
             <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg">
               <div>
-                <p className="text-sm font-medium text-slate-800">Start from the template</p>
-                <p className="text-xs text-slate-500">Includes columns: tracking_number, customer_name, destination_address, weight_kg, priority, hub_id.</p>
+                <p className="text-xs font-bold text-slate-800">CSV Specification & Template</p>
+                <p className="text-[11px] text-slate-500">Includes columns: tracking_number, customer_name, destination_address, weight_kg, priority, hub_id.</p>
               </div>
               <button onClick={downloadCsvTemplate} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-sm transition">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-blue-600"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -932,17 +924,17 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
               </button>
             </div>
 
-            <div className="border border-dashed border-slate-300 hover:border-violet-300 rounded-2xl p-6 text-center bg-slate-50/50 hover:bg-violet-50/40 transition-colors">
+            <div className="border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-xl p-6 text-center bg-slate-50/50 hover:bg-emerald-50/30 transition-colors">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-8 h-8 text-slate-400 mx-auto mb-2"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m16 16-4-4-4 4"/></svg>
               <p className="text-xs font-semibold text-slate-700">Drag & drop your CSV or JSON file here</p>
-              <p className="text-xs text-slate-400 mt-0.5">Supports multi-order consignments up to 100 records</p>
-              <input type="file" accept=".csv,.json" onChange={e => { if (e.target.files?.[0]) handleBatchFile(e.target.files[0]) }} className="mt-3 text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-violet-600 file:text-white hover:file:bg-violet-700" />
+              <p className="text-[11px] text-slate-400 mt-0.5">Supports multi-order consignments up to 100 records</p>
+              <input type="file" accept=".csv,.json" onChange={e => { if (e.target.files?.[0]) handleBatchFile(e.target.files[0]) }} className="mt-3 text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700" />
             </div>
 
             {batchErrors.length > 0 && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
-                <p className="font-medium mb-1">A few rows need fixing:</p>
-                <ul className="list-disc pl-4 space-y-0.5 text-xs">
+                <p className="font-bold mb-1">Validation Errors:</p>
+                <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
                   {batchErrors.map((err, idx) => <li key={idx}>{err}</li>)}
                 </ul>
               </div>
@@ -950,36 +942,36 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
 
             {batchSuccessMsg && (
               <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-800 text-center">
-                {batchSuccessMsg}
+                ✓ {batchSuccessMsg}
               </div>
             )}
 
             {batchPreview.length > 0 && (
               <div className="border border-slate-200 rounded-xl p-3.5 bg-white space-y-2">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-slate-800">Preview</p>
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                  <p className="text-xs font-bold text-slate-800">Delivery Cluster Preview</p>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
                     {batchPreview.length} Ready to Ingest
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 py-1 text-center">
                   <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                    <p className="text-[11px] text-slate-400">Total Payload</p>
+                    <p className="text-[10px] text-slate-400">Total Payload</p>
                     <p className="text-sm font-bold text-slate-700">{batchPreview.reduce((acc, x) => acc + x.weight_kg, 0).toFixed(1)} kg</p>
                   </div>
                   <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                    <p className="text-[11px] text-slate-400">Total Volume</p>
+                    <p className="text-[10px] text-slate-400">Total Volume</p>
                     <p className="text-sm font-bold text-slate-700">{batchPreview.reduce((acc, x) => acc + x.volume_m3, 0).toFixed(1)} m³</p>
                   </div>
                   <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                    <p className="text-[11px] text-slate-400">Express Priority</p>
+                    <p className="text-[10px] text-slate-400">Express Priority</p>
                     <p className="text-sm font-bold text-amber-600">{batchPreview.filter(x => x.priority === 'EXPRESS' || x.priority === 'HIGH').length} Orders</p>
                   </div>
                 </div>
                 <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 border-t border-slate-100 pt-1">
                   {batchPreview.map(p => (
-                    <div key={p.id} className="flex items-center justify-between py-1.5 text-xs">
-                      <span className="text-slate-500 tabular-nums">{p.tracking_number}</span>
+                    <div key={p.id} className="flex items-center justify-between py-1.5 text-[11px]">
+                      <span className="font-mono font-bold text-blue-700">{p.tracking_number}</span>
                       <span className="text-slate-600 truncate max-w-[140px]">{p.customer_name}</span>
                       <span className="text-slate-400">{p.weight_kg}kg</span>
                       <Badge s={p.priority} />
@@ -990,22 +982,22 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
             )}
 
             <div className="flex justify-end gap-2 pt-2">
-              <button onClick={() => setBatchModal(false)} className="px-4 py-2 text-sm rounded-xl text-slate-600 hover:bg-slate-100">Cancel</button>
+              <button onClick={() => setBatchModal(false)} className="px-4 py-2 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 font-medium">Cancel</button>
               <button
                 onClick={commitBatch}
                 disabled={batchPreview.length === 0 || isSubmittingBatch || batchPreview.every(p => shipments.some(s => s.tracking_number.trim().toUpperCase() === p.tracking_number.trim().toUpperCase()))}
-                className={`flex items-center gap-1.5 px-4 py-2 text-sm text-white rounded-xl font-medium transition ${
+                className={`flex items-center gap-1.5 px-4 py-2 text-xs text-white rounded-lg font-bold transition shadow-sm ${
                   batchPreview.length > 0 && !isSubmittingBatch && !batchPreview.every(p => shipments.some(s => s.tracking_number.trim().toUpperCase() === p.tracking_number.trim().toUpperCase()))
-                    ? 'bg-violet-600 hover:bg-violet-700'
+                    ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
                     : 'bg-slate-300 cursor-not-allowed'
                 }`}
               >
                 {isSubmittingBatch && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
                 {isSubmittingBatch
-                  ? 'Importing…'
+                  ? 'Submitting to API…'
                   : batchPreview.every(p => shipments.some(s => s.tracking_number.trim().toUpperCase() === p.tracking_number.trim().toUpperCase()))
-                  ? 'These orders are already in the list'
-                  : `Import ${batchPreview.filter(p => !shipments.some(s => s.tracking_number.trim().toUpperCase() === p.tracking_number.trim().toUpperCase())).length} new orders`}
+                  ? 'All Orders are Duplicates (Cannot Ingest)'
+                  : `Ingest & Commit (${batchPreview.filter(p => !shipments.some(s => s.tracking_number.trim().toUpperCase() === p.tracking_number.trim().toUpperCase())).length} New Orders)`}
               </button>
             </div>
           </div>
@@ -1013,11 +1005,11 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
       )}
 
       {(modal === 'add' || modal === 'edit') && (
-        <Modal title={modal === 'add' ? 'New shipment' : 'Edit shipment'} onClose={() => { setModal(null); setFormError('') }}>
+        <Modal title={modal === 'add' ? '+ New Shipment — Copilot will auto-analyze' : 'Edit Shipment'} onClose={() => { setModal(null); setFormError('') }}>
           <div className="space-y-3">
             {formError && (
               <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-semibold">
-                {formError}
+                ⚠️ {formError}
               </div>
             )}
             <div className="grid grid-cols-2 gap-3"><Field label="Tracking #"><input className={inputCls} value={form.tracking_number} onChange={e => setForm(p => ({ ...p, tracking_number: e.target.value }))} placeholder="SHP-XXX-HUB" /></Field><Field label="Customer"><input className={inputCls} value={form.customer_name} onChange={e => setForm(p => ({ ...p, customer_name: e.target.value }))} /></Field></div>
@@ -1029,8 +1021,8 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
             </div>
             <div className="grid grid-cols-2 gap-3"><Field label="Window Start"><input className={inputCls} value={form.time_window_start} onChange={e => setForm(p => ({ ...p, time_window_start: e.target.value }))} /></Field><Field label="Window End"><input className={inputCls} value={form.time_window_end} onChange={e => setForm(p => ({ ...p, time_window_end: e.target.value }))} /></Field></div>
             <Field label="Hub"><select className={selCls} value={form.hub_id} onChange={e => setForm(p => ({ ...p, hub_id: +e.target.value }))}>{hubs.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select></Field>
-            {modal === 'add' && <p className="text-sm text-slate-600 bg-violet-50 rounded-xl px-3 py-2.5">After saving, the planner suggests a driver, vehicle and route for you to review.</p>}
-            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm rounded-xl text-slate-600 hover:bg-slate-100">Cancel</button><button onClick={save} className="px-4 py-2 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-medium">{modal === 'add' ? 'Save and plan' : 'Save'}</button></div>
+            {modal === 'add' && <p className="text-[11px] text-violet-600 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">🤖 After saving, Copilot will automatically generate a workflow — driver, vehicle, route, and compliance checks.</p>}
+            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={save} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg font-semibold">{modal === 'add' ? 'Save & Analyze →' : 'Save'}</button></div>
           </div>
         </Modal>
       )}
@@ -1042,28 +1034,28 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
 function AuditSection({ entries }: { entries: AuditEntry[] }) {
   const [filter, setFilter] = useState('ALL')
   const filt = entries.filter(e => filter === 'ALL' || e.action_type === filter)
-  const actionColor: Record<string, string> = { ROUTE_MODIFIED: '#2563eb', STATUS_CHANGE: '#4f46e5', COPILOT_OVERRIDE: '#d97706', DISPATCH_APPROVED: '#047857', ASSET_CREATED: '#0891b2', ASSET_DELETED: '#dc2626' }
+  const actionColor: Record<string, string> = { ROUTE_MODIFIED: '#2563eb', STATUS_CHANGE: '#7c3aed', COPILOT_OVERRIDE: '#d97706', DISPATCH_APPROVED: '#15803d', ASSET_CREATED: '#0891b2', ASSET_DELETED: '#dc2626' }
   return (
-    <div className="flex flex-col h-full overflow-hidden px-6 pt-5 pb-6 gap-4">
-      <div className="flex items-center justify-between flex-shrink-0">
-        <div><p className="text-base font-semibold text-slate-800">Activity history</p><p className="text-sm text-slate-500">{entries.length} entries · records can't be edited or deleted</p></div>
-        <select value={filter} onChange={e => setFilter(e.target.value)} className="rounded-xl bg-white ring-1 ring-slate-200 px-3 py-2 text-sm text-slate-600 outline-none">
-          <option value="ALL">All activity</option>
-          {['ROUTE_MODIFIED', 'STATUS_CHANGE', 'COPILOT_OVERRIDE', 'DISPATCH_APPROVED', 'ASSET_CREATED', 'ASSET_DELETED'].map(t => <option key={t} value={t}>{sentence(t)}</option>)}
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+        <div><p className="text-sm font-bold text-slate-800">Immutable Audit Trail</p><p className="text-xs text-slate-400">{entries.length} entries · append-only</p></div>
+        <select value={filter} onChange={e => setFilter(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none text-slate-600 bg-white">
+          <option value="ALL">All Types</option>
+          {['ROUTE_MODIFIED', 'STATUS_CHANGE', 'COPILOT_OVERRIDE', 'DISPATCH_APPROVED', 'ASSET_CREATED', 'ASSET_DELETED'].map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
         </select>
       </div>
-      <div className="flex-1 overflow-auto rounded-2xl bg-white ring-1 ring-slate-200">
-        <table className="w-full text-sm [&_td]:whitespace-nowrap">
-          <thead className="sticky top-0 bg-white z-10"><tr className="border-b border-slate-100">{['#', 'Timestamp', 'Actor', 'Action', 'Entity', 'Details'].map(h => <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3 whitespace-nowrap">{h}</th>)}</tr></thead>
+      <div className="flex-1 overflow-auto">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-slate-50 z-10"><tr className="border-b border-slate-200">{['#', 'Timestamp', 'Actor', 'Action', 'Entity', 'Details'].map(h => <th key={h} className="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">
             {filt.map(e => (
               <tr key={e.id} className="hover:bg-slate-50">
-                <td className="px-5 py-3.5 text-slate-400 tabular-nums">#{e.id}</td>
-                <td className="px-5 py-3.5 text-slate-500 tabular-nums whitespace-nowrap">{e.timestamp}</td>
-                <td className="px-5 py-3.5 font-medium text-slate-700">{e.actor_name}</td>
-                <td className="px-5 py-3.5"><span className="inline-flex items-center gap-2 text-slate-700"><span className="w-1.5 h-1.5 rounded-full" style={{ background: actionColor[e.action_type] ?? '#94a3b8' }} />{sentence(e.action_type)}</span></td>
-                <td className="px-5 py-3.5 text-slate-500 tabular-nums">{e.entity_type} #{e.entity_id}</td>
-                <td className="px-5 py-3.5 text-slate-600 min-w-[320px] !whitespace-normal">{e.details}</td>
+                <td className="px-4 py-3 font-mono text-slate-400">#{e.id}</td>
+                <td className="px-4 py-3 font-mono text-slate-500 whitespace-nowrap">{e.timestamp}</td>
+                <td className="px-4 py-3 font-medium text-slate-700">{e.actor_name}</td>
+                <td className="px-4 py-3"><span style={{ color: actionColor[e.action_type] ?? '#374151' }} className="font-semibold">{e.action_type.replace(/_/g, ' ')}</span></td>
+                <td className="px-4 py-3 font-mono text-slate-500">{e.entity_type} #{e.entity_id}</td>
+                <td className="px-4 py-3 text-slate-600 max-w-xs">{e.details}</td>
               </tr>
             ))}
           </tbody>
@@ -1085,26 +1077,26 @@ function UsersSection({ users, setUsers }: { users: User[]; setUsers: (u: User[]
     setModal(null); setForm(blank)
   }
   return (
-    <div className="flex flex-col h-full overflow-hidden px-6 pt-5 pb-6 gap-4">
-      <div className="flex items-center justify-between flex-shrink-0">
-        <div><p className="text-base font-semibold text-slate-800">Team members</p><p className="text-sm text-slate-500">Administrators, fleet managers, dispatchers and drivers</p></div>
-        <button onClick={() => { setForm(blank); setModal('add') }} className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Add User</button>
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+        <div><p className="text-sm font-bold text-slate-800">User Management</p><p className="text-xs text-slate-400">RBAC — Admin, Fleet Manager, Dispatcher, Driver</p></div>
+        <button onClick={() => { setForm(blank); setModal('add') }} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Add User</button>
       </div>
-      <div className="flex-1 overflow-auto rounded-2xl bg-white ring-1 ring-slate-200">
-        <table className="w-full text-sm [&_td]:whitespace-nowrap">
-          <thead className="sticky top-0 bg-white z-10"><tr className="border-b border-slate-100">{['ID', 'Name', 'Email', 'Role', 'Status', ''].map(h => <th key={h} className="text-left text-xs font-medium text-slate-400 px-5 py-3">{h}</th>)}</tr></thead>
+      <div className="flex-1 overflow-auto">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-slate-50 z-10"><tr className="border-b border-slate-200">{['ID', 'Name', 'Email', 'Role', 'Status', ''].map(h => <th key={h} className="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-5 py-2.5">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">
             {users.map(u => (
               <tr key={u.id} className="hover:bg-slate-50 group">
-                <td className="px-5 py-3.5 text-slate-400 tabular-nums">U{u.id}</td>
-                <td className="px-5 py-3.5 font-medium text-slate-800">{u.full_name}</td>
-                <td className="px-5 py-3.5 text-slate-500 tabular-nums">{u.email}</td>
-                <td className="px-5 py-3.5"><Badge s={u.role} /></td>
-                <td className="px-5 py-3.5"><span className={`text-xs font-semibold ${u.is_active ? 'text-emerald-600' : 'text-slate-400'}`}>{u.is_active ? 'Active' : 'Inactive'}</span></td>
-                <td className="px-5 py-3.5"><div className="flex gap-3 opacity-0 group-hover:opacity-100">
-                  <button onClick={() => { setEditTarget(u); setForm({ email: u.email, full_name: u.full_name, role: u.role, is_active: u.is_active }); setModal('edit') }} className="text-violet-600 hover:text-violet-800 font-medium">Edit</button>
-                  <button onClick={() => setUsers(users.map(x => x.id === u.id ? { ...x, is_active: !x.is_active } : x))} className="text-slate-500 hover:text-slate-700 font-medium">{u.is_active ? 'Deactivate' : 'Activate'}</button>
-                  {u.role !== 'ADMIN' && <button onClick={() => setUsers(users.filter(x => x.id !== u.id))} className="text-slate-400 hover:text-red-600 font-medium">Remove</button>}
+                <td className="px-5 py-3 font-mono text-slate-400">U{u.id}</td>
+                <td className="px-5 py-3 font-medium text-slate-800">{u.full_name}</td>
+                <td className="px-5 py-3 font-mono text-slate-500">{u.email}</td>
+                <td className="px-5 py-3"><Badge s={u.role} /></td>
+                <td className="px-5 py-3"><span className={`text-xs font-semibold ${u.is_active ? 'text-emerald-600' : 'text-slate-400'}`}>{u.is_active ? '● Active' : '○ Inactive'}</span></td>
+                <td className="px-5 py-3"><div className="flex gap-3 opacity-0 group-hover:opacity-100">
+                  <button onClick={() => { setEditTarget(u); setForm({ email: u.email, full_name: u.full_name, role: u.role, is_active: u.is_active }); setModal('edit') }} className="text-blue-600 font-medium">Edit</button>
+                  <button onClick={() => setUsers(users.map(x => x.id === u.id ? { ...x, is_active: !x.is_active } : x))} className="text-amber-600 font-medium">{u.is_active ? 'Deactivate' : 'Activate'}</button>
+                  {u.role !== 'ADMIN' && <button onClick={() => setUsers(users.filter(x => x.id !== u.id))} className="text-red-500 font-medium">Remove</button>}
                 </div></td>
               </tr>
             ))}
@@ -1117,7 +1109,7 @@ function UsersSection({ users, setUsers }: { users: User[]; setUsers: (u: User[]
             <div className="grid grid-cols-2 gap-3"><Field label="Full Name"><input className={inputCls} value={form.full_name} onChange={e => setForm(p => ({ ...p, full_name: e.target.value }))} /></Field><Field label="Email"><input type="email" className={inputCls} value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></Field></div>
             <Field label="Role"><select className={selCls} value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value as UserRole }))}>{['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'].map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}</select></Field>
             <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.is_active} onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))} /><span className="text-sm text-slate-600">Active account</span></label>
-            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm rounded-xl text-slate-600 hover:bg-slate-100">Cancel</button><button onClick={save} className="px-4 py-2 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-medium">Save</button></div>
+            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={save} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">Save</button></div>
           </div>
         </Modal>
       )}
@@ -1126,19 +1118,18 @@ function UsersSection({ users, setUsers }: { users: User[]; setUsers: (u: User[]
 }
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
-type NavGroup = 'Today' | 'Fleet & policy' | 'Insights'
-const ALL_NAV: { id: AdminSection; label: string; group: NavGroup; path: string; hint: string; roles: UserRole[] }[] = [
-  { id: 'dashboard', label: 'Command Center', group: 'Today', hint: 'Ask in plain words — the assistant takes care of the rest', path: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
-  { id: 'shipments', label: 'Shipments', group: 'Today', hint: 'Every order, its delivery window and where it stands', path: 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z', roles: ['ADMIN', 'DISPATCHER'] },
-  { id: 'workflow', label: 'Dispatch Planner', group: 'Today', hint: 'Review one order at a time and dispatch it with confidence', path: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', roles: ['ADMIN', 'DISPATCHER'] },
-  { id: 'routes', label: 'Route Planner', group: 'Today', hint: 'Let the optimizer plan the day, then adjust anything you like', path: 'M3 17l6-6 4 4 8-8M14 7h7v7', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
-  { id: 'tracking', label: 'Live Tracking', group: 'Today', hint: 'Where every vehicle is, and anything that needs you', path: 'M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] },
-  { id: 'map', label: 'Network Map', group: 'Today', hint: 'Hubs, stops and road distances at a glance', path: 'M9 20l-5.447-2.724A1 1 0 0 1 3 16.382V5.618a1 1 0 0 1 1.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0 0 21 18.382V7.618a1 1 0 0 0-.553-.894L15 4m0 13V4m0 0L9 7', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
-  { id: 'fleet', label: 'Fleet Assets', group: 'Fleet & policy', hint: 'Vehicles, drivers and hubs in one place', path: 'M1 3h15v13H1zM16 8h4l3 3v5h-7V8z', roles: ['ADMIN', 'FLEET_MANAGER'] },
-  { id: 'compliance', label: 'Compliance', group: 'Fleet & policy', hint: 'The SOPs and regulations behind every decision', path: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
-  { id: 'reports', label: 'Reports', group: 'Insights', hint: 'How the network performed, ready to share', path: 'M4 20V10M10 20V4M16 20v-7M22 20H2', roles: ['ADMIN', 'FLEET_MANAGER'] },
-  { id: 'audit', label: 'Audit Log', group: 'Insights', hint: 'A permanent record of every change', path: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2', roles: ['ADMIN', 'FLEET_MANAGER'] },
-  { id: 'users', label: 'Users', group: 'Insights', hint: 'Who has access, and what they can do', path: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', roles: ['ADMIN'] },
+const ALL_NAV: { id: AdminSection; label: string; group: 'Operations' | 'Assets & policy' | 'Governance'; path: string; roles: UserRole[] }[] = [
+  { id: 'dashboard', label: 'AI Command', group: 'Operations', path: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 1 1 7.072 0l-.548.547A3.374 3.374 0 0 0 14 18.469V19a2 2 0 1 1-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
+  { id: 'shipments', label: 'Shipments', group: 'Operations', path: 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z', roles: ['ADMIN', 'DISPATCHER'] },
+  { id: 'workflow', label: 'Dispatch Planner', group: 'Operations', path: 'M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5', roles: ['ADMIN', 'DISPATCHER'] },
+  { id: 'routes', label: 'Route Planner', group: 'Operations', path: 'M3 17l6-6 4 4 8-8M14 7h7v7', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
+  { id: 'tracking', label: 'Live Tracking', group: 'Operations', path: 'M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] },
+  { id: 'map', label: 'Network Map', group: 'Operations', path: 'M9 20l-5.447-2.724A1 1 0 0 1 3 16.382V5.618a1 1 0 0 1 1.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0 0 21 18.382V7.618a1 1 0 0 0-.553-.894L15 4m0 13V4m0 0L9 7', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
+  { id: 'fleet', label: 'Fleet Assets', group: 'Assets & policy', path: 'M1 3h15v13H1zM16 8h4l3 3v5h-7V8z', roles: ['ADMIN', 'FLEET_MANAGER'] },
+  { id: 'compliance', label: 'Compliance', group: 'Assets & policy', path: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
+  { id: 'reports', label: 'Reports', group: 'Governance', path: 'M4 20V10M10 20V4M16 20v-7M22 20H2', roles: ['ADMIN', 'FLEET_MANAGER'] },
+  { id: 'audit', label: 'Audit Log', group: 'Governance', path: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2', roles: ['ADMIN', 'FLEET_MANAGER'] },
+  { id: 'users', label: 'Users', group: 'Governance', path: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', roles: ['ADMIN'] },
 ]
 
 export default function App() {
@@ -1154,10 +1145,16 @@ export default function App() {
   const [users, setUsers] = useState<User[]>(INIT_USERS)
   const [audit, setAudit] = useState<AuditEntry[]>(INIT_AUDIT)
   const [workflowShipment, setWorkflowShipment] = useState<Shipment | null>(null)
-  const [authToken, setAuthToken] = useState<string | null>(null)
+  // The token is stored with the role it was issued for, and only handed out while that role is active.
+  // Child components run their effects before this one, so clearing it in an effect alone is too late.
+  const [auth, setAuth] = useState<{ role: UserRole; token: string | null } | null>(null)
+  const authToken = auth?.role === activeRole ? auth.token : null
+  const [isCopilotDrawerOpen, setIsCopilotDrawerOpen] = useState(false)
 
   useEffect(() => {
-    fetchAuthToken(activeRole).then(token => setAuthToken(token))
+    let cancelled = false
+    fetchAuthToken(activeRole).then(token => { if (!cancelled) setAuth({ role: activeRole, token }) })
+    return () => { cancelled = true }
   }, [activeRole])
 
   // Live Backend Probing
@@ -1203,110 +1200,118 @@ export default function App() {
   // Filter navigation items by active role
   const filteredNav = ALL_NAV.filter(item => item.roles.includes(activeRole))
 
-  const roleUserNames: Record<UserRole, { name: string; initials: string; role: string }> = {
-    ADMIN: { name: 'Abhayraj Jaiswal', initials: 'AJ', role: 'Administrator' },
-    FLEET_MANAGER: { name: 'Kavita Sharma', initials: 'KS', role: 'Fleet manager' },
-    DISPATCHER: { name: 'Manthan Nimodiya', initials: 'MN', role: 'Dispatcher' },
-    DRIVER: { name: 'Rajesh Kumar', initials: 'RK', role: 'Driver' },
+  const roleUserNames: Record<UserRole, { name: string; email: string; initials: string; badgeColor: string }> = {
+    ADMIN: { name: 'Abhayraj Jaiswal', email: 'admin@fleetops.in', initials: 'AJ', badgeColor: 'bg-red-600 text-white' },
+    FLEET_MANAGER: { name: 'Kavita Sharma', email: 'manager@fleetops.in', initials: 'KS', badgeColor: 'bg-purple-600 text-white' },
+    DISPATCHER: { name: 'Manthan Nimodiya', email: 'dispatch@fleetops.in', initials: 'MN', badgeColor: 'bg-blue-600 text-white' },
+    DRIVER: { name: 'Rajesh Kumar', email: 'rajesh@fleetops.in', initials: 'RK', badgeColor: 'bg-emerald-600 text-white' },
   }
-  const currentUser = roleUserNames[activeRole]
-  const page = ALL_NAV.find(n => n.id === section)
-  const onTheRoad = vehicles.filter(v => v.current_status === 'IN_TRANSIT').length
-  const hour = new Date().getHours()
-  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
-  const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })
 
-  function switchRole(r: UserRole) {
-    setActiveRole(r)
-    if (r === 'DRIVER') setSection('tracking')
-    else if (!ALL_NAV.find(n => n.id === section)?.roles.includes(r)) setSection(ALL_NAV.find(n => n.roles.includes(r))!.id)
-  }
+  const currentUser = roleUserNames[activeRole]
 
   return (
-    <div className="h-screen flex overflow-hidden bg-slate-50 text-slate-800 font-sans">
-      {/* Sidebar: light, quiet, grouped by what you're doing */}
-      <aside className={`${sidebarOpen ? 'w-64' : 'w-0'} flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-out border-r border-slate-200 bg-white`}>
-        <div className="w-64 h-full flex flex-col">
-          <div className="h-16 flex items-center gap-3 px-5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-sky-500 shadow-sm shadow-violet-200 flex items-center justify-center text-white">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="18" height="18"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z" /><circle cx="7" cy="17.5" r="1.5" /><circle cx="17" cy="17.5" r="1.5" /></svg>
+    <div className="h-screen flex overflow-hidden bg-slate-50 text-slate-900" style={{ fontFamily: 'DM Sans, sans-serif' }}>
+      {/* Sidebar */}
+      {sidebarOpen && (
+        <aside className="w-60 flex-shrink-0 flex flex-col bg-white text-slate-600 border-r border-slate-200">
+          <div className="h-14 flex items-center gap-2.5 px-4 border-b border-slate-200">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-md shadow-violet-200">
+              <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5" width="18" height="18"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z" /><circle cx="7" cy="17.5" r="1.5" /><circle cx="17" cy="17.5" r="1.5" /></svg>
             </div>
             <div className="leading-tight">
-              <p className="text-[15px] font-semibold text-slate-800">FleetOps</p>
-              <p className="text-xs text-slate-400">Route optimizer</p>
+              <p className="text-sm font-bold text-slate-900">FleetOps</p>
+              <p className="text-[10px] text-slate-500">AI Route Optimizer</p>
             </div>
           </div>
-
-          <nav className="flex-1 overflow-y-auto px-3 pt-2 pb-4 space-y-5" aria-label="Main">
-            {(['Today', 'Fleet & policy', 'Insights'] as const).map(group => {
+          <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+            {(['Operations', 'Assets & policy', 'Governance'] as const).map(group => {
               const items = filteredNav.filter(n => n.group === group)
               if (!items.length) return null
               return (
                 <div key={group}>
-                  <p className="px-3 mb-1.5 text-xs font-medium text-slate-400">{group}</p>
-                  <div className="space-y-0.5">
-                    {items.map(item => {
-                      const on = section === item.id
-                      return (
-                        <button key={item.id} onClick={() => setSection(item.id)} aria-current={on ? 'page' : undefined}
-                          className={`relative w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left text-sm transition-colors ${on ? 'bg-violet-50 text-violet-700 font-medium' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
-                          {on && <span className="absolute -left-3 top-2 bottom-2 w-1 rounded-r-full bg-violet-600" />}
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className={`w-[18px] h-[18px] flex-shrink-0 ${on ? 'text-violet-600' : 'text-slate-400'}`}><path d={item.path} /></svg>
-                          <span className="flex-1">{item.label}</span>
-                          {item.id === 'shipments' && unassigned > 0 && <span className="min-w-5 h-5 px-1.5 rounded-full bg-amber-50 text-amber-700 text-xs font-medium flex items-center justify-center">{unassigned}</span>}
-                          {item.id === 'tracking' && onTheRoad > 0 && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" title={`${onTheRoad} on the road`} />}
-                        </button>
-                      )
-                    })}
-                  </div>
+                  <p className="px-2 mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{group}</p>
+                  {items.map(item => {
+                    const on = section === item.id
+                    return (
+                      <button key={item.id} onClick={() => setSection(item.id)}
+                        className={`relative w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${on ? 'bg-violet-50 text-violet-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
+                        {on && <span className="absolute -left-3 top-1.5 bottom-1.5 w-1 rounded-r bg-violet-600" />}
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0"><path d={item.path} /></svg>
+                        <span className="text-[13px] font-medium flex-1">{item.label}</span>
+                        {item.id === 'shipments' && unassigned > 0 && <span className="text-[10px] font-bold px-1.5 rounded-full bg-red-500 text-white">{unassigned}</span>}
+                        {item.id === 'tracking' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                      </button>
+                    )
+                  })}
                 </div>
               )
             })}
           </nav>
-
-          <div className="p-3 space-y-2">
-            <div className="flex items-center gap-2 px-3 text-xs text-slate-500" title="Backend API, distance engine and RAG knowledge base">
-              <span className={`w-1.5 h-1.5 rounded-full ${isBackendOnline ? 'bg-emerald-400' : isBackendOnline === null ? 'bg-slate-300' : 'bg-amber-400'}`} />
-              {isBackendOnline ? 'All systems running' : isBackendOnline === null ? 'Connecting…' : 'Offline · using local estimates'}
-            </div>
-            <div className="flex items-center gap-3 p-2.5 rounded-2xl bg-slate-50 border border-slate-200">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-sky-500 text-white flex items-center justify-center text-xs font-semibold">{currentUser.initials}</div>
-              <div className="flex-1 min-w-0 leading-tight">
-                <p className="text-sm font-medium text-slate-800 truncate">{currentUser.name}</p>
-                <label className="relative flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 cursor-pointer">
-                  <span className="sr-only">Viewing as</span>
-                  <select aria-label="Viewing as" value={activeRole} onChange={e => switchRole(e.target.value as UserRole)} className="appearance-none bg-transparent pr-4 outline-none cursor-pointer">
-                    {(['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] as UserRole[]).map(r => <option key={r} value={r}>{roleUserNames[r].role}</option>)}
-                  </select>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3 absolute right-0 pointer-events-none"><path d="m6 9 6 6 6-6" /></svg>
-                </label>
+          <div className="m-3 p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+            {[
+              { k: 'Backend API', v: isBackendOnline ? 'Online' : 'Offline', ok: !!isBackendOnline },
+              { k: 'Distance engine', v: isBackendOnline ? 'Ready' : 'Estimate', ok: !!isBackendOnline },
+              { k: 'RAG knowledge base', v: isBackendOnline ? 'Grounded' : 'Offline', ok: !!isBackendOnline },
+            ].map(r => (
+              <div key={r.k} className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-500">{r.k}</span>
+                <span className={`flex items-center gap-1.5 font-medium ${r.ok ? 'text-emerald-600' : 'text-amber-600'}`}><span className={`w-1.5 h-1.5 rounded-full ${r.ok ? 'bg-emerald-500' : 'bg-amber-500'}`} />{r.v}</span>
               </div>
-            </div>
+            ))}
           </div>
-        </div>
-      </aside>
+        </aside>
+      )}
 
       <div className="flex-1 min-w-0 flex flex-col">
-        {/* Header: page name, a one-line description, and only the one reminder that matters */}
-        <header className="flex-shrink-0 h-16 flex items-center gap-4 px-6 border-b border-slate-200 bg-white">
-          <button onClick={() => setSidebarOpen(o => !o)} className="-ml-2 w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600" title={sidebarOpen ? 'Hide menu' : 'Show menu'} aria-label="Toggle menu">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" className="w-[18px] h-[18px]"><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M9 4v16" /></svg>
+        {/* Top bar */}
+        <header className="flex-shrink-0 h-14 bg-white border-b border-slate-200 flex items-center gap-3 px-4">
+          <button onClick={() => setSidebarOpen(o => !o)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" title="Toggle sidebar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
           </button>
-          <div className="min-w-0">
-            <h1 className="text-[17px] font-semibold text-slate-800 leading-tight truncate">{section === 'dashboard' ? `${greeting}, ${currentUser.name.split(' ')[0]}` : page?.label}</h1>
-            <p className="text-xs text-slate-500 leading-tight truncate mt-0.5">{section === 'dashboard' ? today : page?.hint}</p>
+          <div className="min-w-0 whitespace-nowrap">
+            <p className="text-sm font-semibold text-slate-900 leading-tight">{ALL_NAV.find(n => n.id === section)?.label}</p>
+            <p className="text-[11px] text-slate-400 leading-tight">{ALL_NAV.find(n => n.id === section)?.group} · Mumbai–Pune network</p>
           </div>
           <div className="flex-1" />
-          {unassigned > 0 && activeRole !== 'DRIVER' && section !== 'routes' && (
-            <button onClick={() => setSection('routes')} className="hidden lg:flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-white ring-1 ring-slate-200 text-sm text-slate-600 hover:ring-violet-200 hover:text-slate-800 transition whitespace-nowrap">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />{unassigned} order{unassigned > 1 ? 's' : ''} waiting to be planned
-              <span className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 text-xs font-medium">Plan now</span>
+          {unassigned > 0 && activeRole !== 'DRIVER' && (
+            <button onClick={() => setSection('workflow')} className="hidden xl:flex whitespace-nowrap items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold hover:bg-amber-100">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{unassigned} unassigned · plan now
             </button>
           )}
+
+          {section !== 'dashboard' && activeRole !== 'DRIVER' && (
+            <button onClick={() => setIsCopilotDrawerOpen(true)} title="Open the AI Copilot"
+              className="flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-full bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 whitespace-nowrap">
+              <span className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-500 to-emerald-400 flex items-center justify-center text-[10px]">✦</span>
+              AI Copilot
+            </button>
+          )}
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg">
+            {(['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] as UserRole[]).map((r) => (
+              <button
+                key={r}
+                onClick={() => {
+                  setActiveRole(r)
+                  if (r === 'DRIVER') setSection('tracking')
+                  else if (!ALL_NAV.find(n => n.id === section)?.roles.includes(r)) setSection(ALL_NAV.find(n => n.roles.includes(r))!.id)
+                }}
+                className={`px-2.5 py-1 text-[10px] font-bold rounded-md whitespace-nowrap transition ${activeRole === r ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                {r.replace('_', ' ')}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ${currentUser.badgeColor}`}>{currentUser.initials}</div>
+            <div className="hidden xl:block leading-tight whitespace-nowrap">
+              <p className="text-xs font-semibold text-slate-800">{currentUser.name}</p>
+              <p className="text-[10px] text-slate-400">{activeRole.replace('_', ' ').toLowerCase()}</p>
+            </div>
+          </div>
         </header>
 
         {/* Main content */}
-        <main className="flex-1 min-h-0 min-w-0 overflow-hidden">
+        <main className="isolate flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50/30">
           <ErrorBoundary resetKey={`${section}|${activeRole}`}>
           {section === 'dashboard' && <CopilotCommandCenter vehicles={vehicles} drivers={drivers} shipments={shipments} hubs={hubs} audit={audit} setSection={setSection} activeRole={activeRole} authToken={authToken} />}
           {section === 'shipments' && <ShipmentsSection shipments={shipments} setShipments={setShipments} hubs={hubs} addAudit={addAudit} onTriggerWorkflow={triggerWorkflow} activeRole={activeRole} />}
@@ -1318,7 +1323,22 @@ export default function App() {
           {section === 'reports' && <ReportsSection />}
           {/* Kept mounted so the simulation clock and reported events survive page switches */}
           <div className={section === 'tracking' ? 'h-full' : 'hidden'}>
-            <LiveTrackingSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments} activeRole={activeRole} driverId={1} active={section === 'tracking'} addAudit={addAudit} onOpenPlanner={() => setSection('workflow')} authToken={authToken} setShipments={setShipments} />
+            {activeRole === 'DRIVER' ? (
+              // Loads the signed-in driver's manifest from the API; these props are only the offline demo fallback
+              // Own scroll area: <main> clips overflow, and the cockpit is taller than the screen
+              <div className="h-full overflow-y-auto overscroll-contain">
+                <MobileDriverCockpit
+                  shipments={shipments}
+                  vehicle={vehicles.find(v => v.id === 1) || null}
+                  driver={drivers.find(d => d.id === 1) || null}
+                  hub={hubs.find(h => h.id === 1) || null}
+                  authToken={authToken}
+                  onUpdateShipmentStatus={(id, st) => setShipments(prev => prev.map(s => s.id === id ? { ...s, status: st as ShipmentStatus } : s))}
+                />
+              </div>
+            ) : (
+              <LiveTrackingSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments} activeRole={activeRole} driverId={1} active={section === 'tracking'} addAudit={addAudit} onOpenPlanner={() => setSection('workflow')} authToken={authToken} setShipments={setShipments} />
+            )}
           </div>
           {section === 'compliance' && <ComplianceInspector />}
           {section === 'audit' && <AuditSection entries={audit} />}
@@ -1326,6 +1346,18 @@ export default function App() {
           </ErrorBoundary>
         </main>
       </div>
+
+      {/* Global AI Copilot Sliding Drawer (Week 10 Track B) */}
+      {/* Copilot drawer (opened from the header): hidden on AI Command (already the full copilot) and for drivers (copilot API is dispatcher-only) */}
+      {section !== 'dashboard' && activeRole !== 'DRIVER' && (
+        <CopilotSlidingDrawer
+          isOpen={isCopilotDrawerOpen}
+          onToggle={() => setIsCopilotDrawerOpen(v => !v)}
+          authToken={authToken}
+          activeRole={activeRole}
+          showTrigger={false}
+        />
+      )}
     </div>
   )
 }

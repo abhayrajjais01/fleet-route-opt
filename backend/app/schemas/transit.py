@@ -1,8 +1,9 @@
 """
-transit.py - Pydantic v2 Schemas for In-Transit FSM & Telemetry Tracking (US-008, Week 6 Track B)
+transit.py - Pydantic v2 Schemas for In-Transit FSM & Telemetry Tracking (US-008, Weeks 6 & 9 Track B)
 
 Defines structured payloads for driver action triggers (depart, arrived, delivered, failed, delay),
-FSM state transition validation, reason codes, and trip progress tracking.
+FSM state transition validation, reason codes, trip progress tracking,
+mobile driver manifests, and offline action synchronization.
 """
 
 from datetime import datetime
@@ -103,3 +104,82 @@ class TripFsmProgressResponse(BaseModel):
     trip_progress_pct: float
     is_trip_active: bool
     stops: List[TripStopFsmSummary]
+
+
+# ----------------------------------------------------
+# Week 9 Track B: Mobile Driver Cockpit & Sync Schemas
+# ----------------------------------------------------
+class DriverStopManifestItem(BaseModel):
+    shipment_id: int
+    tracking_number: str
+    sequence_index: int
+    customer_name: str
+    customer_phone: str = Field(default="+91-98200-11223")
+    destination_address: str
+    latitude: float
+    longitude: float
+    weight_kg: float
+    volume_m3: float
+    time_window_start: str
+    time_window_end: str
+    priority: ShipmentPriority
+    status: ShipmentStatus
+    is_next: bool
+    is_delivered: bool
+    is_failed: bool
+
+
+class DriverMobileManifestResponse(BaseModel):
+    driver_id: int
+    driver_name: str
+    vehicle_id: Optional[int] = None
+    vehicle_plate: Optional[str] = None
+    vehicle_name: Optional[str] = None
+    hub_id: Optional[int] = None
+    hub_name: Optional[str] = None
+    hub_code: Optional[str] = None
+    hub_latitude: Optional[float] = None
+    hub_longitude: Optional[float] = None
+    total_stops: int
+    completed_stops: int
+    pending_stops: int
+    stops: List[DriverStopManifestItem]
+    sync_token: str
+    server_time: str
+    offline_cache_ttl_seconds: int = 3600
+
+
+class DriverOfflineActionType(str, Enum):
+    ARRIVE = "ARRIVE"
+    DELIVER = "DELIVER"
+    FAIL = "FAIL"
+    DELAY = "DELAY"
+
+
+class DriverOfflineActionItem(BaseModel):
+    action_id: str
+    action_type: DriverOfflineActionType
+    shipment_id: int
+    client_timestamp: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class DriverOfflineSyncRequest(BaseModel):
+    actions: List[DriverOfflineActionItem]
+
+
+class DriverOfflineSyncResultItem(BaseModel):
+    action_id: str
+    shipment_id: int
+    action_type: str
+    success: bool
+    new_status: Optional[str] = None
+    error: Optional[str] = None
+
+
+class DriverOfflineSyncResponse(BaseModel):
+    total_actions: int
+    applied_count: int
+    failed_count: int
+    results: List[DriverOfflineSyncResultItem]
+    synced_at: str

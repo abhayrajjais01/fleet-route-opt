@@ -1,92 +1,27 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import 'tailwindcss';
 
-/*
- * FleetOps theme: crisp and cool.
- * Light layout, Tailwind's cool slate neutrals and status colours, one indigo accent and crisp 1px borders.
- * Components use `violet-*` / `purple-*` classes for the brand accent; they are mapped to indigo here,
- * so the accent can be changed in one place.
- */
 @theme {
-  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'DM Mono', ui-monospace, monospace;
-
-  --font-weight-semibold: 580;
-  --font-weight-bold: 650;
-  --font-weight-extrabold: 700;
-  --font-weight-black: 750;
-
-  /* Brand accent: indigo */
-  --color-violet-50: #eef2ff;
-  --color-violet-100: #e0e7ff;
-  --color-violet-200: #c7d2fe;
-  --color-violet-300: #a5b4fc;
-  --color-violet-400: #818cf8;
-  --color-violet-500: #6366f1;
-  --color-violet-600: #4f46e5;
-  --color-violet-700: #4338ca;
-  --color-violet-800: #3730a3;
-  --color-violet-900: #312e81;
-  --color-violet-950: #1e1b4b;
-  --color-purple-50: #eef2ff;
-  --color-purple-100: #e0e7ff;
-  --color-purple-200: #c7d2fe;
-  --color-purple-300: #a5b4fc;
-  --color-purple-400: #818cf8;
-  --color-purple-500: #6366f1;
-  --color-purple-600: #4f46e5;
-  --color-purple-700: #4338ca;
-  --color-purple-800: #3730a3;
-  --color-purple-900: #312e81;
-
-  /* Cool, crisp elevation */
-  --shadow-2xs: 0 1px 0 rgb(15 23 42 / 0.03);
-  --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.05);
-  --shadow-sm: 0 1px 3px rgb(15 23 42 / 0.06), 0 1px 2px rgb(15 23 42 / 0.04);
-  --shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.05);
-  --shadow-lg: 0 10px 24px -6px rgb(15 23 42 / 0.10), 0 4px 8px -4px rgb(15 23 42 / 0.05);
-  --shadow-xl: 0 16px 36px -10px rgb(15 23 42 / 0.14), 0 6px 12px -6px rgb(15 23 42 / 0.06);
-  --shadow-2xl: 0 24px 48px -12px rgb(15 23 42 / 0.20);
+  --font-sans: 'DM Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 }
 
 * {
   box-sizing: border-box;
 }
 
-html, body {
-  background: #f8fafc;
-  color: #0f172a;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: 'ss01', 'cv11';
-}
-
-::selection { background: #e0e7ff; color: #1e1b4b; }
-
-:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 2px; }
-
-::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 6px; }
-::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
-}
-
-/* Page entrance: a short fade so switching sections never feels abrupt */
-.calm-enter { animation: calm-enter 0.25s ease-out both; }
-@keyframes calm-enter { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
 
 /* Map marker pulse used by live vehicle markers */
-.fleet-pulse { position: absolute; top: 0; left: 50%; width: 30px; height: 30px; margin-left: -15px; border-radius: 9px; opacity: .4; animation: fleet-pulse 2.2s ease-out infinite; }
-@keyframes fleet-pulse { from { transform: scale(1); opacity: .4 } to { transform: scale(2) ; opacity: 0 } }
-.leaflet-container { font-family: 'DM Sans', sans-serif; background: #eef2f6; }
-/* Filter each tile (not the container) to avoid hairline seams between tiles in Chromium; cool grey basemap */
-.fleet-basemap img.leaflet-tile { filter: grayscale(0.9) brightness(1.06) contrast(0.9) hue-rotate(185deg) saturate(0.6); }
-.fleet-basemap { background: #eef2f6; }
-.leaflet-control-zoom { border: 1px solid #e2e8f0 !important; box-shadow: 0 4px 14px rgba(15, 23, 42, .08) !important; border-radius: 12px !important; overflow: hidden; }
-.leaflet-control-zoom a { width: 34px !important; height: 34px !important; line-height: 34px !important; color: #334155 !important; border-color: #f1f5f9 !important; }
-.leaflet-popup-content-wrapper { border-radius: 14px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px rgba(15, 23, 42, .12); }
-.leaflet-control-attribution { background: rgba(248, 250, 252, .85) !important; color: #94a3b8 !important; }
-.leaflet-control-attribution a { color: #64748b !important; }
+.fleet-pulse { position: absolute; top: 0; left: 50%; width: 30px; height: 30px; margin-left: -15px; border-radius: 9px; opacity: .45; animation: fleet-pulse 1.8s ease-out infinite; }
+@keyframes fleet-pulse { from { transform: scale(1); opacity: .45 } to { transform: scale(2.1); opacity: 0 } }
+.leaflet-container { font-family: 'DM Sans', sans-serif; background: #e9eef5; }
+/* Filter each tile (not the container) to avoid hairline seams between tiles in Chromium */
+.fleet-basemap img.leaflet-tile { filter: saturate(0.15) brightness(1.06) contrast(0.92); }
+.fleet-basemap { background: #eef0f3; }
+.leaflet-control-zoom { border: none !important; box-shadow: 0 4px 14px rgba(15, 23, 42, .12) !important; border-radius: 12px !important; overflow: hidden; }
+.leaflet-control-zoom a { width: 34px !important; height: 34px !important; line-height: 34px !important; color: #334155 !important; }
+.leaflet-popup-content-wrapper { border-radius: 14px; box-shadow: 0 10px 30px rgba(15, 23, 42, .18); }

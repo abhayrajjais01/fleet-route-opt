@@ -280,3 +280,84 @@
    - Live Tracking crashed because `TrackingMap` was missing the `insets` prop; the shipment status map was missing `ARRIVED`. Both fixed.
    - Driver actions on trips dispatched from the browser were rejected by the server FSM (shipment still UNASSIGNED there) and silently did nothing. Server sync is now best-effort: the simulation always updates and a server rejection is shown as a notice.
 12. **Testing**: `test_route_operations.py` (27), `test_reports.py` (8), `test_performance.py` (3). **Full suite: 164 / 164 passed**; frontend `tsc` 0 errors, `pnpm build` clean; flows verified in the browser (optimize, re-order, breakdown proposal, explain, dispatch, delay → ETA and SLA toasts, reports filters and exports, driver role).
+
+---
+
+### Week 7: Map Polylines & Guardrails (Oct 19 – Oct 23, 2026) — COMPLETED ✅
+- **Status**: `COMPLETED` ✅ (Track B; Track A is covered in the Weeks 7–16 entry above)
+- **Focus Area**: Interactive Route Polylines visualizer & Split Manifest view on Leaflet canvas vs. Zero-Hallucination Guardrails & RAG Similarity confidence scoring (US-004 & US-006).
+
+#### Track B (Abhayraj Jaiswal):
+1. **Zero-Hallucination Guardrail Engine (`backend/app/services/copilot/guardrails.py`)**:
+   - Semantic similarity threshold evaluator (`evaluate_rag_guardrail`) enforcing a calibrated `DEFAULT_GUARDRAIL_THRESHOLD = 0.18`.
+   - Strict zero-hallucination fallback text: `"Policy not found in verified knowledge base"` whenever top similarity score < threshold.
+   - Calibrated confidence scoring (0–100%) mapping cosine similarity cleanly to human-interpretable percentage certainty.
+   - Formatted SOP citation cards with document ID, section number, heading, and text excerpt.
+2. **StateGraph Integration (`backend/app/services/copilot/state_graph.py`)**:
+   - Integrated guardrail evaluation into `POLICY_QUERY` handler.
+   - Appended dedicated `rag_similarity_guardrail` step to multi-agent execution trace with verified status, similarity score, and citation count.
+3. **RESTful Guardrails Endpoint (`backend/app/api/v1/copilot.py`)**:
+   - `POST /api/v1/copilot/guardrails/evaluate`: Testing endpoint for real-time similarity scoring and threshold verification.
+4. **Automated Unit Tests (`backend/tests/test_rag_guardrails.py`)**:
+   - 5 comprehensive tests verifying score normalization, in-domain SOP passes, out-of-domain query rejections, REST endpoint validation, and execution trace auditing.
+
+---
+
+### Week 8: Resequencing & Policy Agent (Oct 26 – Oct 30, 2026) — COMPLETED ✅
+- **Status**: `COMPLETED` ✅ (Track B; Track A is covered in the Weeks 7–16 entry above)
+- **Focus Area**: Drag-and-Drop Route Resequencing UI and recalculation API vs. Policy & Compliance Agent integrating labor laws and Hazmat verification (US-006 & US-007).
+
+#### Track B (Abhayraj Jaiswal):
+1. **Policy & Compliance Agent (`backend/app/services/copilot/policy_agent.py`)**:
+   - Multi-regulatory automated route validation engine (`PolicyComplianceAgent.evaluate_manifest`).
+   - **Driver Hours of Service (HOS)**: Validates continuous driving (<= 8h), total shift duty (<= 10h), and daily spread (<= 14h) per Motor Transport Workers Act 1961 (`SOP-DR-001 §2`).
+   - **Vehicle Payload & Volumetric Capacity**: Detects vehicle overload violations against certified gross vehicle limits per `SOP-VS-001 §1`.
+   - **Hazardous Materials (Hazmat)**: Hazmat cargo is identified by its UN `hazard_class`; the driver must have a verified `hazmat_endorsed` qualification (`SOP-HZ-001 §2`), and Class 3 / Class 8 goods may not be co-loaded (`SOP-HZ-001 §5`).
+   - **Incomplete manifests**: unknown vehicle, driver or shipment IDs are rejected (HTTP 422); with no driver the result is marked incomplete and never compliant.
+   - **Cold Chain Holdover**: Detects perishable consignment transit durations exceeding active refrigeration holdover window (180 mins) per `SOP-CC-001 §5`.
+2. **RESTful Policy Validation Endpoint (`backend/app/api/v1/copilot.py`)**:
+   - `POST /api/v1/copilot/policy/validate-route`: Dispatcher-authenticated endpoint returning overall compliance score (0–100%), violation severity breakdown (LOW / MEDIUM / HIGH / CRITICAL), and cited SOP rules.
+3. **Automated Unit Tests (`backend/tests/test_policy_agent.py`)**:
+   - 12 tests: compliant manifests, HOS, overload, hazmat classification and endorsement, incompatible co-loading, cold chain, unresolved IDs, missing driver, and the REST endpoint.
+
+---
+
+### Week 9: Optimization Agent & Driver Mobile View (Nov 2 – Nov 6, 2026) — COMPLETED ✅
+- **Status**: `COMPLETED` ✅ (Track B; Track A is covered in the Weeks 7–16 entry above)
+- **Focus Area**: LangGraph Optimization Agent (Solver Tool) vs. Mobile Driver View & Offline Sync Action API (US-005 & US-008).
+
+#### Track B (Abhayraj Jaiswal):
+1. **Mobile Driver Cockpit (`frontend/src/components/driver/MobileDriverCockpit.tsx`)**:
+   - Mobile-first responsive layout tailored for driver handhelds and tablets.
+   - Today's sequenced stop manifest with customer contact, phone dialer shortcut, address, and package details.
+   - Large, thumb-friendly driver action bar (`ARRIVED`, `DELIVERED`, `REPORT ISSUE / DELAY / FAIL`).
+   - LocalStorage offline action queue storing driver transitions when disconnected in rural or poor-connectivity zones.
+   - Automatic background replay sync on network reconnection with visual online/offline status pill; actions the server rejects stay in the queue with the error shown.
+2. **Backend Mobile Transit Endpoints (`backend/app/api/v1/transit.py`)**:
+   - `GET /api/v1/transit/driver/manifest`: Returns the signed-in driver's own vehicle, depot, shipments and sync token (resolved via the account link; 403 if no driver record matches, never another driver's data). The cockpit loads it and caches it for offline use.
+   - `POST /api/v1/transit/driver/offline-sync`: Batch-replays queued client actions (`ARRIVE`, `DELIVER`, `FAIL`, `DELAY`) with per-action atomic error isolation and audit log sync.
+3. **Automated Unit Tests (`backend/tests/test_mobile_driver_api.py`)**:
+   - 6 tests: manifest retrieval, no fallback to another driver's manifest, ARRIVE/DELIVER and FAIL/DELAY replay, and partial-failure isolation.
+
+---
+
+### Week 10: Downstream ETAs & Copilot Sliding Drawer UI (Nov 9 – Nov 13, 2026) — COMPLETED ✅
+- **Status**: `COMPLETED` ✅ (Track B; Track A is covered in the Weeks 7–16 entry above)
+- **Focus Area**: Downstream ETA Dynamic Recalculation vs. AI Copilot Sliding Drawer UI & Execution Traces (US-005 & US-007).
+
+#### Track B (Abhayraj Jaiswal):
+1. **AI Copilot Sliding Drawer Component (`frontend/src/components/copilot/CopilotSlidingDrawer.tsx`)**:
+   - Floating AI Copilot trigger pill in bottom-right corner, accessible from any screen across the application.
+   - Sliding right-side drawer with backdrop blur and smooth CSS slide-in animation.
+   - One-tap quick prompt chips for common operational inquiries (e.g. "Check driver rest break rules", "Validate route compliance", "Show delayed shipments").
+   - Multi-agent execution trace inspector displaying individual sub-agent nodes, reasoning actions, and execution latencies.
+   - Live AI response latency indicator (ms) and calibrated confidence score meter (0–100%).
+   - Zero-hallucination verification badges with expandable SOP citations.
+2. **App Shell Integration (`frontend/src/App.tsx`)**:
+   - Mounted `<CopilotSlidingDrawer />` across all views with dynamic role passing.
+   - Driver header toggle between *My stops* (mobile cockpit) and *Map* (Live Tracking).
+3. **Tracking Map Crash Hotfix**:
+   - Resolved undefined `insets.left` map crash on Driver profile and added `'ARRIVED'` transition to `advanceFSM` (commit `fbbe588`).
+4. **Verification & Testing**:
+   - **Full Backend Pytest Suite (after merging Track A Weeks 7–16)**: **187 / 187 passed**.
+   - **Frontend**: `tsc` 0 errors, production build clean.

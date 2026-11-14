@@ -16,6 +16,7 @@ class ShipmentBase(BaseModel):
     time_window_start: str = Field(default="09:00", pattern=r"^([01]\d|2[0-3]):([0-5]\d)$", description="Window opening time (HH:MM 24-hr)")
     time_window_end: str = Field(default="17:00", pattern=r"^([01]\d|2[0-3]):([0-5]\d)$", description="Window closing time (HH:MM 24-hr)")
     priority: ShipmentPriority = ShipmentPriority.STANDARD
+    hazard_class: Optional[str] = Field(None, max_length=10, description="UN dangerous-goods class, e.g. '3' or '8'; empty for ordinary cargo")
     status: ShipmentStatus = ShipmentStatus.UNASSIGNED
     hub_id: int = Field(..., description="Origin distribution hub ID")
     assigned_vehicle_id: Optional[int] = Field(None, description="Assigned delivery vehicle ID")
