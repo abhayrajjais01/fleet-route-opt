@@ -2,7 +2,7 @@
 
 **Project**: Enterprise AI Fleet Route Optimizer  
 **Purpose**: Establishing a foolproof architectural blueprint that allows **two full-stack engineers** (Manthan Nimodiya & Abhayraj Jaiswal) to build simultaneously with a **true 50-50 GenAI & Full-Stack split** without git merge conflicts, blocked dependencies, or refactoring friction.  
-**Last updated**: Nov 12, 2026 (Weeks 1–10 delivered by both tracks; Track A Weeks 11–16 delivered early)
+**Last updated**: Nov 15, 2026 (Weeks 1–12 delivered by both tracks; Track A Weeks 13–16 delivered early)
 
 ---
 
@@ -53,6 +53,7 @@ fleet-route-opt/
 │   │   │   └── audit.py                 # [Abhayraj] Immutable AuditLog model
 │   │   │
 │   │   ├── schemas/                     <-- PYDANTIC DATA CONTRACTS
+│   │   │   ├── analytics.py             # [Abhayraj] Executive KPI dashboard schemas
 │   │   │   ├── fleet.py                 # [Manthan] Vehicle, Driver, Hub schemas
 │   │   │   ├── route.py                 # [Manthan] Solver, resequencing, disruption, ETA, SLA, explain, reports
 │   │   │   ├── rag.py                   # [Manthan] Policy query & citation schemas
@@ -61,7 +62,7 @@ fleet-route-opt/
 │   │   │   ├── shipment.py              # [Abhayraj] Shipment create/update & batch schemas
 │   │   │   ├── audit.py                 # [Abhayraj] Audit query schemas
 │   │   │   ├── transit.py               # [Abhayraj] FSM actions, driver manifest, offline sync
-│   │   │   └── copilot.py               # [Abhayraj] Agent state, traces, guardrails, policy reports
+│   │   │   └── copilot.py               # [Abhayraj] Agent state, traces, guardrails, policy reports, proposal cards
 │   │   │
 │   │   ├── services/                    <-- BUSINESS LOGIC & ENGINES
 │   │   │   ├── optimizer/               # [Manthan]
@@ -81,8 +82,10 @@ fleet-route-opt/
 │   │   │   │   ├── state_graph.py       # [Abhayraj] LangGraph StateGraph engine
 │   │   │   │   ├── router_agent.py      # [Abhayraj] Intent classifier agent
 │   │   │   │   ├── guardrails.py        # [Abhayraj] Zero-hallucination similarity guardrail
-│   │   │   │   └── policy_agent.py      # [Abhayraj] Compliance validator agent
+│   │   │   │   ├── policy_agent.py      # [Abhayraj] Compliance validator agent
+│   │   │   └── proposal_service.py  # [Abhayraj] Proposal cards: route diff, impact, accept / reject
 │   │   │   ├── transit_fsm.py           # [Abhayraj] In-transit FSM lifecycle engine
+│   │   │   ├── executive_analytics.py   # [Abhayraj] Executive KPIs (built on Track A's metrics engine)
 │   │   │   ├── batch_ingestion.py       # [Abhayraj] CSV / JSON batch order parser
 │   │   │   └── audit_service.py         # [Abhayraj] Audit event recorder
 │   │   │
@@ -96,7 +99,8 @@ fleet-route-opt/
 │   │   │   ├── auth.py                  # [Abhayraj] /api/v1/auth login, register, me
 │   │   │   ├── shipments.py             # [Abhayraj] /api/v1/shipments CRUD & batch upload
 │   │   │   ├── transit.py               # [Abhayraj] /api/v1/transit FSM actions, driver manifest, offline sync
-│   │   │   ├── copilot.py               # [Abhayraj] /api/v1/copilot query, guardrails, policy validation
+│   │   │   ├── copilot.py               # [Abhayraj] /api/v1/copilot query, guardrails, policy validation, proposals
+│   │   │   ├── analytics.py             # [Abhayraj] /api/v1/analytics executive KPI dashboard
 │   │   │   └── audit.py                 # [Abhayraj] /api/v1/audit log query
 │   │   │
 │   │   └── main.py                      # [Shared] Application root entrypoint
@@ -107,14 +111,15 @@ fleet-route-opt/
 │   │   └── docker_entrypoint.py         # [Manthan] Wait for DB, migrate, seed
 │   ├── Dockerfile                       # [Manthan] Multi-stage backend image
 │   │
-│   └── tests/                           <-- INDEPENDENT TEST SUITES (187 tests)
+│   └── tests/                           <-- INDEPENDENT TEST SUITES (200 tests)
 │       ├── test_health.py, test_database_url.py                          # [Shared]
 │       ├── test_fleet_crud.py, test_rag.py, test_distance_matrix.py,
 │       │   test_vrptw_solver.py, test_route_operations.py,
 │       │   test_reports.py, test_performance.py                         # [Manthan]
 │       └── test_auth_rbac.py, test_shipments_audit.py, test_batch_ingestion.py,
 │           test_copilot_router.py, test_transit_fsm.py, test_rag_guardrails.py,
-│           test_policy_agent.py, test_mobile_driver_api.py              # [Abhayraj]
+│           test_policy_agent.py, test_mobile_driver_api.py,
+│           test_action_proposals.py, test_executive_analytics.py        # [Abhayraj]
 │
 ├── frontend/
 │   ├── src/
@@ -129,14 +134,15 @@ fleet-route-opt/
 │   │   │   ├── workflow/                # [Manthan] DispatchPlanner
 │   │   │   ├── tracking/                # [Joint] TrackingMap, simulation, SlaAlerts [Manthan];
 │   │   │   │                            #         FsmProgressBar [Abhayraj]; LiveTrackingSection [Shared]
-│   │   │   ├── copilot/                 # [Abhayraj] CopilotCommandCenter, CopilotSlidingDrawer
+│   │   │   ├── copilot/                 # [Abhayraj] CopilotCommandCenter, CopilotSlidingDrawer, ProposalCard
+│   │   │   ├── analytics/               # [Abhayraj] ExecutiveDashboard
 │   │   │   ├── driver/                  # [Abhayraj] MobileDriverCockpit
 │   │   │   └── ErrorBoundary.tsx        # [Shared]
 │   │   └── lib/
 │   │       ├── types.ts                 # [Shared] TypeScript data contracts
 │   │       ├── api.ts                   # [Shared] API base URL, auth token helper, health check
 │   │       ├── geo.ts, routesApi.ts, ragApi.ts, reportsApi.ts   # [Manthan]
-│   │       ├── copilotApi.ts, transitApi.ts                     # [Abhayraj]
+│   │       ├── copilotApi.ts, transitApi.ts, proposalsApi.ts, analyticsApi.ts   # [Abhayraj]
 │   │       └── trackA_stubs.ts          # Legacy Track A stubs (superseded; removal pending)
 │   │
 │   └── vercel.json                      # Vercel Vite build & SPA rewrite config
@@ -181,6 +187,7 @@ Schema additions that cross ownership lines (Abhayraj adding `Driver.hazmat_endo
 - [x] Month 1 (Weeks 1–4): foundation, auth, fleet assets, RAG store, shipments, audit, batch ingestion.
 - [x] Month 2 (Weeks 5–8): distance engine, Leaflet map, VRPTW solver, route planner & resequencing **vs.** LangGraph router, in-transit FSM, guardrails, policy agent.
 - [x] Weeks 9–10: optimization agent & downstream ETAs **vs.** mobile driver cockpit with offline sync & Copilot sliding drawer (PR #24).
+- [x] Weeks 11–12: route explainer & SLA alerts **vs.** action proposal cards with route diff & executive KPI dashboard (Track B delivered early, Nov 15).
 - [x] **Track A (Manthan)**: Weeks 11–16 delivered early (route explainer, SLA alerts, metrics & reports, CSV/PDF exports, benchmarks, backend Docker + Postgres).
-- [ ] **Track B (Abhayraj)**, Weeks 11–16: action proposal cards & diff view, executive KPI dashboard, analytics filters, security hardening & agent benchmarks, multi-agent stress tests, frontend Docker, docs & viva walkthrough.
+- [ ] **Track B (Abhayraj)**, Weeks 13–16: analytics filters & exports, security hardening & agent benchmarks, multi-agent stress tests, frontend Docker, docs & viva walkthrough.
 - [ ] Cleanup: remove the superseded Track A mock stubs (`mock_stubs.py`, `trackA_stubs.ts`) and the test that exercises them.

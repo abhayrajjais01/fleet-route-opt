@@ -365,3 +365,50 @@
 5. **Verification & Testing**:
    - **Full Backend Pytest Suite**: **187 / 187 passed**.
    - **Frontend**: `tsc` 0 errors, production build clean; driver *My stops* and *Map* views checked in the browser.
+
+---
+
+### Week 11: Route Explainer vs. Structured Action Proposals & Diff View (Nov 16 – Nov 20, 2026) — COMPLETED ✅ (early, Nov 15)
+- **Status**: `COMPLETED` ✅ (Track B; Track A is covered in the Weeks 7–16 entry above)
+- **Focus Area**: Turning the Optimization Agent's re-route proposals into decision cards in the AI Copilot drawer: what changes, what it costs, and one-click accept / reject (US-005 & US-006).
+
+#### Track B (Abhayraj Jaiswal):
+1. **Proposal Service (`backend/app/services/copilot/proposal_service.py`)**:
+   - Runs on top of Track A's Optimization Agent; never re-plans itself, so every number comes from the solver and ETA engine.
+   - Per-vehicle route diff: each stop marked `SAME`, `MOVED`, `ADDED`, `REMOVED` or `COMPLETED`, with its position and ETA on both sides, where a removed stop goes and where an added stop comes from. For delays, each stop also carries its originally planned ETA.
+   - Vehicle status: `OUT_OF_SERVICE`, `CHANGED`, `NEW_VEHICLE` (spare), `RESEQUENCED`, `UNCHANGED`; changed vehicles listed first.
+   - Impact summary per vehicle and in total: km, driving minutes, operating cost (fuel by vehicle class + driver time, the same ₹95/L and ₹250/h assumptions as Reports) and minutes late. "Current" means what happens if the dispatcher rejects, including the reported delay.
+   - Thread-safe, bounded in-memory registry; each proposal can be decided once.
+2. **REST API (`backend/app/api/v1/copilot.py`)**:
+   - `POST /api/v1/copilot/proposals`: same request contract as `/routes/disruption`; returns the card (201). Vague messages get a 422 with guidance.
+   - `GET /api/v1/copilot/proposals/{id}` and `POST /api/v1/copilot/proposals/{id}/decision` (`ACCEPT` / `REJECT`, optional note); a second decision returns 409; each decision is written to the audit log as `COPILOT_OVERRIDE` with before/after routes. ADMIN, FLEET_MANAGER and DISPATCHER only.
+3. **Proposal Cards in the Copilot Drawer (`ProposalCard.tsx`, `CopilotSlidingDrawer.tsx`, `lib/proposalsApi.ts`)**:
+   - When the Router Agent sees a breakdown, delay or re-route request, the drawer builds the request from the live plan (vehicles on the road at the named vehicle's hub, in their current order) and shows the card under the reply.
+   - Impact table (current → proposed → change, green when better), side-by-side route diff with colour-coded additions, removals and moves, an "unassigned" warning, and Accept / Reject buttons.
+   - Accepting re-assigns and re-sequences shipments (and puts a broken-down vehicle into maintenance), so Live Tracking follows the new plan immediately.
+   - Quick-prompt chips now include a breakdown and a delay for a vehicle that is actually on the road.
+4. **Router Agent fix**: "broke down", "accident", "crashed", "out of service" and "won't start" now classify as `VEHICLE_BREAKDOWN` (they previously fell through to `GENERAL_INQUIRY`, so the drawer never offered a proposal).
+5. **Tests**: `backend/tests/test_action_proposals.py` (8): breakdown and delay diffs, impact totals and cost model, create → accept → audit, reject / 404 / 409 / role checks, router phrasing.
+
+---
+
+### Week 12: SLA Alerts vs. Executive KPI Analytics Dashboard (Nov 23 – Nov 27, 2026) — COMPLETED ✅ (early, Nov 15)
+- **Status**: `COMPLETED` ✅ (Track B; Track A is covered in the Weeks 7–16 entry above)
+- **Focus Area**: An executive view of delivery performance, cost and driver efficiency that stays current as trips progress (US-007 & US-008).
+
+#### Track B (Abhayraj Jaiswal):
+1. **Executive Analytics Service (`backend/app/services/executive_analytics.py`)**:
+   - Reuses Track A's metrics engine and simulated dispatch history, so the executive view, Reports and the CSV/PDF exports always agree.
+   - KPI cards (on-time %, OTIF %, deliveries, total cost, cost per delivery, fleet utilisation, total km, failed %) with the change against the previous period of the same length, and whether up is good.
+   - Daily volume by outcome (on time / late / failed, every day in the range), SLA compliance by hour of arrival, and a driver efficiency table (on-time %, stops per driving hour, km per stop, cost per delivery, load used) ranked by on-time rate.
+2. **REST API (`backend/app/api/v1/analytics.py`, `backend/app/schemas/analytics.py`)**:
+   - `GET /api/v1/analytics/executive?date_from&date_to&hub&vehicle_type`: default last 30 days ending yesterday, max 90 days (422 otherwise). Includes a live snapshot of shipment and vehicle states from the database. ADMIN and FLEET_MANAGER only.
+3. **Executive KPIs Page (`frontend/src/components/analytics/ExecutiveDashboard.tsx`, `lib/analyticsApi.ts`)**:
+   - New *Insights → Executive KPIs* page for administrators and fleet managers.
+   - One filter row: last 7 / 30 / 90 days or a custom range, hub, vehicle type.
+   - Hero on-time delivery rate (with failed deliveries), six KPI tiles with coloured change vs the previous period.
+   - Stacked daily-volume chart and SLA-by-hour chart: hover tooltips, keyboard focus, a Chart / Table toggle on each, and a colour palette checked for colour-blind safety.
+   - Driver efficiency table with an on-time meter per driver.
+   - Real-time: the "Right now" strip reads the live plan and changes with every trip event; the charts refetch on trip events (debounced) and every minute, keeping the previous render visible while loading.
+4. **Tests**: `backend/tests/test_executive_analytics.py` (5): date-range rules, KPIs vs the metrics engine and previous period, breakdowns adding up, filters, endpoint roles and validation.
+5. **Verification**: **200 / 200 backend tests passing**; frontend `tsc` 0 errors and production build clean; proposal accept flow and the dashboard (filters, tooltips, table views, tablet layout) checked in the browser against the running backend.

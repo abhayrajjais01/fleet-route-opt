@@ -10,19 +10,19 @@
 
 | Metric | Status |
 | :--- | :--- |
-| **Overall Roadmap Progress** | **Weeks 1–10 Completed by both tracks; Track A (Manthan) delivered Weeks 11–16 ahead of schedule on Nov 12, 2026** |
+| **Overall Roadmap Progress** | **Weeks 1–12 Completed by both tracks; Track A (Manthan) delivered Weeks 13–16 ahead of schedule on Nov 12, 2026** |
 | **Current Active Month** | **Month 3: Agents, Live ETAs & Explanations** |
-| **Current Active Week** | **Week 10: Downstream ETAs & Copilot UI (Nov 9 – Nov 13, 2026)** |
+| **Current Active Week** | **Week 12: SLA Alerts & KPI Dashboard (Nov 23 – Nov 27, 2026; Track B delivered early on Nov 15)** |
 | **Track A Status** | **All 16 Track A weeks delivered** (Weeks 11–16 delivered early) |
-| **Track B Status** | **Weeks 1–10 delivered** (Weeks 11–16 on schedule) |
-| **Automated Test Suite** | **187 / 187 PASSED** (`pytest -q` in `backend/`) |
+| **Track B Status** | **Weeks 1–12 delivered** (Weeks 11–12 early, on Nov 15; Weeks 13–16 on schedule) |
+| **Automated Test Suite** | **200 / 200 PASSED** (`pytest -q` in `backend/`) |
 
 ```
 Track A Progress: [████████████████████] 100% (16 / 16 weeks delivered)
-Track B Progress: [████████████░░░░░░░░] 10 / 16 weeks (Weeks 11–16 on schedule)
+Track B Progress: [███████████████░░░░░] 12 / 16 weeks (Weeks 13–16 on schedule)
 Month 1 Progress: [████████████████████] 100% (Weeks 1–4 COMPLETED)
 Month 2 Progress: [████████████████████] 100% (Weeks 5–8 COMPLETED)
-Month 3 Progress: [██████████░░░░░░░░░░] Weeks 9–10 COMPLETED; Weeks 11–12 Track A done
+Month 3 Progress: [████████████████████] 100% (Weeks 9–12 COMPLETED)
 Month 4 Progress: [██████████░░░░░░░░░░] Weeks 13–16 Track A done
 ```
 
@@ -42,8 +42,8 @@ Month 4 Progress: [██████████░░░░░░░░░░]
 | | **Week 8** | Resequencing & Policy Agent | Drag-and-Drop Resequencing UI/API | Policy & Compliance Agent + RAG Check| `COMPLETED` ✅ |
 | **Month 3** | **Week 9** | Optimization Agent & Driver | LangGraph Optimization Agent (Solver Tool)| Mobile Driver View & Actions | `COMPLETED` ✅ |
 | | **Week 10** | Downstream ETAs & Copilot UI| Downstream Dynamic Recalculation | Copilot Sliding Drawer & Traces | `COMPLETED` ✅ |
-| | **Week 11** | RAG Route Explainer & Proposals| RAG Route Explanations & Summaries | Interactive Proposal Cards & Diff | `PLANNED` *(Track A Done early)* |
-| | **Week 12** | SLA Alerts & KPI Dashboard | SLA Breach Alerts & Recovery FSM | Executive KPI Analytics Dashboard UI| `PLANNED` *(Track A Done early)* |
+| | **Week 11** | RAG Route Explainer & Proposals| RAG Route Explanations & Summaries | Interactive Proposal Cards & Diff | `COMPLETED` ✅ |
+| | **Week 12** | SLA Alerts & KPI Dashboard | SLA Breach Alerts & Recovery FSM | Executive KPI Analytics Dashboard UI| `COMPLETED` ✅ |
 | **Month 4** | **Week 13** | Operational KPIs & Filter | Operational Metrics Calc Engine | Multi-Dimensional Analytics Filter | `PLANNED` *(Track A Done early)* |
 | | **Week 14** | Data Export & Pipeline Polish| CSV / PDF Audit Export Generator | Security Audit & Agent Benchmarks | `PLANNED` *(Track A Done early)* |
 | | **Week 15** | Performance & Stress Testing| Solver & Vector Indexing Benchmark (<5s)| Multi-Agent Exception Handling (<3s)| `PLANNED` *(Track A Done early)* |
@@ -208,19 +208,31 @@ Month 4 Progress: [██████████░░░░░░░░░░]
   - [x] Floating AI Copilot sliding drawer (`frontend/src/components/copilot/CopilotSlidingDrawer.tsx`): global trigger pill, prompt chips, latency and confidence meters, execution trace viewer
   - [x] Mounted app-wide in `App.tsx`; driver header toggle between *My stops* (mobile cockpit) and *Map* (Live Tracking)
 
-#### Week 11: RAG Route Explanations & Driver Instructions
-- **Status**: Track A `COMPLETED` ✅ (delivered early)
+#### Week 11: RAG Route Explanations vs. Structured Action Proposals & Diff View (US-005 & US-006)
+- **Status**: `COMPLETED` ✅ (both tracks delivered early)
 - **Manthan Nimodiya (Track A)**:
   - [x] `backend/app/services/optimizer/route_explainer.py`: plain-language summary, a reason for every stop, turn-by-turn style driver instructions (compass direction, km, minutes)
   - [x] Built only from computed ETAs plus SOP clauses retrieved from the RAG store (cited, never invented)
   - [x] `POST /api/v1/routes/explain`; "Explain route" modal with *Stop by stop* and *Driver instructions* tabs
+- **Abhayraj Jaiswal (Track B)**:
+  - [x] Proposal service (`backend/app/services/copilot/proposal_service.py`): wraps the Optimization Agent's proposal in a card with a per-vehicle route diff (SAME / MOVED / ADDED / REMOVED / COMPLETED, ETA before and after, planned ETA for delays)
+  - [x] Impact summary from the ETA engine: km, driving time, operating cost (same fuel/driver assumptions as Reports) and minutes late, current vs proposed, with deltas
+  - [x] `POST /api/v1/copilot/proposals`, `GET /api/v1/copilot/proposals/{id}`, `POST /api/v1/copilot/proposals/{id}/decision` (accept / reject once; 409 on a second decision; every decision written to the audit log)
+  - [x] Proposal cards in the Copilot drawer (`ProposalCard.tsx`): impact table, side-by-side "Current route" vs "Proposed route" diff with colour-coded changes, unassigned-stop warning, one-click Accept / Reject; accepting re-assigns and re-sequences the live plan so Live Tracking follows it
+  - [x] Router Agent recognises everyday breakdown phrasing ("broke down", "accident", "out of service")
+  - [x] `backend/tests/test_action_proposals.py` (8 tests)
 
-#### Week 12: SLA Breach Detection & Alerts
-- **Status**: Track A `COMPLETED` ✅ (delivered early)
+#### Week 12: SLA Breach Detection & Alerts vs. Executive KPI Analytics Dashboard (US-007 & US-008)
+- **Status**: `COMPLETED` ✅ (both tracks delivered early)
 - **Manthan Nimodiya (Track A)**:
   - [x] SLA classes: ON_TIME, AT_RISK (within 15 min of window close), PREDICTED_BREACH, SLA_BREACHED, FAILED; trip states ROUTE_BLOCKED / ROUTE_PROPOSED
   - [x] `POST /api/v1/routes/sla-check` returns alerts sorted worst first
   - [x] Live Tracking toasts for predicted breach, actual breach and blocked route, with an optional alert tone
+- **Abhayraj Jaiswal (Track B)**:
+  - [x] `GET /api/v1/analytics/executive` (`backend/app/api/v1/analytics.py`, `services/executive_analytics.py`): KPI cards with change vs the previous period of equal length, daily volume by outcome, SLA compliance by hour of arrival, driver efficiency ranking, live database snapshot; filters for date range (≤ 90 days), hub and vehicle type; ADMIN / FLEET_MANAGER only
+  - [x] Executive KPIs page (`frontend/src/components/analytics/ExecutiveDashboard.tsx`): hero on-time rate, KPI tiles (OTIF, deliveries, total cost, cost per delivery, utilisation, distance, failed), stacked daily-volume chart, SLA-by-hour chart, driver table; hover tooltips and a table view on every chart
+  - [x] Real-time refresh: a "Right now" strip reads the live plan, and the charts refetch on every trip event (debounced) and once a minute
+  - [x] `backend/tests/test_executive_analytics.py` (5 tests)
 
 ### Month 4: Metrics, Exports, Performance & Release
 
@@ -254,7 +266,7 @@ Month 4 Progress: [██████████░░░░░░░░░░]
 - **Abhayraj Jaiswal (Track B)**:
   - [ ] Frontend Docker, CI and walkthrough
 
-#### Test summary (Nov 12, 2026, after merging Track A Weeks 7–16 with Track B Weeks 7–10)
+#### Test summary (Nov 15, 2026: Track A Weeks 7–16, Track B Weeks 7–12)
 - Track A new suites: `test_route_operations.py` (27), `test_reports.py` (8), `test_performance.py` (3)
-- Track B new suites: `test_rag_guardrails.py` (5), `test_policy_agent.py` (12), `test_mobile_driver_api.py` (6)
-- **Full backend suite: 187 / 187 passed**; frontend `tsc` 0 errors and production build clean
+- Track B new suites: `test_rag_guardrails.py` (5), `test_policy_agent.py` (12), `test_mobile_driver_api.py` (6), `test_action_proposals.py` (8), `test_executive_analytics.py` (5)
+- **Full backend suite: 200 / 200 passed**; frontend `tsc` 0 errors and production build clean

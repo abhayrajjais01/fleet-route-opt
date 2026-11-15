@@ -22,16 +22,16 @@ To ensure a true, equal **50-50 division** across both **GenAI / LLM Engineering
 
 ```
 Track A Progress: [████████████████████] 100% (16 / 16 weeks delivered; Weeks 11–16 early)
-Track B Progress: [████████████░░░░░░░░] 62.5% (10 / 16 weeks delivered)
+Track B Progress: [███████████████░░░░░] 75% (12 / 16 weeks delivered)
 Month 1 Progress: [████████████████████] 100% (Weeks 1–4 COMPLETED)
 Month 2 Progress: [████████████████████] 100% (Weeks 5–8 COMPLETED)
-Month 3 Progress: [██████████░░░░░░░░░░] Weeks 9–10 COMPLETED; Weeks 11–12 Track A done
+Month 3 Progress: [████████████████████] 100% (Weeks 9–12 COMPLETED)
 Month 4 Progress: [██████████░░░░░░░░░░] Weeks 13–16 Track A done
 ```
 
-- **Status as of Nov 12, 2026**: Weeks 1–10 delivered by both tracks. Track A (Manthan) also delivered Weeks 11–16 ahead of schedule.
-- **Current Active Milestone**: Week 10 wrap-up (Nov 9 – Nov 13, 2026); next is **Month 3, Week 11: Track B Action Proposal Cards & Diff View (Nov 16 – Nov 20, 2026)**.
-- **Regression Suite**: **187 / 187 backend tests passing**; frontend `tsc` 0 errors and production build clean.
+- **Status as of Nov 15, 2026**: Weeks 1–12 delivered by both tracks (Track B delivered Weeks 11–12 early). Track A (Manthan) also delivered Weeks 13–16 ahead of schedule.
+- **Current Active Milestone**: next is **Month 4, Week 13: Track B Multi-Dimensional Analytics Filtering (Nov 30 – Dec 4, 2026)**.
+- **Regression Suite**: **200 / 200 backend tests passing**; frontend `tsc` 0 errors and production build clean.
 
 ---
 
@@ -194,7 +194,7 @@ Month 4 Progress: [██████████░░░░░░░░░░]
 - **Weekly Integration Sync**: Open AI Copilot drawer, type `"Vehicle V-101 is delayed by 45 minutes on Highway 4"`, and verify that downstream ETAs update while Copilot displays its reasoning trace. *(Completed)*
 
 #### Week 11: Route Explainer & Action Proposals with Diff View (US-005 & US-006)
-- **Status**: Track A `COMPLETED` ✅ (delivered early, Nov 12) · Track B `PLANNED`
+- **Status**: `COMPLETED` ✅ (Track A Nov 12, Track B Nov 15; both early)
 - **Track A as delivered (Weeks 11–16)**: route explainer (`route_explainer.py`, `POST /api/v1/routes/explain`), SLA breach classes and alerts (`POST /api/v1/routes/sla-check`, `SlaAlerts.tsx`), operational metrics and Reports page (`/api/v1/reports/metrics`), CSV/PDF exports, benchmarks (`scripts/benchmark.py`), and backend Docker + Postgres compose. See `weekly_work_log.md` for details.
 - **Manthan Nimodiya (Track A)**:
   - **Route Explainer Agent**: LangGraph agent generating plain-English explanations of why a particular route was chosen.
@@ -205,10 +205,11 @@ Month 4 Progress: [██████████░░░░░░░░░░]
   - Route Diff Viewer: side-by-side comparison showing "Current Route" vs. "Proposed Route" with color-coded additions, removals, and sequence changes.
   - Impact summary: delta in total kilometers, total driving time, and estimated delivery cost.
   - One-click `"Accept Proposal"` and `"Reject Proposal"` action buttons.
-- **Weekly Integration Sync**: Request route optimization via Copilot, view the structured proposal card with visual diff, click "Accept", and verify that active routes update.
+- **Weekly Integration Sync**: Request route optimization via Copilot, view the structured proposal card with visual diff, click "Accept", and verify that active routes update. *(Completed)*
+- **Track B as delivered**: `POST /api/v1/copilot/proposals` + `/decision` (audit-logged), proposal cards with a current-vs-proposed diff and km / time / cost / lateness impact in the Copilot drawer; accepting updates the live plan.
 
 #### Week 12: SLA Breach Warning & Executive KPI Dashboard (US-007 & US-008)
-- **Status**: Track A `COMPLETED` ✅ (delivered early, Nov 12) · Track B `PLANNED`
+- **Status**: `COMPLETED` ✅ (Track A Nov 12, Track B Nov 15; both early)
 - **Manthan Nimodiya (Track A)**:
   - Predictive SLA breach detection: flags deliveries at risk of missing customer time windows before the breach occurs.
   - Automated alert generator: classifies risk severity (low, medium, critical).
@@ -218,7 +219,8 @@ Month 4 Progress: [██████████░░░░░░░░░░]
   - Interactive charts: Daily delivery volume trends, SLA compliance by time of day, driver efficiency comparison.
   - Filterable by date range, hub, and vehicle category.
   - Real-time stat auto-refresh when trip events occur.
-- **Weekly Integration Sync**: Simulate multiple delivery delays, observe the SLA breach alert banner trigger, review corrective proposals, and verify KPI dashboard metric updates.
+- **Weekly Integration Sync**: Simulate multiple delivery delays, observe the SLA breach alert banner trigger, review corrective proposals, and verify KPI dashboard metric updates. *(Completed)*
+- **Track B as delivered**: `GET /api/v1/analytics/executive` and the *Executive KPIs* page (KPIs vs previous period, daily volume by outcome, SLA by hour, driver efficiency; date / hub / vehicle filters; live strip and refetch on trip events).
 
 ---
 
