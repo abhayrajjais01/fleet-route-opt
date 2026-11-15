@@ -138,6 +138,8 @@ class DriverMobileManifestResponse(BaseModel):
     hub_id: Optional[int] = None
     hub_name: Optional[str] = None
     hub_code: Optional[str] = None
+    hub_latitude: Optional[float] = None
+    hub_longitude: Optional[float] = None
     total_stops: int
     completed_stops: int
     pending_stops: int

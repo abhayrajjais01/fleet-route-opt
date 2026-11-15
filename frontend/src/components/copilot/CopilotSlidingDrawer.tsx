@@ -16,6 +16,8 @@ interface CopilotSlidingDrawerProps {
   fleet?: { shipments: Shipment[]; vehicles: Vehicle[]; drivers: Driver[]; hubs: Hub[] }
   /** Called when the dispatcher accepts a proposal; applies it to the live plan. */
   onApplyProposal?: (card: ProposalCardData, now: string) => string | void
+  /** Render the built-in floating launcher. Off when the host page provides its own (e.g. a header button). */
+  showTrigger?: boolean
 }
 
 interface MessageItem {
@@ -82,6 +84,7 @@ export default function CopilotSlidingDrawer({
   activeRole = 'DISPATCHER',
   fleet,
   onApplyProposal,
+  showTrigger = true,
 }: CopilotSlidingDrawerProps) {
   const [messages, setMessages] = useState<MessageItem[]>([
     {
@@ -205,7 +208,7 @@ ${extra.note}` : data.response,
   return (
     <>
       {/* ── Persistent Floating AI Pill Button (Always accessible) ── */}
-      <button
+      {showTrigger && <button
         onClick={onToggle}
         className="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-4 py-3 rounded-full bg-slate-900 text-white shadow-2xl border border-slate-700/80 hover:bg-slate-800 active:scale-95 transition-all group"
         title="Open AI Copilot Sliding Drawer"
@@ -215,7 +218,7 @@ ${extra.note}` : data.response,
         </div>
         <span className="text-xs font-bold tracking-wide">AI Copilot</span>
         <span className="w-2 h-2 rounded-full bg-emerald-400 group-hover:animate-ping" />
-      </button>
+      </button>}
 
       {/* ── Backdrop Overlay ── */}
       {isOpen && (

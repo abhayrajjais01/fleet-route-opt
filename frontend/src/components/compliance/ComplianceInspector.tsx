@@ -16,11 +16,11 @@ import {
 } from '../../lib/ragApi'
 
 const CATEGORY_STYLE: Record<PolicyCategory, { bg: string; text: string; icon: string }> = {
-  HAZMAT: { bg: '#fbf2ef', text: '#86493a', icon: '☣️' },
-  DRIVER_REST: { bg: '#fbf6ec', text: '#87602f', icon: '🛌' },
-  COLD_CHAIN: { bg: '#eef6f7', text: '#375e64', icon: '❄️' },
-  VEHICLE_SAFETY: { bg: '#f0f6f1', text: '#416249', icon: '🛻' },
-  OPERATIONS: { bg: '#f0f4f8', text: '#445c79', icon: '🧭' },
+  HAZMAT: { bg: '#fef2f2', text: '#b91c1c', icon: '☣️' },
+  DRIVER_REST: { bg: '#fffbeb', text: '#b45309', icon: '🛌' },
+  COLD_CHAIN: { bg: '#ecfeff', text: '#0e7490', icon: '❄️' },
+  VEHICLE_SAFETY: { bg: '#f0fdf4', text: '#15803d', icon: '🛻' },
+  OPERATIONS: { bg: '#eff6ff', text: '#1d4ed8', icon: '🧭' },
 }
 
 const EXAMPLE_QUERIES = [
@@ -35,9 +35,9 @@ const EXAMPLE_QUERIES = [
 // Similarity bands calibrated on the WikiQA-style benchmark (backend/app/services/rag/eval_set.json):
 // every answerable question's best passage scored ≥ 0.16, every off-topic question scored 0.
 function confidence(score: number): { label: string; color: string } {
-  if (score >= 0.25) return { label: 'High match', color: '#416249' }
-  if (score >= 0.12) return { label: 'Medium match', color: '#87602f' }
-  return { label: 'Weak match', color: '#86493a' }
+  if (score >= 0.25) return { label: 'High match', color: '#15803d' }
+  if (score >= 0.12) return { label: 'Medium match', color: '#b45309' }
+  return { label: 'Weak match', color: '#b91c1c' }
 }
 
 const STOP = new Set(['the', 'and', 'for', 'what', 'how', 'can', 'when', 'with', 'does', 'must', 'are', 'before', 'long', 'is'])
@@ -63,8 +63,8 @@ function highlight(text: string, query: string): ReactNode {
 function CategoryBadge({ code, label }: { code: PolicyCategory; label?: string }) {
   const s = CATEGORY_STYLE[code]
   return (
-    <span style={{ background: s.bg, color: s.text, border: `1px solid ${s.text}22` }} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap">
-      {label ?? code.replace(/_/g, ' ').toLowerCase().replace(/^./, c => c.toUpperCase())}
+    <span style={{ background: s.bg, color: s.text, border: `1px solid ${s.text}22` }} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap">
+      {s.icon} {label ?? code.replace(/_/g, ' ')}
     </span>
   )
 }
@@ -76,8 +76,8 @@ function ScoreMeter({ score }: { score: number }) {
   return (
     <div className="flex items-center gap-2 min-w-[150px]">
       <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: c.color }} /></div>
-      <span className="text-[11px] font-semibold whitespace-nowrap" style={{ color: c.color }}>{c.label}</span>
-      <span className="text-xs text-slate-400">{score.toFixed(3)}</span>
+      <span className="text-[10px] font-semibold whitespace-nowrap" style={{ color: c.color }}>{c.label}</span>
+      <span className="font-mono text-[10px] text-slate-400">{score.toFixed(3)}</span>
     </div>
   )
 }
@@ -87,7 +87,7 @@ function CitationCard({ c, query, rank, onOpen }: { c: PolicyCitation; query: st
   return (
     <div className={`rounded-xl p-4 border transition-colors ${best ? 'border-violet-300 bg-violet-50/60' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
       <div className="flex flex-wrap items-center gap-2 mb-2">
-        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${best ? 'bg-violet-50 text-violet-700' : 'bg-slate-100 text-slate-500'}`}>{best ? 'Best match' : `#${rank}`}</span>
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${best ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{best ? 'BEST MATCH' : `#${rank}`}</span>
         <span className="font-mono text-xs font-bold text-slate-700">{c.doc_id} {c.section}</span>
         <span className="text-xs font-semibold text-slate-600">{c.heading}</span>
         <CategoryBadge code={c.category} />
@@ -95,7 +95,7 @@ function CitationCard({ c, query, rank, onOpen }: { c: PolicyCitation; query: st
       </div>
       <p className="text-sm text-slate-700 leading-relaxed">“{highlight(c.excerpt, query)}”</p>
       <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
-        <p className="text-[11px] text-slate-400 font-mono">{c.doc_title} · v{c.version} · effective {c.effective_date}</p>
+        <p className="text-[10px] text-slate-400 font-mono">{c.doc_title} · v{c.version} · effective {c.effective_date}</p>
         <button onClick={onOpen} className="text-xs text-blue-600 hover:text-blue-700 font-semibold">Open source document →</button>
       </div>
     </div>
@@ -119,9 +119,9 @@ function DocumentViewer({ docId, focusSection, onClose }: { docId: string; focus
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-slate-200">
           <div>
-            <p className="font-mono text-[11px] text-slate-400">{docId}{doc && ` · v${doc.version} · effective ${doc.effective_date}`}</p>
+            <p className="font-mono text-[10px] text-slate-400">{docId}{doc && ` · v${doc.version} · effective ${doc.effective_date}`}</p>
             <p className="font-bold text-slate-800">{doc?.title ?? 'Loading…'}</p>
-            {doc && <p className="text-xs text-slate-500 mt-1"><span className="font-semibold">References:</span> {doc.references}</p>}
+            {doc && <p className="text-[11px] text-slate-500 mt-1"><span className="font-semibold">References:</span> {doc.references}</p>}
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
         </div>
@@ -131,7 +131,7 @@ function DocumentViewer({ docId, focusSection, onClose }: { docId: string; focus
             const focused = s.section === focusSection
             return (
               <div key={s.section} ref={focused ? focusRef : undefined} className={`rounded-xl p-3 border ${focused ? 'border-violet-300 bg-violet-50' : 'border-slate-100'}`}>
-                <p className="text-xs font-bold text-slate-700 mb-1"><span className="font-mono text-violet-600">{s.section}</span> {s.heading}{focused && <span className="ml-2 text-[11px] font-semibold text-violet-600">← cited passage</span>}</p>
+                <p className="text-xs font-bold text-slate-700 mb-1"><span className="font-mono text-violet-600">{s.section}</span> {s.heading}{focused && <span className="ml-2 text-[10px] font-semibold text-violet-600">← cited passage</span>}</p>
                 <p className="text-sm text-slate-600 leading-relaxed">{s.text}</p>
               </div>
             )
@@ -187,14 +187,14 @@ export default function ComplianceInspector() {
   return (
     <div className="flex h-full overflow-hidden">
       {/* ── Search & results ── */}
-      <div className="flex-1 min-w-0 px-6 py-5 space-y-5 overflow-y-auto">
+      <div className="flex-1 min-w-0 p-5 space-y-4 overflow-y-auto">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-base font-semibold text-slate-800">Ask a policy question</p>
-            <p className="text-sm text-slate-500 mt-0.5">Answers are quoted word for word from the verified SOPs, with the section they come from.</p>
+            <p className="text-base font-bold text-slate-800">Compliance & SOP Inspector</p>
+            <p className="text-xs text-slate-400 mt-0.5">RAG retrieval over verified logistics SOPs · every result is a cited, verbatim excerpt</p>
           </div>
           {stats && (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">
+            <span className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">
               {stats.documents} SOPs · {stats.chunks} passages · {stats.vocabulary_size.toLocaleString()} terms · {stats.embedder}
             </span>
           )}
@@ -212,24 +212,24 @@ export default function ComplianceInspector() {
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && search()}
-            placeholder="e.g. How long can a driver drive before a break?"
-            className="flex-1 rounded-2xl ring-1 ring-slate-200 px-4 py-3 text-[15px] outline-none focus:ring-violet-300 transition bg-white placeholder:text-slate-400"
+            placeholder="Ask about HAZMAT placards, driver rest breaks, cold chain, breakdowns…"
+            className="flex-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-50 transition bg-white"
           />
-          <button onClick={() => search()} disabled={!query.trim() || loading} className="px-5 py-3 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-medium rounded-2xl transition-colors">
-            Search
+          <button onClick={() => search()} disabled={!query.trim() || loading} className="px-4 py-2.5 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-sm font-semibold rounded-xl transition-colors">
+            Search SOPs
           </button>
         </div>
 
         {/* Category filters */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-slate-400 mr-1">Topics</span>
-          <button onClick={() => setSelected([])} className={`px-3 py-1 rounded-full text-sm border transition-colors ${selected.length === 0 ? 'bg-violet-50 text-violet-800 border-violet-200' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}>All</button>
+          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mr-1">Filter</span>
+          <button onClick={() => setSelected([])} className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${selected.length === 0 ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}>All</button>
           {(categories.length ? categories : (Object.keys(CATEGORY_STYLE) as PolicyCategory[]).map(code => ({ code, label: code.replace(/_/g, ' '), document_count: 0, chunk_count: 0 }))).map(c => {
             const on = selected.includes(c.code)
             const s = CATEGORY_STYLE[c.code]
             return (
-              <button key={c.code} onClick={() => toggleCategory(c.code)} style={on ? { background: s.bg, color: s.text, borderColor: s.text } : undefined} className={`px-3 py-1 rounded-full text-sm border transition-colors ${on ? '' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}>
-                {c.label}{c.document_count > 0 && <span className="opacity-60"> · {c.document_count}</span>}
+              <button key={c.code} onClick={() => toggleCategory(c.code)} style={on ? { background: s.bg, color: s.text, borderColor: s.text } : undefined} className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${on ? '' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}>
+                {s.icon} {c.label}{c.document_count > 0 && <span className="opacity-60"> · {c.document_count}</span>}
               </button>
             )
           })}
@@ -238,21 +238,21 @@ export default function ComplianceInspector() {
         {!result && !loading && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {EXAMPLE_QUERIES.map(q => (
-              <button key={q} onClick={() => search(q)} className="text-left px-4 py-3 ring-1 ring-slate-200/70 bg-white rounded-2xl text-sm text-slate-600 hover:ring-violet-200 hover:text-violet-700 hover:bg-violet-50/50 transition">{q}</button>
+              <button key={q} onClick={() => search(q)} className="text-left p-3 border border-slate-200 bg-white rounded-xl text-xs text-slate-600 hover:border-violet-300 hover:text-violet-700 hover:bg-violet-50 transition-colors">🔍 {q}</button>
             ))}
           </div>
         )}
 
-        {loading && <div className="flex items-center gap-3 text-sm text-slate-500"><span className="w-4 h-4 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin" />Looking through the SOPs…</div>}
+        {loading && <div className="flex items-center gap-3 text-sm text-slate-500"><span className="w-4 h-4 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin" />Searching vector store…</div>}
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         {result && !loading && (
           <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
               <span className="font-semibold text-slate-700">{result.results.length} cited passage{result.results.length === 1 ? '' : 's'}</span>
               <span>· searched {result.total_chunks_indexed} passages in {result.latency_ms.toFixed(2)} ms</span>
               {result.categories && <span>· in {result.categories.map(c => labelOf(c) ?? c).join(', ')}</span>}
-              <span className="ml-auto text-emerald-700">Quoted from the source, nothing generated</span>
+              <span className="ml-auto text-emerald-600 font-semibold">✓ Verbatim source text, no generated content</span>
             </div>
             {result.results.length === 0 ? (
               <div className="border border-slate-200 bg-white rounded-xl p-6 text-center">
@@ -269,17 +269,17 @@ export default function ComplianceInspector() {
       </div>
 
       {/* ── SOP library ── */}
-      <aside className="hidden lg:flex w-80 flex-shrink-0 flex-col border-l border-slate-200/70 bg-white/70">
-        <div className="px-5 pt-5 pb-3">
-          <p className="text-sm font-semibold text-slate-800">SOP library</p>
-          <p className="text-[11px] text-slate-400 mt-0.5">{visibleDocs.length} verified document{visibleDocs.length === 1 ? '' : 's'}</p>
+      <aside className="hidden lg:flex w-80 flex-shrink-0 flex-col border-l border-slate-200 bg-white">
+        <div className="px-4 py-3 border-b border-slate-200">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">SOP Library</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">{visibleDocs.length} verified document{visibleDocs.length === 1 ? '' : 's'}</p>
         </div>
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
           {visibleDocs.map(d => (
-            <button key={d.doc_id} onClick={() => setViewer({ docId: d.doc_id, section: null })} className="w-full text-left p-3 rounded-xl hover:bg-slate-50 transition-colors">
+            <button key={d.doc_id} onClick={() => setViewer({ docId: d.doc_id, section: null })} className="w-full text-left p-3 border border-slate-200 rounded-xl hover:border-violet-300 hover:bg-violet-50/40 transition-colors">
               <p className="text-sm font-medium text-slate-800 leading-snug">{d.title}</p>
               <div className="flex items-center gap-2 mt-1.5">
-                <span className="text-xs text-slate-400">{d.doc_id} · v{d.version} · {d.section_count} §</span>
+                <span className="font-mono text-[10px] text-slate-400">{d.doc_id} · v{d.version} · {d.section_count} §</span>
                 <span className="ml-auto"><CategoryBadge code={d.category} /></span>
               </div>
             </button>
