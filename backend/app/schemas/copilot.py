@@ -177,3 +177,75 @@ class CopilotHealthResponse(BaseModel):
     rag_corpus_indexed: bool
     guardrails_active: bool
     policy_agent_active: bool
+
+
+# ----------------------------------------------------
+# Week 11: Structured Action Proposals & Route Diff (Track B)
+# ----------------------------------------------------
+class ProposalDecision(str, Enum):
+    ACCEPT = "ACCEPT"
+    REJECT = "REJECT"
+
+
+class RouteDiffEntry(BaseModel):
+    stop_id: str
+    name: str
+    change: str = Field(..., description="SAME, MOVED, ADDED, REMOVED or COMPLETED")
+    before_position: Optional[int] = None
+    after_position: Optional[int] = None
+    before_eta: Optional[str] = None
+    after_eta: Optional[str] = None
+    sla_after: Optional[str] = None
+    moved_to: Optional[str] = Field(None, description="Vehicle a removed stop moves to (null = unassigned)")
+    moved_from: Optional[str] = Field(None, description="Vehicle an added stop comes from")
+    planned_eta: Optional[str] = Field(None, description="ETA in the original plan, before the reported disruption")
+
+
+class RouteImpactMetrics(BaseModel):
+    distance_km: float
+    duration_min: float
+    cost: float = Field(..., description="Fuel + driver time (₹), same assumptions as the reports engine")
+    late_min: float
+    stops: int
+
+
+class VehicleRouteDiff(BaseModel):
+    vehicle: str
+    status: str = Field(..., description="OUT_OF_SERVICE, CHANGED, NEW_VEHICLE, RESEQUENCED or UNCHANGED")
+    before: List[RouteDiffEntry]
+    after: List[RouteDiffEntry]
+    current: Optional[RouteImpactMetrics] = None
+    proposed: Optional[RouteImpactMetrics] = None
+
+
+class ProposalImpact(BaseModel):
+    current: RouteImpactMetrics
+    proposed: RouteImpactMetrics
+    delta_km: float
+    delta_minutes: float
+    delta_cost: float
+    delta_late_min: float
+
+
+class ProposalCardResponse(BaseModel):
+    card_id: str
+    proposal_id: str
+    status: str = Field(..., description="PROPOSED, ACCEPTED or REJECTED")
+    intent: str
+    planner: str
+    tool_call: Dict[str, Any]
+    summary: str
+    vehicles: List[VehicleRouteDiff]
+    impact: ProposalImpact
+    routes_after: Dict[str, List[Dict[str, str]]]
+    unassigned: Dict[str, str]
+    violations: List[str]
+    created_at: str
+    decided_at: Optional[str] = None
+    decided_by: Optional[str] = None
+    decision_note: Optional[str] = None
+
+
+class ProposalDecisionRequest(BaseModel):
+    decision: ProposalDecision
+    note: Optional[str] = Field(None, max_length=500)

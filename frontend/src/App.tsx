@@ -10,6 +10,8 @@ import CopilotSlidingDrawer from './components/copilot/CopilotSlidingDrawer'
 import MobileDriverCockpit from './components/driver/MobileDriverCockpit'
 import RoutePlannerSection, { type RouteDispatch } from './components/routes/RoutePlannerSection'
 import ReportsSection from './components/reports/ReportsSection'
+import ExecutiveDashboard from './components/analytics/ExecutiveDashboard'
+import { applyAcceptedProposal } from './lib/proposalsApi'
 import type { UserRole, VehicleType, VehicleStatus, DriverStatus, LicenseType, ShipmentStatus, ShipmentPriority, AuditAction, AdminSection, Vehicle, Driver, Hub, Shipment, User, AuditEntry } from './lib/types'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -1138,6 +1140,7 @@ const ALL_NAV: { id: AdminSection; label: string; group: NavGroup; path: string;
   { id: 'map', label: 'Network Map', group: 'Today', hint: 'Hubs, stops and road distances at a glance', path: 'M9 20l-5.447-2.724A1 1 0 0 1 3 16.382V5.618a1 1 0 0 1 1.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0 0 21 18.382V7.618a1 1 0 0 0-.553-.894L15 4m0 13V4m0 0L9 7', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
   { id: 'fleet', label: 'Fleet Assets', group: 'Fleet & policy', hint: 'Vehicles, drivers and hubs in one place', path: 'M1 3h15v13H1zM16 8h4l3 3v5h-7V8z', roles: ['ADMIN', 'FLEET_MANAGER'] },
   { id: 'compliance', label: 'Compliance', group: 'Fleet & policy', hint: 'The SOPs and regulations behind every decision', path: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z', roles: ['ADMIN', 'FLEET_MANAGER', 'DISPATCHER'] },
+  { id: 'executive', label: 'Executive KPIs', group: 'Insights', hint: 'Delivery performance, cost and drivers at a glance', path: 'M3 3v18h18M7 15l4-4 3 3 5-6', roles: ['ADMIN', 'FLEET_MANAGER'] },
   { id: 'reports', label: 'Reports', group: 'Insights', hint: 'How the network performed, ready to share', path: 'M4 20V10M10 20V4M16 20v-7M22 20H2', roles: ['ADMIN', 'FLEET_MANAGER'] },
   { id: 'audit', label: 'Audit Log', group: 'Insights', hint: 'A permanent record of every change', path: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2', roles: ['ADMIN', 'FLEET_MANAGER'] },
   { id: 'users', label: 'Users', group: 'Insights', hint: 'Who has access, and what they can do', path: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', roles: ['ADMIN'] },
@@ -1329,6 +1332,7 @@ export default function App() {
           {section === 'routes' && <RoutePlannerSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments}
             onAddShipments={list => setShipments(prev => [...prev, ...list])} onDispatchRoutes={dispatchRoutes} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
           {section === 'reports' && <ReportsSection />}
+          {section === 'executive' && <ExecutiveDashboard authToken={authToken} shipments={shipments} vehicles={vehicles} />}
           {/* Kept mounted so the simulation clock and reported events survive page switches */}
           <div className={section === 'tracking' ? 'h-full' : 'hidden'}>
             {activeRole === 'DRIVER' && driverCockpitMode === 'mobile' ? (
@@ -1358,6 +1362,12 @@ export default function App() {
         onToggle={() => setIsCopilotDrawerOpen(v => !v)}
         authToken={authToken}
         activeRole={activeRole}
+        fleet={{ shipments, vehicles, drivers, hubs }}
+        onApplyProposal={(card, now) => {
+          const next = applyAcceptedProposal(card, shipments, vehicles, now)
+          setShipments(next.shipments); setVehicles(next.vehicles)
+          addAudit({ actor_name: currentUser.name, action_type: 'COPILOT_OVERRIDE', entity_type: 'ROUTE', entity_id: 0, details: `Accepted copilot proposal ${card.card_id} (${card.tool_call.name}): ${card.summary}` })
+        }}
       />
     </div>
   )
