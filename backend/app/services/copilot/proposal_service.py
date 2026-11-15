@@ -83,6 +83,7 @@ class ProposalCard:
     decided_at: Optional[str] = None
     decided_by: Optional[str] = None
     decision_note: Optional[str] = None
+    deciding: bool = False           # a decision is being persisted; blocks a concurrent second decision
 
 
 class ProposalNotFound(KeyError):
@@ -294,16 +295,40 @@ class ProposalRegistry:
             raise ProposalNotFound(card_id)
         return card
 
-    def decide(self, card_id: str, accept: bool, actor: str, note: Optional[str] = None) -> ProposalCard:
+    # A decision is two-phase so it never becomes final unless its audit record was saved:
+    #   claim()    -> reserve the proposal (a concurrent second decision gets ProposalAlreadyDecided)
+    #   complete() -> after the audit record is committed, make the decision final
+    #   release()  -> if saving the audit record failed, put the proposal back to PROPOSED for a retry
+    def claim(self, card_id: str) -> ProposalCard:
         with self._lock:
             card = self.get(card_id)
             if card.status != "PROPOSED":
                 raise ProposalAlreadyDecided(f"Proposal {card_id} was already {card.status.lower()}.")
+            if card.deciding:
+                raise ProposalAlreadyDecided(f"Proposal {card_id} is already being decided.")
+            card.deciding = True
+            return card
+
+    def complete(self, card_id: str, accept: bool, actor: str, note: Optional[str] = None) -> ProposalCard:
+        with self._lock:
+            card = self.get(card_id)
             card.status = "ACCEPTED" if accept else "REJECTED"
             card.decided_at = datetime.now(timezone.utc).isoformat()
             card.decided_by = actor
             card.decision_note = note
+            card.deciding = False
             return card
+
+    def release(self, card_id: str) -> None:
+        with self._lock:
+            card = self._items.get(card_id)
+            if card is not None:
+                card.deciding = False
+
+    def decide(self, card_id: str, accept: bool, actor: str, note: Optional[str] = None) -> ProposalCard:
+        """Claim and complete in one step (no external side effect to wait for)."""
+        self.claim(card_id)
+        return self.complete(card_id, accept, actor, note)
 
     def clear(self) -> None:
         with self._lock:

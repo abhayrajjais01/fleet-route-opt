@@ -161,3 +161,35 @@ def test_router_recognises_everyday_breakdown_phrasing(message):
     from app.schemas.copilot import AgentIntent
     from app.services.copilot.router_agent import get_router_agent
     assert get_router_agent().classify_intent(message)[0] == AgentIntent.VEHICLE_BREAKDOWN
+
+
+def test_failed_audit_write_leaves_proposal_open_for_retry(client, monkeypatch):
+    """If the audit record can't be saved, the decision is not locked in: the retry succeeds instead of 409."""
+    import app.api.v1.copilot as copilot_api
+
+    admin = _token(client, "admin3@w11.io", "ADMIN")
+    card = client.post("/api/v1/copilot/proposals", json=REQUEST, headers=admin).json()
+    real = copilot_api.record_audit_event
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(copilot_api, "record_audit_event", broken)
+    failed = client.post(f"/api/v1/copilot/proposals/{card['card_id']}/decision", json={"decision": "ACCEPT"}, headers=admin)
+    assert failed.status_code == 503
+    assert client.get(f"/api/v1/copilot/proposals/{card['card_id']}", headers=admin).json()["status"] == "PROPOSED"
+
+    monkeypatch.setattr(copilot_api, "record_audit_event", real)
+    retried = client.post(f"/api/v1/copilot/proposals/{card['card_id']}/decision", json={"decision": "ACCEPT"}, headers=admin)
+    assert retried.status_code == 200 and retried.json()["status"] == "ACCEPTED"
+
+
+def test_claim_blocks_a_concurrent_second_decision():
+    ctx = fleet()
+    card = registry.add(build_card(ctx, handle_disruption("MH-04-AB-2045 broke down", ctx, use_llm=False)))
+    registry.claim(card.card_id)
+    from app.services.copilot.proposal_service import ProposalAlreadyDecided
+    with pytest.raises(ProposalAlreadyDecided):
+        registry.claim(card.card_id)                 # second request while the first is still saving
+    registry.release(card.card_id)
+    assert registry.decide(card.card_id, False, "dispatcher").status == "REJECTED"

@@ -1364,9 +1364,11 @@ export default function App() {
         activeRole={activeRole}
         fleet={{ shipments, vehicles, drivers, hubs }}
         onApplyProposal={(card, now) => {
-          const next = applyAcceptedProposal(card, shipments, vehicles, now)
-          setShipments(next.shipments); setVehicles(next.vehicles)
-          addAudit({ actor_name: currentUser.name, action_type: 'COPILOT_OVERRIDE', entity_type: 'ROUTE', entity_id: 0, details: `Accepted copilot proposal ${card.card_id} (${card.tool_call.name}): ${card.summary}` })
+          const next = applyAcceptedProposal(card, shipments, vehicles, drivers, now)
+          setShipments(next.shipments); setVehicles(next.vehicles); setDrivers(next.drivers)
+          const held = next.heldBack.map(h => `${h.plate} (${h.stops} stops back to planning: no free driver)`).join('; ')
+          addAudit({ actor_name: currentUser.name, action_type: 'COPILOT_OVERRIDE', entity_type: 'ROUTE', entity_id: 0, details: `Accepted copilot proposal ${card.card_id} (${card.tool_call.name}): ${card.summary}${held ? ` Held back: ${held}.` : ''}` })
+          return held ? `Not dispatched: ${held}.` : undefined
         }}
       />
     </div>

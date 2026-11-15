@@ -308,22 +308,33 @@ def decide_proposal(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(_PROPOSAL_ROLES)),
 ) -> ProposalCardResponse:
+    accept = body.decision == ProposalDecision.ACCEPT
     try:
-        card = proposal_registry.decide(card_id, body.decision == ProposalDecision.ACCEPT, current_user.full_name, body.note)
+        card = proposal_registry.claim(card_id)
     except ProposalNotFound:
         raise HTTPException(status_code=404, detail="Proposal not found or expired.")
     except ProposalAlreadyDecided as err:
         raise HTTPException(status_code=409, detail=str(err))
 
+    # Persist the audit record first; the decision only becomes final once it is committed.
     p = card.proposal
-    verb = "Accepted" if card.status == "ACCEPTED" else "Rejected"
-    record_audit_event(
-        db=db, actor=current_user, action_type=AuditAction.COPILOT_OVERRIDE, entity_type="RouteProposal", entity_id=0,
-        details=f"{verb} copilot proposal {card.card_id} ({p.tool} {p.arguments}): {p.summary}"
-                + (f" Note: {body.note}" if body.note else ""),
-        before_state={v.vehicle: [e.stop_id for e in v.before] for v in card.vehicles},
-        after_state={"status": card.status, "routes": {v.vehicle: [e.stop_id for e in v.after] for v in card.vehicles},
-                     "unassigned": p.unassigned},
-    )
-    db.commit()
+    verb = "Accepted" if accept else "Rejected"
+    try:
+        record_audit_event(
+            db=db, actor=current_user, action_type=AuditAction.COPILOT_OVERRIDE, entity_type="RouteProposal", entity_id=0,
+            details=f"{verb} copilot proposal {card.card_id} ({p.tool} {p.arguments}): {p.summary}"
+                    + (f" Note: {body.note}" if body.note else ""),
+            before_state={v.vehicle: [e.stop_id for e in v.before] for v in card.vehicles},
+            after_state={"status": "ACCEPTED" if accept else "REJECTED",
+                         "routes": {v.vehicle: [e.stop_id for e in v.after] for v in card.vehicles},
+                         "unassigned": p.unassigned},
+        )
+        db.commit()
+    except Exception as err:
+        db.rollback()
+        proposal_registry.release(card_id)
+        logger.error(f"Could not record decision for proposal {card_id}: {err}")
+        raise HTTPException(status_code=503, detail="Could not record the decision in the audit log; nothing was changed. Please try again.")
+
+    card = proposal_registry.complete(card_id, accept, current_user.full_name, body.note)
     return _card_response(card)

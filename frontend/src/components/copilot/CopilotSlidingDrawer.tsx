@@ -15,7 +15,7 @@ interface CopilotSlidingDrawerProps {
   /** Live plan used to build re-route proposals (Week 11). */
   fleet?: { shipments: Shipment[]; vehicles: Vehicle[]; drivers: Driver[]; hubs: Hub[] }
   /** Called when the dispatcher accepts a proposal; applies it to the live plan. */
-  onApplyProposal?: (card: ProposalCardData, now: string) => void
+  onApplyProposal?: (card: ProposalCardData, now: string) => string | void
 }
 
 interface MessageItem {
@@ -57,6 +57,7 @@ interface MessageItem {
   }
   proposal?: ProposalCardData
   proposalNow?: string
+  applyNote?: string
   executionTrace?: Array<{
     step: number
     node: string
@@ -123,8 +124,8 @@ export default function CopilotSlidingDrawer({
 
   async function decideProposal(msgId: string, card: ProposalCardData, decision: 'ACCEPT' | 'REJECT', now: string) {
     const updated = await proposalsApi.decide(card.card_id, decision, authToken)
-    if (decision === 'ACCEPT') onApplyProposal?.(updated, now)
-    setMessages(prev => prev.map(m => (m.id === msgId ? { ...m, proposal: updated } : m)))
+    const note = decision === 'ACCEPT' ? onApplyProposal?.(updated, now) : undefined
+    setMessages(prev => prev.map(m => (m.id === msgId ? { ...m, proposal: updated, applyNote: note || undefined } : m)))
   }
 
   async function handleSendQuery(queryToSend?: string) {
@@ -365,6 +366,7 @@ ${extra.note}` : data.response,
                     onDecide={d => decideProposal(msg.id, msg.proposal!, d, msg.proposalNow ?? '08:00')}
                   />
                 )}
+                {msg.applyNote && <p className="mt-2 text-[11px] text-amber-300">{msg.applyNote}</p>}
 
                 {/* Multi-Agent Execution Trace Toggle */}
                 {msg.executionTrace && msg.executionTrace.length > 0 && (
