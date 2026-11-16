@@ -1,11 +1,21 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { API_BASE } from '../../lib/api'
+import { buildDisruptionRequest, proposalsApi, type ProposalCard as ProposalCardData } from '../../lib/proposalsApi'
+import type { Driver, Hub, Shipment, Vehicle } from '../../lib/types'
+import ProposalCard from './ProposalCard'
+
+// Intents the Optimization Agent can turn into a re-route proposal (Week 11)
+const DISRUPTION_INTENTS = new Set(['VEHICLE_BREAKDOWN', 'TRAFFIC_DELAY', 'REROUTE_REQUEST'])
 
 interface CopilotSlidingDrawerProps {
   isOpen: boolean
   onToggle: () => void
   authToken: string | null
   activeRole?: string
+  /** Live plan used to build re-route proposals (Week 11). */
+  fleet?: { shipments: Shipment[]; vehicles: Vehicle[]; drivers: Driver[]; hubs: Hub[] }
+  /** Called when the dispatcher accepts a proposal; applies it to the live plan. */
+  onApplyProposal?: (card: ProposalCardData, now: string) => string | void
   /** Render the built-in floating launcher. Off when the host page provides its own (e.g. a header button). */
   showTrigger?: boolean
 }
@@ -47,6 +57,9 @@ interface MessageItem {
     }>
     recommendations: string[]
   }
+  proposal?: ProposalCardData
+  proposalNow?: string
+  applyNote?: string
   executionTrace?: Array<{
     step: number
     node: string
@@ -69,6 +82,8 @@ export default function CopilotSlidingDrawer({
   onToggle,
   authToken,
   activeRole = 'DISPATCHER',
+  fleet,
+  onApplyProposal,
   showTrigger = true,
 }: CopilotSlidingDrawerProps) {
   const [messages, setMessages] = useState<MessageItem[]>([
@@ -87,6 +102,34 @@ export default function CopilotSlidingDrawer({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isOpen])
+
+  // A disruption prompt about a vehicle that is actually on the road right now
+  const onRoadPlate = useMemo(() => {
+    if (!fleet) return null
+    const busy = new Set(fleet.shipments.filter(s => s.assigned_vehicle_id && ['ASSIGNED', 'IN_TRANSIT', 'ARRIVED'].includes(s.status)).map(s => s.assigned_vehicle_id))
+    return fleet.vehicles.find(v => busy.has(v.id))?.plate_number ?? null
+  }, [fleet])
+  const quickPrompts = onRoadPlate
+    ? [`${onRoadPlate} broke down near Sion`, `${onRoadPlate} stuck in traffic, 45 min delay`, ...QUICK_PROMPTS]
+    : QUICK_PROMPTS
+
+  /** Week 11: ask the Optimization Agent for a proposal card for a disruption message. */
+  async function proposalFor(q: string): Promise<Pick<MessageItem, 'proposal' | 'proposalNow'> & { note?: string }> {
+    if (!fleet) return {}
+    const body = buildDisruptionRequest(q, fleet.shipments, fleet.vehicles, fleet.drivers, fleet.hubs)
+    if (!body) return { note: 'No vehicle is on the road right now, so there is nothing to re-route. Dispatch routes from the Route Planner first.' }
+    try {
+      return { proposal: await proposalsApi.create(body, authToken), proposalNow: body.now }
+    } catch (e) {
+      return { note: `I couldn't build a re-route proposal: ${(e as Error).message}` }
+    }
+  }
+
+  async function decideProposal(msgId: string, card: ProposalCardData, decision: 'ACCEPT' | 'REJECT', now: string) {
+    const updated = await proposalsApi.decide(card.card_id, decision, authToken)
+    const note = decision === 'ACCEPT' ? onApplyProposal?.(updated, now) : undefined
+    setMessages(prev => prev.map(m => (m.id === msgId ? { ...m, proposal: updated, applyNote: note || undefined } : m)))
+  }
 
   async function handleSendQuery(queryToSend?: string) {
     const q = (queryToSend || inputQuery).trim()
@@ -117,10 +160,15 @@ export default function CopilotSlidingDrawer({
 
       if (res.ok) {
         const data = await res.json()
+        const extra = DISRUPTION_INTENTS.has(data.intent) ? await proposalFor(q) : {}
         const copilotMsg: MessageItem = {
           id: `cop-${Date.now()}`,
           sender: 'copilot',
-          text: data.response,
+          text: extra.note ? `${data.response}
+
+${extra.note}` : data.response,
+          proposal: extra.proposal,
+          proposalNow: extra.proposalNow,
           intent: data.intent,
           confidence: data.confidence,
           latencyMs: data.latency_ms,
@@ -219,7 +267,7 @@ export default function CopilotSlidingDrawer({
               className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
             >
               <div
-                className={`max-w-[90%] rounded-2xl p-3.5 text-xs ${
+                className={`${msg.proposal ? 'w-full' : 'max-w-[90%]'} rounded-2xl p-3.5 text-xs ${
                   msg.sender === 'user'
                     ? 'bg-blue-600 text-white rounded-br-none shadow-md'
                     : 'bg-slate-800/90 text-slate-100 rounded-bl-none border border-slate-700/80 shadow-md'
@@ -314,6 +362,15 @@ export default function CopilotSlidingDrawer({
                   </div>
                 )}
 
+                {/* Week 11: Structured action proposal with route diff */}
+                {msg.proposal && (
+                  <ProposalCard
+                    card={msg.proposal}
+                    onDecide={d => decideProposal(msg.id, msg.proposal!, d, msg.proposalNow ?? '08:00')}
+                  />
+                )}
+                {msg.applyNote && <p className="mt-2 text-[11px] text-amber-300">{msg.applyNote}</p>}
+
                 {/* Multi-Agent Execution Trace Toggle */}
                 {msg.executionTrace && msg.executionTrace.length > 0 && (
                   <div className="mt-2.5 pt-2 border-t border-slate-700/50">
@@ -354,7 +411,7 @@ export default function CopilotSlidingDrawer({
 
         {/* Quick Suggestion Chips */}
         <div className="px-4 py-2 border-t border-slate-800 bg-slate-900/60 overflow-x-auto flex gap-1.5 no-scrollbar">
-          {QUICK_PROMPTS.map((prompt, i) => (
+          {quickPrompts.map((prompt, i) => (
             <button
               key={i}
               onClick={() => handleSendQuery(prompt)}

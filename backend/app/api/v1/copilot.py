@@ -20,6 +20,26 @@ from app.schemas.copilot import (
     GuardrailEvaluationResult,
     PolicyComplianceReport,
     RouteComplianceRequest,
+    ProposalCardResponse,
+    ProposalDecision,
+    ProposalDecisionRequest,
+    ProposalImpact,
+    RouteDiffEntry,
+    RouteImpactMetrics,
+    VehicleRouteDiff,
+)
+from app.models.audit import AuditAction
+from app.schemas.route import DisruptionRequest
+from app.services.audit_service import record_audit_event
+from app.services.copilot.optimization_agent import AgentError, handle_disruption
+from app.services.copilot.proposal_service import (
+    ProposalAlreadyDecided,
+    ProposalCard,
+    ProposalNotFound,
+    build_card,
+    context_from_request,
+    min_to_hhmm,
+    registry as proposal_registry,
 )
 from app.services.copilot.guardrails import evaluate_rag_guardrail, DEFAULT_GUARDRAIL_THRESHOLD
 from app.services.copilot.policy_agent import PolicyComplianceAgent, UnresolvedManifestError
@@ -203,3 +223,118 @@ def validate_route_policy_endpoint(
         )
     except UnresolvedManifestError as err:
         raise HTTPException(status_code=422, detail=str(err))
+
+
+# ----------------------------------------------------
+# Week 11: Structured Action Proposals with Route Diff (Track B)
+# ----------------------------------------------------
+_PROPOSAL_ROLES = [UserRole.ADMIN, UserRole.FLEET_MANAGER, UserRole.DISPATCHER]
+
+
+def _card_response(card: ProposalCard) -> ProposalCardResponse:
+    p = card.proposal
+
+    def entry(e) -> RouteDiffEntry:
+        return RouteDiffEntry(
+            stop_id=e.stop_id, name=e.name, change=e.change, before_position=e.before_position, after_position=e.after_position,
+            before_eta=min_to_hhmm(e.before_eta), after_eta=min_to_hhmm(e.after_eta), sla_after=e.sla_after,
+            moved_to=e.moved_to, moved_from=e.moved_from, planned_eta=min_to_hhmm(e.planned_eta),
+        )
+
+    def metrics(m):
+        return RouteImpactMetrics(**m.__dict__) if m else None
+
+    return ProposalCardResponse(
+        card_id=card.card_id, proposal_id=p.proposal_id, status=card.status, intent=p.intent, planner=p.planner,
+        tool_call={"name": p.tool, "arguments": p.arguments}, summary=p.summary,
+        vehicles=[VehicleRouteDiff(vehicle=v.vehicle, status=v.status, before=[entry(e) for e in v.before],
+                                   after=[entry(e) for e in v.after], current=metrics(v.current), proposed=metrics(v.proposed))
+                  for v in card.vehicles],
+        impact=ProposalImpact(
+            current=metrics(card.current), proposed=metrics(card.proposed),
+            delta_km=round(card.proposed.distance_km - card.current.distance_km, 1),
+            delta_minutes=round(card.proposed.duration_min - card.current.duration_min, 1),
+            delta_cost=round(card.proposed.cost - card.current.cost, 0),
+            delta_late_min=round(card.proposed.late_min - card.current.late_min, 1),
+        ),
+        routes_after={k: [{"stop_id": sid, "eta": min_to_hhmm(eta), "sla": sla} for sid, eta, sla in v] for k, v in p.routes_after.items()},
+        unassigned=p.unassigned, violations=p.violations, created_at=card.created_at,
+        decided_at=card.decided_at, decided_by=card.decided_by, decision_note=card.decision_note,
+    )
+
+
+@router.post(
+    "/proposals",
+    response_model=ProposalCardResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a structured re-route proposal with a route diff (US-005, Week 11)",
+    description="Runs the Optimization Agent on a disruption report and returns a proposal card: current vs proposed "
+                "stop order per vehicle, and the km / time / cost / lateness impact. Nothing is applied until accepted.",
+)
+def create_proposal(
+    request: DisruptionRequest,
+    current_user: User = Depends(require_roles(_PROPOSAL_ROLES)),
+) -> ProposalCardResponse:
+    ctx = context_from_request(request)
+    try:
+        proposal = handle_disruption(request.message, ctx, use_llm=request.use_llm)
+    except AgentError as err:
+        raise HTTPException(status_code=422, detail=str(err))
+    card = proposal_registry.add(build_card(ctx, proposal))
+    logger.info(f"Proposal {card.card_id} ({proposal.tool}) created by {current_user.full_name}")
+    return _card_response(card)
+
+
+@router.get(
+    "/proposals/{card_id}",
+    response_model=ProposalCardResponse,
+    summary="Get a proposal card and its decision status",
+)
+def get_proposal(card_id: str, current_user: User = Depends(require_roles(_PROPOSAL_ROLES))) -> ProposalCardResponse:
+    try:
+        return _card_response(proposal_registry.get(card_id))
+    except ProposalNotFound:
+        raise HTTPException(status_code=404, detail="Proposal not found or expired.")
+
+
+@router.post(
+    "/proposals/{card_id}/decision",
+    response_model=ProposalCardResponse,
+    summary="Accept or reject a proposal (recorded in the audit log)",
+)
+def decide_proposal(
+    card_id: str,
+    body: ProposalDecisionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(_PROPOSAL_ROLES)),
+) -> ProposalCardResponse:
+    accept = body.decision == ProposalDecision.ACCEPT
+    try:
+        card = proposal_registry.claim(card_id)
+    except ProposalNotFound:
+        raise HTTPException(status_code=404, detail="Proposal not found or expired.")
+    except ProposalAlreadyDecided as err:
+        raise HTTPException(status_code=409, detail=str(err))
+
+    # Persist the audit record first; the decision only becomes final once it is committed.
+    p = card.proposal
+    verb = "Accepted" if accept else "Rejected"
+    try:
+        record_audit_event(
+            db=db, actor=current_user, action_type=AuditAction.COPILOT_OVERRIDE, entity_type="RouteProposal", entity_id=0,
+            details=f"{verb} copilot proposal {card.card_id} ({p.tool} {p.arguments}): {p.summary}"
+                    + (f" Note: {body.note}" if body.note else ""),
+            before_state={v.vehicle: [e.stop_id for e in v.before] for v in card.vehicles},
+            after_state={"status": "ACCEPTED" if accept else "REJECTED",
+                         "routes": {v.vehicle: [e.stop_id for e in v.after] for v in card.vehicles},
+                         "unassigned": p.unassigned},
+        )
+        db.commit()
+    except Exception as err:
+        db.rollback()
+        proposal_registry.release(card_id)
+        logger.error(f"Could not record decision for proposal {card_id}: {err}")
+        raise HTTPException(status_code=503, detail="Could not record the decision in the audit log; nothing was changed. Please try again.")
+
+    card = proposal_registry.complete(card_id, accept, current_user.full_name, body.note)
+    return _card_response(card)
