@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from app.core.logging import logger
 from app.services.optimizer.eta_engine import RouteEvaluation, recalculate
 from app.services.optimizer.vrptw_solver import Stop, VehicleSpec, solve
+from app.services.copilot.telemetry import record_llm_usage
 
 CLAUDE_MODEL = "claude-opus-5-5"
 
@@ -345,6 +346,7 @@ def plan_with_claude(message: str, ctx: FleetContext) -> Optional[Tuple[str, str
     except anthropic.APIError as err:
         logger.warning(f"Claude planner unavailable, using deterministic planner: {err}")
         return None
+    record_llm_usage(getattr(response, "usage", None), CLAUDE_MODEL)    # Week 14 telemetry (Track B)
     if response.stop_reason == "refusal":
         return None
     call = next((b for b in response.content if b.type == "tool_use"), None)

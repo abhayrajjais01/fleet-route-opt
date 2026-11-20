@@ -10,20 +10,20 @@
 
 | Metric | Status |
 | :--- | :--- |
-| **Overall Roadmap Progress** | **Weeks 1–12 Completed by both tracks; Track A (Manthan) delivered Weeks 13–16 ahead of schedule on Nov 12, 2026** |
-| **Current Active Month** | **Month 3: Agents, Live ETAs & Explanations** |
-| **Current Active Week** | **Week 12: SLA Alerts & KPI Dashboard (Nov 23 – Nov 27, 2026; Track B delivered early on Nov 15)** |
+| **Overall Roadmap Progress** | **All 16 weeks delivered by both tracks** (Track A finished Nov 12, Track B Nov 20, 2026; Weeks 11–16 early) |
+| **Current Active Month** | **Month 4: Metrics, Exports, Performance & Release (complete)** |
+| **Current Active Week** | **All weeks delivered; remaining: review and merge the Weeks 13–16 PR, final dry run** |
 | **Track A Status** | **All 16 Track A weeks delivered** (Weeks 11–16 delivered early) |
-| **Track B Status** | **Weeks 1–12 delivered** (Weeks 11–12 early, on Nov 15; Weeks 13–16 on schedule) |
-| **Automated Test Suite** | **200 / 200 PASSED** (`pytest -q` in `backend/`) |
+| **Track B Status** | **All 16 Track B weeks delivered** (Weeks 11–12 on Nov 15, Weeks 13–16 on Nov 20; all early) |
+| **Automated Test Suite** | **234 / 234 PASSED** (`pytest -q` in `backend/`) |
 
 ```
 Track A Progress: [████████████████████] 100% (16 / 16 weeks delivered)
-Track B Progress: [███████████████░░░░░] 12 / 16 weeks (Weeks 13–16 on schedule)
+Track B Progress: [████████████████████] 100% (16 / 16 weeks delivered)
 Month 1 Progress: [████████████████████] 100% (Weeks 1–4 COMPLETED)
 Month 2 Progress: [████████████████████] 100% (Weeks 5–8 COMPLETED)
 Month 3 Progress: [████████████████████] 100% (Weeks 9–12 COMPLETED)
-Month 4 Progress: [██████████░░░░░░░░░░] Weeks 13–16 Track A done
+Month 4 Progress: [████████████████████] 100% (Weeks 13–16 COMPLETED)
 ```
 
 ---
@@ -44,10 +44,10 @@ Month 4 Progress: [██████████░░░░░░░░░░]
 | | **Week 10** | Downstream ETAs & Copilot UI| Downstream Dynamic Recalculation | Copilot Sliding Drawer & Traces | `COMPLETED` ✅ |
 | | **Week 11** | RAG Route Explainer & Proposals| RAG Route Explanations & Summaries | Interactive Proposal Cards & Diff | `COMPLETED` ✅ |
 | | **Week 12** | SLA Alerts & KPI Dashboard | SLA Breach Alerts & Recovery FSM | Executive KPI Analytics Dashboard UI| `COMPLETED` ✅ |
-| **Month 4** | **Week 13** | Operational KPIs & Filter | Operational Metrics Calc Engine | Multi-Dimensional Analytics Filter | `PLANNED` *(Track A Done early)* |
-| | **Week 14** | Data Export & Pipeline Polish| CSV / PDF Audit Export Generator | Security Audit & Agent Benchmarks | `PLANNED` *(Track A Done early)* |
-| | **Week 15** | Performance & Stress Testing| Solver & Vector Indexing Benchmark (<5s)| Multi-Agent Exception Handling (<3s)| `PLANNED` *(Track A Done early)* |
-| | **Week 16** | Containerization & Release | Backend Docker & Postgres Service | Frontend Docker, Compose & Walkthru| `PLANNED` *(Track A Done early)* |
+| **Month 4** | **Week 13** | Operational KPIs & Filter | Operational Metrics Calc Engine | Multi-Dimensional Analytics Filter | `COMPLETED` ✅ |
+| | **Week 14** | Data Export & Pipeline Polish| CSV / PDF Audit Export Generator | Security Audit & Agent Benchmarks | `COMPLETED` ✅ |
+| | **Week 15** | Performance & Stress Testing| Solver & Vector Indexing Benchmark (<5s)| Multi-Agent Exception Handling (<3s)| `COMPLETED` ✅ |
+| | **Week 16** | Containerization & Release | Backend Docker & Postgres Service | Frontend Docker, Compose & Walkthru| `COMPLETED` ✅ |
 
 ---
 
@@ -236,37 +236,58 @@ Month 4 Progress: [██████████░░░░░░░░░░]
 
 ### Month 4: Metrics, Exports, Performance & Release
 
-#### Week 13: Operational Metrics Engine
-- **Status**: Track A `COMPLETED` ✅ (delivered early)
+#### Week 13: Operational Metrics Engine vs. Multi-Dimensional Analytics Filtering
+- **Status**: `COMPLETED` ✅ (both tracks delivered early)
 - **Manthan Nimodiya (Track A)**:
   - [x] `backend/app/services/analytics/metrics.py`: OTIF, on-time %, SLA breaches, average transit time, route efficiency, fuel burn (L/100 km), cost per tonne-km, fleet utilisation; breakdowns by hub and vehicle type
   - [x] 30-day dispatch history replayed through the real solver + ETA engine (`history.py`, seeded so it is repeatable)
   - [x] `GET /api/v1/reports/metrics` with filters: days, hub, vehicle type, driver, fuel price, driver cost
   - [x] Reports page with KPI tiles, OTIF-by-day chart and hub / vehicle-type tables
+- **Abhayraj Jaiswal (Track B)**:
+  - [x] Executive KPIs filters for driver and priority class on top of date range, hub and vehicle type (`GET /api/v1/analytics/executive`); a priority filter narrows stop-level figures and is explained on the page
+  - [x] Delivery density heatmap: attempts binned into ~2 km squares on a Leaflet map (validated sequential blue ramp, on-time % on hover, table view), opening on the busiest hub with buttons to jump between hubs
+  - [x] CSV export of every dashboard view (`/analytics/executive/export.csv?section=kpis|daily|hours|drivers|density`) and a printable executive summary (`/analytics/executive/summary.pdf`); both honour the filters on screen
+  - [x] `test_executive_analytics.py` +3 tests (filters, density totals, exports match the dashboard)
 
-#### Week 14: CSV / PDF Exports
-- **Status**: Track A `COMPLETED` ✅ (delivered early)
+#### Week 14: CSV / PDF Exports vs. Security Audit, Audit Report & Agent Telemetry
+- **Status**: `COMPLETED` ✅ (both tracks delivered early)
 - **Manthan Nimodiya (Track A)**:
   - [x] `GET /api/v1/reports/export.csv` (one row per stop) and `GET /api/v1/reports/summary.pdf` (ReportLab KPI summary)
   - [x] Export buttons on the Reports page honour the active filters
+- **Abhayraj Jaiswal (Track B)** (`documentation/SECURITY_AUDIT.md`):
+  - [x] Security audit, 12 findings fixed: privileged self-registration (anyone could become ADMIN), unauthenticated fleet CRUD, unaudited fleet changes, open demo-account seeding, CORS open to every `*.vercel.app`, no rate limits, anonymous LLM use, unsanitised input, CSV formula injection, missing security headers, unbounded bodies, unreadable download filenames
+  - [x] `core/http_security.py`: per-client rate limits (login 10/min, AI 60/min, exports 20/min, rest 600/min; 429 + Retry-After), security headers and CSP, `no-store` on authenticated responses, 10 MB body limit
+  - [x] `core/sanitize.py`: input sanitisation on chat, search, shipments, fleet assets, transit notes and accounts; literal LIKE search on `GET /shipments?search=`
+  - [x] Audit compliance report: `/audit/report`, `/audit/export.csv`, `/audit/report.pdf` with sequence, snapshot and coverage checks; pass / fail panel on the Audit Log page
+  - [x] Multi-agent latency and token logging: `services/copilot/telemetry.py`, `GET /copilot/telemetry`
+  - [x] `backend/tests/test_security_hardening.py` (26 tests)
 
-#### Week 15: Benchmarks & Performance Hardening
-- **Status**: Track A `COMPLETED` ✅ (delivered early)
+#### Week 15: Benchmarks & Performance Hardening vs. Multi-Agent Stress Tests & End-to-End Regression
+- **Status**: `COMPLETED` ✅ (both tracks delivered early)
 - **Manthan Nimodiya (Track A)**:
   - [x] `python -m scripts.benchmark`: VRPTW 50 stops ≈ 3 ms (target < 5 s), 250×250 matrix ≈ 1 ms, RAG search < 1 ms (target < 100 ms), agent breakdown re-route ≈ 5 ms and delay ≈ 17 ms (target < 3 s)
   - [x] Composite DB indexes on vehicles (hub, status) and drivers (hub, status)
   - [x] `backend/tests/test_performance.py` guards the targets in CI
+- **Abhayraj Jaiswal (Track B)** (`documentation/PERFORMANCE.md`):
+  - [x] `python -m scripts.benchmark_copilot`: every intent, proposal cards, 10 / 25 / 50 concurrent dispatchers and the full HTTP round trip; worst p95 15.9 ms (target < 3 s); guarded by `test_copilot_performance.py`
+  - [x] `test_e2e_regression.py`: one operating day across US-001 to US-008 through the public API only
+  - [x] Frontend: sections lazy-loaded (entry script 662 → 340 kB, 189 → 99 kB gzip); sidebar becomes a drawer below 1024 px; Command Center stacks on phones; real page title and `lang`; ARIA states on navigation and toggles
+  - [x] Bug fixed on the way: the Dispatcher role signed in as `dispatch@fleetopt.io`, which the seed never creates, so the dispatcher view had no backend token
 
-#### Week 16: Backend Docker & Postgres Service
-- **Status**: Track A `COMPLETED` ✅ (delivered early)
+#### Week 16: Backend Docker & Postgres Service vs. Frontend Docker, CI & Documentation
+- **Status**: `COMPLETED` ✅ (both tracks delivered early)
 - **Manthan Nimodiya (Track A)**:
   - [x] Multi-stage `backend/Dockerfile` (non-root user, healthcheck on `/api/v1/health`)
   - [x] `docker-compose.yml`: `postgres:16-alpine` + backend; entrypoint waits for the DB, creates tables, runs migrations and seeds demo data
   - [x] OpenAPI polish: tagged and described endpoint groups at `/docs`
 - **Abhayraj Jaiswal (Track B)**:
-  - [ ] Frontend Docker, CI and walkthrough
+  - [x] `frontend/Dockerfile` (multi-stage: pnpm build → unprivileged Nginx on 8080) and `frontend/nginx.conf` (SPA fallback, `/api` + `/docs` proxy with X-Real-IP, gzip, CSP, immutable asset caching)
+  - [x] `docker-compose.yml`: frontend service; `docker compose up --build` → http://localhost:8080
+  - [x] `.github/workflows/ci.yml`: backend tests + copilot benchmark, frontend type-check + build, Docker build and smoke test through Nginx
+  - [x] `documentation/`: User Manual, API Reference (generated from OpenAPI with roles per endpoint), Security Audit, Performance
+  - [ ] Video walkthrough and presentation slides (outside the repository)
 
-#### Test summary (Nov 15, 2026: Track A Weeks 7–16, Track B Weeks 7–12)
+#### Test summary (Nov 20, 2026: all 16 weeks, both tracks)
 - Track A new suites: `test_route_operations.py` (27), `test_reports.py` (8), `test_performance.py` (3)
-- Track B new suites: `test_rag_guardrails.py` (5), `test_policy_agent.py` (12), `test_mobile_driver_api.py` (6), `test_action_proposals.py` (8), `test_executive_analytics.py` (5)
-- **Full backend suite: 200 / 200 passed**; frontend `tsc` 0 errors and production build clean
+- Track B new suites: `test_rag_guardrails.py` (5), `test_policy_agent.py` (12), `test_mobile_driver_api.py` (6), `test_action_proposals.py` (10), `test_executive_analytics.py` (8), `test_security_hardening.py` (26), `test_e2e_regression.py` (1), `test_copilot_performance.py` (1)
+- **Full backend suite: 234 / 234 passed**; frontend `tsc` 0 errors and production build clean

@@ -44,6 +44,7 @@ from app.services.copilot.proposal_service import (
 from app.services.copilot.guardrails import evaluate_rag_guardrail, DEFAULT_GUARDRAIL_THRESHOLD
 from app.services.copilot.policy_agent import PolicyComplianceAgent, UnresolvedManifestError
 from app.services.copilot.state_graph import get_copilot_graph
+from app.services.copilot import telemetry as agent_telemetry
 
 router = APIRouter()
 
@@ -138,11 +139,14 @@ def execute_query(
     context["user_id"] = current_user.id
     context["user_role"] = current_user.role.value
 
-    response = graph.execute(
-        query=payload.query.strip(),
-        session_id=payload.session_id,
-        context=context,
-    )
+    with agent_telemetry.track("query", current_user.role.value) as run:
+        response = graph.execute(
+            query=payload.query.strip(),
+            session_id=payload.session_id,
+            context=context,
+        )
+        run.intent = response.intent.value if hasattr(response.intent, "value") else str(response.intent)
+        agent_telemetry.record_trace(run, response.execution_trace)
     return response
 
 
@@ -276,10 +280,12 @@ def create_proposal(
     current_user: User = Depends(require_roles(_PROPOSAL_ROLES)),
 ) -> ProposalCardResponse:
     ctx = context_from_request(request)
-    try:
-        proposal = handle_disruption(request.message, ctx, use_llm=request.use_llm)
-    except AgentError as err:
-        raise HTTPException(status_code=422, detail=str(err))
+    with agent_telemetry.track("proposal", current_user.role.value) as run:
+        try:
+            proposal = handle_disruption(request.message, ctx, use_llm=request.use_llm)
+        except AgentError as err:
+            raise HTTPException(status_code=422, detail=str(err))
+        run.intent, run.planner = proposal.intent, proposal.planner
     card = proposal_registry.add(build_card(ctx, proposal))
     logger.info(f"Proposal {card.card_id} ({proposal.tool}) created by {current_user.full_name}")
     return _card_response(card)
@@ -338,3 +344,16 @@ def decide_proposal(
 
     card = proposal_registry.complete(card_id, accept, current_user.full_name, body.note)
     return _card_response(card)
+
+
+# ----------------------------------------------------
+# Week 14: Multi-agent latency and token usage (Track B)
+# ----------------------------------------------------
+@router.get(
+    "/telemetry",
+    summary="Copilot latency and LLM token usage (Week 14)",
+    description="Per-endpoint, per-intent and per-agent-node latency (count, p50, p95, max) and LLM token totals for "
+                "the copilot requests this server process has handled (last 1000), plus the 20 most recent requests.",
+)
+def copilot_telemetry(current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FLEET_MANAGER]))) -> dict:
+    return agent_telemetry.summary()

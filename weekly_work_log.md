@@ -243,7 +243,7 @@
 ---
 
 ### Weeks 7–16 (Track A): Route Planner, Optimization Agent, Live ETAs, Reports & Release — delivered Nov 12, 2026
-- **Status**: Track A `COMPLETED` ✅ (Weeks 7–10 on schedule; Weeks 11–16 delivered early). Track B Weeks 7–10 are logged below; Weeks 11–16 continue on schedule.
+- **Status**: Track A `COMPLETED` ✅ (Weeks 7–10 on schedule; Weeks 11–16 delivered early). Track B Weeks 7–16 are logged below.
 - **Focus Area**: Turning the Week 6 solver into a dispatcher workflow (plan → re-order → explain → approve → track), an agent that re-plans after disruptions, live SLA alerts, operational reporting, and a containerised backend.
 
 #### Track A (Manthan Nimodiya):
@@ -412,3 +412,31 @@
    - Real-time: the "Right now" strip reads the live plan and changes with every trip event; the charts refetch on trip events (debounced) and every minute, keeping the previous render visible while loading.
 4. **Tests**: `backend/tests/test_executive_analytics.py` (5): date-range rules, KPIs vs the metrics engine and previous period, breakdowns adding up, filters, endpoint roles and validation.
 5. **Verification**: **200 / 200 backend tests passing**; frontend `tsc` 0 errors and production build clean; proposal accept flow and the dashboard (filters, tooltips, table views, tablet layout) checked in the browser against the running backend.
+
+---
+
+### Weeks 13–16 (Track B): Analytics Filters, Security Audit, Stress Tests & Release (Nov 30 – Dec 25, 2026) — COMPLETED ✅ (early, Nov 20)
+- **Status**: `COMPLETED` ✅ (Track B; Track A is covered in the Weeks 7–16 entry above)
+- **Focus Area**: Finish the executive analytics, harden the API for a real deployment, prove the copilot holds its latency target under load, and ship the whole platform as one `docker compose up`.
+
+#### Track B (Abhayraj Jaiswal):
+1. **Week 13: Multi-dimensional analytics filtering (US-008)**
+   - Executive KPIs gain driver and priority filters (with date range, hub, vehicle type). A priority filter narrows stop-level figures; the page says that distance and cost still cover whole trips.
+   - Delivery density heatmap: attempts per ~2 km square on a Leaflet map with the validated sequential palette, hover for on-time %, table view. It opens on the busiest hub, because at network zoom a 2 km square is a few pixels.
+   - Every view downloads as CSV, and *PDF summary* prints KPIs with change, weekly volume, weakest hours and driver ranking, all for the filters on screen.
+2. **Week 14: Security audit and hardening** (`documentation/SECURITY_AUDIT.md`)
+   - Found and fixed: anyone could register as ADMIN; fleet create / edit / delete had no authentication; fleet changes were not audited; demo accounts with a published password could be created on any deployment; CORS trusted every `*.vercel.app` site; anonymous callers could trigger paid LLM planning.
+   - Added per-client rate limits, security headers and CSP, a 10 MB body limit, input sanitisation at the schema boundary, and spreadsheet-safe exports.
+   - Audit compliance report (sequence, snapshot and coverage checks) with CSV / PDF export and a pass / fail panel on the Audit Log page.
+   - Copilot telemetry: latency per agent node and LLM token usage per request, summarised at `GET /copilot/telemetry`.
+3. **Week 15: Stress tests, regression and frontend performance** (`documentation/PERFORMANCE.md`)
+   - `scripts/benchmark_copilot.py`: worst p95 15.9 ms across every intent, proposals and 50 concurrent dispatchers (target < 3 s), guarded in CI.
+   - `test_e2e_regression.py`: one operating day through the public API, US-001 to US-008. It surfaced the missing fleet audit entries above.
+   - Sections are lazy-loaded (entry script 662 → 340 kB); the sidebar becomes a drawer on tablets and phones; the Command Center stacks on phones; the page finally has a real title and `lang`.
+   - Fixed: the Dispatcher role signed in with an email the seed never creates, so it had no backend token.
+4. **Week 16: Frontend container, CI and documentation**
+   - `frontend/Dockerfile` + `nginx.conf`: unprivileged Nginx serving the build and proxying `/api` and `/docs`, so the browser uses one origin. Compose now runs db + backend + frontend; the backend port is bound to localhost.
+   - `.github/workflows/ci.yml`: tests and benchmark, frontend type-check and build, Docker build and smoke test.
+   - `documentation/`: User Manual, API Reference generated from OpenAPI (roles per endpoint), Security Audit, Performance. README updated with deployment and request-flow diagrams.
+5. **Verification**: **234 / 234 backend tests passing**; frontend `tsc` 0 errors and production build clean; dashboard filters, heatmap, exports, audit compliance panel and the phone layout checked in the browser against the running backend. `docker compose config` validates; the images were not built locally (Docker daemon not running), so the CI Docker job is their first build.
+

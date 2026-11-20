@@ -2,11 +2,12 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from app.models.user import UserRole
+from app.core.sanitize import CleanStr
 
 
 class UserBase(BaseModel):
     email: EmailStr
-    full_name: str = Field(..., min_length=2, max_length=100)
+    full_name: CleanStr = Field(..., min_length=2, max_length=100)
     role: UserRole = UserRole.DISPATCHER
     is_active: bool = True
 
@@ -16,7 +17,7 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    full_name: Optional[str] = None
+    full_name: Optional[CleanStr] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
     password: Optional[str] = Field(None, min_length=6)

@@ -6,7 +6,7 @@ export const API_V1 = `${API_BASE}/api/v1`
 export const DEMO_CREDENTIALS: Record<string, { email: string; pass: string }> = {
   ADMIN: { email: 'admin@fleetopt.io', pass: 'password123' },
   FLEET_MANAGER: { email: 'manager@fleetopt.io', pass: 'password123' },
-  DISPATCHER: { email: 'dispatch@fleetopt.io', pass: 'password123' },
+  DISPATCHER: { email: 'dispatcher@fleetopt.io', pass: 'password123' },
   DRIVER: { email: 'driver@fleetopt.io', pass: 'password123' },
 }
 

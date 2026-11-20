@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from app.models.fleet import VehicleType
+from app.core.sanitize import ChatText
 
 
 class GeoPoint(BaseModel):
@@ -174,7 +175,7 @@ class SlaAlert(BaseModel):
     vehicle_id: str
     stop_id: str
     level: str = Field(..., description="AT_RISK | PREDICTED_BREACH | SLA_BREACHED | ROUTE_BLOCKED")
-    message: str
+    message: ChatText
     eta: Optional[str] = None
     minutes_late: float = 0
 
@@ -220,7 +221,7 @@ class FleetRouteIn(BaseModel):
 
 
 class DisruptionRequest(BaseModel):
-    message: str = Field(..., min_length=3, max_length=1000, description="e.g. 'MH-04-AB-2045 broke down near Sion'")
+    message: ChatText = Field(..., min_length=3, max_length=1000, description="e.g. 'MH-04-AB-2045 broke down near Sion'")
     hub: GeoPoint
     routes: List[FleetRouteIn] = Field(..., min_length=1, max_length=50)
     spare_vehicles: List[RouteVehicle] = Field(default_factory=list)

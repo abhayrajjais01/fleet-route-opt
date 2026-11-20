@@ -107,6 +107,7 @@ def simulate_day(day: date) -> List[TripRecord]:
                 records.append(StopRecord(
                     shipment_id=s.id, customer=meta[s.id][1], window_close=s.window_close, arrival=e.arrival,
                     delivered=delivered, in_full=delivered and rng.random() >= 0.03, weight_kg=s.weight_kg, priority=meta[s.id][2],
+                    latitude=round(s.lat, 5), longitude=round(s.lon, 5),
                 ))
             trips.append(TripRecord(
                 trip_id=f"{key}-{v.plate}", date=key, hub=hub.code, vehicle_id=v.plate, vehicle_type=v.spec.vehicle_type,

@@ -15,7 +15,9 @@ Endpoints:
 """
 
 import time
-from fastapi import APIRouter, HTTPException, status
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.schemas.route import (
     CitationResponse,
@@ -44,6 +46,8 @@ from app.services.optimizer.eta_engine import RouteEvaluation, recalculate
 from app.services.optimizer.route_explainer import StopInfo, explain_route
 from app.services.optimizer.vrptw_solver import Stop, VehicleSpec, solve
 from app.services.copilot.optimization_agent import AgentError, FleetContext, RouteState, handle_disruption
+from app.core.security import get_optional_user
+from app.models.user import User
 
 router = APIRouter()
 
@@ -216,7 +220,7 @@ def explain(request: ExplainRequest):
 
 # ==================== Week 9: optimization agent ==================== #
 @router.post("/disruption", response_model=ProposalResponse, summary="Turn a disruption report into a re-route proposal")
-def disruption(request: DisruptionRequest):
+def disruption(request: DisruptionRequest, caller: Optional[User] = Depends(get_optional_user)):
     """
     The Optimization Agent picks one solver tool (reassign_stops, apply_delay, reoptimize_route) for the message,
     runs it, and returns a proposal. Nothing is applied: the dispatcher approves or declines.
@@ -231,7 +235,9 @@ def disruption(request: DisruptionRequest):
         now_min=_hhmm(request.now),
     )
     try:
-        p = handle_disruption(request.message, ctx, use_llm=request.use_llm)
+        # Week 14 security audit: only signed-in users may trigger the (paid) Claude planner; anonymous callers get
+        # the deterministic planner, which gives the same kinds of proposals.
+        p = handle_disruption(request.message, ctx, use_llm=request.use_llm and caller is not None)
     except AgentError as err:
         raise HTTPException(status_code=422, detail=str(err))
     to_clock = lambda m: None if m is None else _clock(m)  # noqa: E731

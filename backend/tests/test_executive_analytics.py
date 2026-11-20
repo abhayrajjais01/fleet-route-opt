@@ -20,6 +20,7 @@ from app.services.executive_analytics import (
     period_trips,
     resolve_period,
 )
+from tests.conftest import auth_headers
 
 TODAY = date(2026, 11, 15)
 YESTERDAY = TODAY - timedelta(days=1)
@@ -79,8 +80,7 @@ def test_filters_narrow_the_data():
 
 
 def _token(client, email, role):
-    res = client.post("/api/v1/auth/register", json={"email": email, "password": "Password123!", "full_name": email.split("@")[0], "role": role})
-    return {"Authorization": f"Bearer {res.json()['access_token']}"}
+    return auth_headers(client, email, role)
 
 
 def test_executive_endpoint(client):
@@ -98,3 +98,59 @@ def test_executive_endpoint(client):
     assert client.get("/api/v1/analytics/executive").status_code in (401, 403)
     too_long = client.get("/api/v1/analytics/executive", params={"date_from": "2026-01-01", "date_to": "2026-06-30"}, headers=admin)
     assert too_long.status_code == 422
+
+
+# ─── Week 13: multi-dimensional filters, delivery density, exports ─────────────────────────────
+
+def test_driver_and_priority_filters():
+    period = Period(date(2026, 10, 1), date(2026, 10, 7))
+    one = executive_report(period, driver="Priya Mehta")
+    assert [d["driver"] for d in one["drivers"]] == ["Priya Mehta"]
+
+    express = executive_report(period, priority="EXPRESS")
+    trips = period_trips(period, priority="EXPRESS")
+    assert trips and all(s.priority == "EXPRESS" for t in trips for s in t.stops)
+    assert sum(d["stops"] for d in express["daily"]) == sum(len(t.stops) for t in trips)
+    everything = sum(len(t.stops) for t in period_trips(period))
+    assert sum(d["stops"] for d in express["daily"]) < everything
+    assert set(express["options"]["priorities"]) == {"EXPRESS", "HIGH", "STANDARD", "LOW"}
+    assert "Rajesh Kumar" in express["options"]["drivers"]
+
+
+def test_delivery_density_covers_every_stop():
+    period = Period(date(2026, 10, 1), date(2026, 10, 7))
+    report = executive_report(period, hub="HUB-NV-02")
+    density = report["density"]
+    total = sum(len(t.stops) for t in period_trips(period, hub="HUB-NV-02"))
+    assert sum(c["stops"] for c in density["cells"]) == total
+    assert density["max_stops"] == max(c["stops"] for c in density["cells"])
+    # every cell lies near the Navi Mumbai hub (19.076, 72.999; stops within 0.08 deg)
+    assert all(abs(c["lat"] - 19.076) < 0.12 and abs(c["lon"] - 72.999) < 0.12 for c in density["cells"])
+    assert {h["code"] for h in density["hubs"]} == {"HUB-MUM-01", "HUB-NV-02", "HUB-PNQ-03"}
+
+
+def test_exports_match_dashboard(client):
+    admin = _token(client, "exec13@w13.io", "ADMIN")
+    params = {"date_from": "2026-10-01", "date_to": "2026-10-07", "hub": "HUB-MUM-01", "priority": "HIGH"}
+    board = client.get("/api/v1/analytics/executive", params=params, headers=admin).json()
+
+    res = client.get("/api/v1/analytics/executive/export.csv", params={**params, "section": "daily"}, headers=admin)
+    assert res.status_code == 200 and res.headers["content-type"].startswith("text/csv")
+    assert 'filename="executive-daily-2026-10-01-to-2026-10-07.csv"' in res.headers["content-disposition"]
+    lines = res.text.strip().splitlines()
+    assert lines[1] == "# filters,hub=HUB-MUM-01,priority=HIGH"
+    assert lines[2].startswith("date,stops,")
+    assert len(lines) - 3 == 7
+    assert sum(int(l.split(",")[1]) for l in lines[3:]) == sum(d["stops"] for d in board["daily"])
+
+    for section in ("kpis", "hours", "drivers", "density"):
+        assert client.get("/api/v1/analytics/executive/export.csv", params={**params, "section": section}, headers=admin).status_code == 200
+    assert client.get("/api/v1/analytics/executive/export.csv", params={"section": "secrets"}, headers=admin).status_code == 422
+    assert client.get("/api/v1/analytics/executive", params={"priority": "URGENT"}, headers=admin).status_code == 422
+
+    pdf = client.get("/api/v1/analytics/executive/summary.pdf", params=params, headers=admin)
+    assert pdf.status_code == 200 and pdf.headers["content-type"] == "application/pdf"
+    assert pdf.content.startswith(b"%PDF") and len(pdf.content) > 2000
+
+    dispatcher = _token(client, "disp13@w13.io", "DISPATCHER")
+    assert client.get("/api/v1/analytics/executive/summary.pdf", headers=dispatcher).status_code == 403

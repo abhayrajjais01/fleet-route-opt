@@ -3,12 +3,13 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.models.shipment import ShipmentPriority, ShipmentStatus
+from app.core.sanitize import CleanStr, CleanText
 
 
 class ShipmentBase(BaseModel):
-    tracking_number: str = Field(..., min_length=3, max_length=50, description="Unique tracking identifier")
-    customer_name: str = Field(..., min_length=2, max_length=255)
-    destination_address: str = Field(..., min_length=5, max_length=500)
+    tracking_number: CleanStr = Field(..., min_length=3, max_length=50, description="Unique tracking identifier")
+    customer_name: CleanStr = Field(..., min_length=2, max_length=255)
+    destination_address: CleanStr = Field(..., min_length=5, max_length=500)
     latitude: float = Field(..., ge=-90.0, le=90.0, allow_inf_nan=False, description="Delivery latitude coordinate")
     longitude: float = Field(..., ge=-180.0, le=180.0, allow_inf_nan=False, description="Delivery longitude coordinate")
     weight_kg: float = Field(..., gt=0, allow_inf_nan=False, description="Parcel gross weight in kilograms")
@@ -16,7 +17,7 @@ class ShipmentBase(BaseModel):
     time_window_start: str = Field(default="09:00", pattern=r"^([01]\d|2[0-3]):([0-5]\d)$", description="Window opening time (HH:MM 24-hr)")
     time_window_end: str = Field(default="17:00", pattern=r"^([01]\d|2[0-3]):([0-5]\d)$", description="Window closing time (HH:MM 24-hr)")
     priority: ShipmentPriority = ShipmentPriority.STANDARD
-    hazard_class: Optional[str] = Field(None, max_length=10, description="UN dangerous-goods class, e.g. '3' or '8'; empty for ordinary cargo")
+    hazard_class: Optional[CleanStr] = Field(None, max_length=10, description="UN dangerous-goods class, e.g. '3' or '8'; empty for ordinary cargo")
     status: ShipmentStatus = ShipmentStatus.UNASSIGNED
     hub_id: int = Field(..., description="Origin distribution hub ID")
     assigned_vehicle_id: Optional[int] = Field(None, description="Assigned delivery vehicle ID")
@@ -35,8 +36,8 @@ class ShipmentCreate(ShipmentBase):
 
 
 class ShipmentUpdate(BaseModel):
-    customer_name: Optional[str] = Field(None, min_length=2, max_length=255)
-    destination_address: Optional[str] = None
+    customer_name: Optional[CleanStr] = Field(None, min_length=2, max_length=255)
+    destination_address: Optional[CleanStr] = None
     latitude: Optional[float] = Field(None, ge=-90.0, le=90.0, allow_inf_nan=False)
     longitude: Optional[float] = Field(None, ge=-180.0, le=180.0, allow_inf_nan=False)
     weight_kg: Optional[float] = Field(None, gt=0, allow_inf_nan=False)
@@ -50,7 +51,7 @@ class ShipmentUpdate(BaseModel):
 
 class ShipmentStatusUpdate(BaseModel):
     status: ShipmentStatus
-    notes: Optional[str] = Field(None, max_length=500, description="Audit reason for status change")
+    notes: Optional[CleanText] = Field(None, max_length=500, description="Audit reason for status change")
 
 
 class ShipmentResponse(ShipmentBase):
@@ -67,7 +68,7 @@ class ShipmentResponse(ShipmentBase):
 
 class BatchIngestionRowError(BaseModel):
     row: int = Field(..., description="Line/Row number in CSV or index in JSON array")
-    tracking_number: Optional[str] = Field(None, description="Tracking ID if extracted")
+    tracking_number: Optional[CleanStr] = Field(None, description="Tracking ID if extracted")
     reason: str = Field(..., description="Detailed explanation of rejection")
 
 
