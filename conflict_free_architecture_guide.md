@@ -2,7 +2,7 @@
 
 **Project**: Enterprise AI Fleet Route Optimizer  
 **Purpose**: Establishing a foolproof architectural blueprint that allows **two full-stack engineers** (Manthan Nimodiya & Abhayraj Jaiswal) to build simultaneously with a **true 50-50 GenAI & Full-Stack split** without git merge conflicts, blocked dependencies, or refactoring friction.  
-**Last updated**: Nov 15, 2026 (Weeks 1–12 delivered by both tracks; Track A Weeks 13–16 delivered early)
+**Last updated**: Nov 20, 2026 (all 16 weeks delivered by both tracks)
 
 ---
 
@@ -180,14 +180,29 @@ Track A delivered Weeks 7–16 on `main` while Track B built Weeks 7–10 on `fe
 
 Schema additions that cross ownership lines (Abhayraj adding `Driver.hazmat_endorsed` to Manthan's `models/fleet.py`) are additive columns only, registered in `core/database.py` so existing databases are migrated on startup.
 
+Weeks 13–16 (Track B) touched these Track A files, each change small and additive:
+
+| File | Change | Why |
+|---|---|---|
+| `services/analytics/metrics.py`, `history.py` | `StopRecord.latitude / longitude` (optional) | Delivery density heatmap |
+| `api/v1/fleet.py` | RBAC on every endpoint, audit entries for changes | Security audit findings 2 and 3 |
+| `api/v1/routes.py` | Anonymous `/routes/disruption` never calls the LLM | Security audit finding 7 |
+| `services/copilot/optimization_agent.py` | One `record_llm_usage` call after the Claude request | Token telemetry |
+| `scripts/docker_entrypoint.py` | `--no-server-header` | Security headers |
+| `docker-compose.yml` | Frontend service, `TRUST_PROXY_HEADERS`, backend port bound to localhost | Week 16 |
+| `components/copilot/CopilotCommandCenter.tsx` | Responsive classes only | Phone layout |
+| `tests/test_fleet_crud.py` | Authenticated client fixture | Fleet endpoints now need a token |
+
+Shared test helper: `tests/conftest.py::auth_headers(client, email, role)` creates a user with any role through a bootstrap admin, since only admins may assign privileged roles.
+
 ---
 
-## 5. Status Checklist (Nov 12, 2026)
+## 5. Status Checklist (Nov 20, 2026)
 
 - [x] Month 1 (Weeks 1–4): foundation, auth, fleet assets, RAG store, shipments, audit, batch ingestion.
 - [x] Month 2 (Weeks 5–8): distance engine, Leaflet map, VRPTW solver, route planner & resequencing **vs.** LangGraph router, in-transit FSM, guardrails, policy agent.
 - [x] Weeks 9–10: optimization agent & downstream ETAs **vs.** mobile driver cockpit with offline sync & Copilot sliding drawer (PR #24).
 - [x] Weeks 11–12: route explainer & SLA alerts **vs.** action proposal cards with route diff & executive KPI dashboard (Track B delivered early, Nov 15).
 - [x] **Track A (Manthan)**: Weeks 11–16 delivered early (route explainer, SLA alerts, metrics & reports, CSV/PDF exports, benchmarks, backend Docker + Postgres).
-- [ ] **Track B (Abhayraj)**, Weeks 13–16: analytics filters & exports, security hardening & agent benchmarks, multi-agent stress tests, frontend Docker, docs & viva walkthrough.
+- [x] **Track B (Abhayraj)**, Weeks 13–16: analytics filters & exports, security hardening & agent telemetry, copilot benchmark & end-to-end regression, frontend Docker, CI & documentation (Nov 20).
 - [ ] Cleanup: remove the superseded Track A mock stubs (`mock_stubs.py`, `trackA_stubs.ts`) and the test that exercises them.
