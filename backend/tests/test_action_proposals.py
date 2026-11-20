@@ -13,6 +13,7 @@ import pytest
 from app.services.copilot.optimization_agent import FleetContext, RouteState, handle_disruption
 from app.services.copilot.proposal_service import build_card, registry, route_cost
 from app.services.optimizer.vrptw_solver import Stop, VehicleSpec
+from tests.conftest import auth_headers
 
 HUB = (19.1136, 72.8697)
 VAN = VehicleSpec("1", 1500, 12, "VAN", 480)
@@ -114,8 +115,7 @@ REQUEST = {
 
 
 def _token(client, email, role):
-    res = client.post("/api/v1/auth/register", json={"email": email, "password": "Password123!", "full_name": email.split("@")[0], "role": role})
-    return {"Authorization": f"Bearer {res.json()['access_token']}"}
+    return auth_headers(client, email, role)
 
 
 def test_create_accept_and_audit_proposal(client):

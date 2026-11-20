@@ -1,5 +1,5 @@
 from datetime import timedelta
-from typing import Any
+from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from app.core.security import (
     verify_password,
     create_access_token,
     get_current_user,
+    get_optional_user,
 )
 from app.models.user import User, UserRole
 from app.schemas.auth import (
@@ -20,6 +21,7 @@ from app.schemas.auth import (
 )
 
 router = APIRouter(tags=["Authentication & RBAC"])
+SELF_SERVICE_ROLE = UserRole.DRIVER
 
 
 @router.post(
@@ -29,7 +31,7 @@ router = APIRouter(tags=["Authentication & RBAC"])
     summary="Register New User",
     description="Registers a new user account with hashed password and returns an access token.",
 )
-def register(user_in: UserCreate, db: Session = Depends(get_db)) -> Any:
+def register(user_in: UserCreate, db: Session = Depends(get_db), caller: Optional[User] = Depends(get_optional_user)) -> Any:
     # Check if email is already taken
     existing_user = db.query(User).filter(User.email == user_in.email).first()
     if existing_user:
@@ -38,9 +40,19 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)) -> Any:
             detail="A user with this email already exists."
         )
 
-    # First user registered in the system automatically gets ADMIN role
+    # First user registered in the system automatically gets ADMIN role (bootstrap). After that, self-registration
+    # is open only for the lowest-privilege role; any other role must be assigned by a signed-in admin
+    # (Week 14 security audit: anyone could previously register themselves as ADMIN).
     user_count = db.query(User).count()
-    assigned_role = UserRole.ADMIN if user_count == 0 else user_in.role
+    if user_count == 0:
+        assigned_role = UserRole.ADMIN
+    elif user_in.role == SELF_SERVICE_ROLE or (caller is not None and caller.role == UserRole.ADMIN):
+        assigned_role = user_in.role
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Only an administrator can create {user_in.role.value} accounts. Ask an admin, or register as {SELF_SERVICE_ROLE.value}.",
+        )
 
     new_user = User(
         email=user_in.email,
@@ -130,6 +142,9 @@ def refresh_token(current_user: User = Depends(get_current_user)) -> Any:
     description="Pre-populates demo accounts (Admin, Dispatcher, Driver) for quick role switching and testing.",
 )
 def seed_demo_users(db: Session = Depends(get_db)) -> Any:
+    if not settings.demo_accounts_enabled:
+        # Week 14: these accounts have a published password; never create them on a production deployment.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     demo_accounts = [
         {"email": "admin@fleetopt.io", "password": "password123", "full_name": "Chief Administrator", "role": UserRole.ADMIN},
         {"email": "dispatcher@fleetopt.io", "password": "password123", "full_name": "Central Dispatcher", "role": UserRole.DISPATCHER},

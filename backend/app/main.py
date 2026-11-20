@@ -9,6 +9,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.core.http_security import (
+    BodySizeLimitMiddleware,
+    RateLimitMiddleware,
+    SecurityHeadersMiddleware,
+    default_buckets,
+)
 from app.core.logging import logger
 from app.core.database import Base, engine, check_database_connection, apply_database_migrations
 from app.api.v1.router import api_router
@@ -70,15 +76,31 @@ app = FastAPI(
     redoc_url="/redoc",    # Alternative ReDoc documentation endpoint at /redoc
 )
 
-# CORS (Cross-Origin Resource Sharing) Middleware Setup
-# Allows frontend applications (Next.js on localhost:3000 or deployed on Vercel) to interact with this backend
+# ─── Middleware (Week 14 hardening) ───────────────────────────────────────────────────────────
+# Starlette runs the most recently added middleware first, so a request passes
+#   CORS -> body-size limit -> security headers -> rate limit -> routes.
+# CORS is outermost so that 413 and 429 responses also carry CORS headers and the browser can show them.
+app.add_middleware(
+    RateLimitMiddleware,
+    buckets=default_buckets(settings.API_V1_STR, settings.RATE_LIMIT_AUTH_PER_MIN, settings.RATE_LIMIT_AI_PER_MIN,
+                            settings.RATE_LIMIT_EXPORT_PER_MIN, settings.RATE_LIMIT_DEFAULT_PER_MIN),
+    enabled=settings.RATE_LIMIT_ENABLED,
+    trust_proxy=settings.TRUST_PROXY_HEADERS,
+)
+app.add_middleware(SecurityHeadersMiddleware, hsts=settings.APP_ENV == "production")
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BYTES)
+# CORS: the Vite dev server (localhost:3000), and this project's Vercel deployments. The Docker stack serves the
+# frontend and proxies /api from one Nginx origin, so it needs no CORS at all. Methods and headers are explicit,
+# and the download / rate-limit headers the frontend reads are exposed.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,  # Whitelisted origin URLs
-    allow_origin_regex=r"https://.*\.vercel\.app", # Whitelists Vercel preview & production deployments
-    allow_credentials=True,                        # Allows sending authorization headers & cookies
-    allow_methods=["*"],                           # Permits all HTTP verbs (GET, POST, PUT, DELETE, OPTIONS)
-    allow_headers=["*"],                           # Permits all incoming headers
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origin_regex=settings.BACKEND_CORS_ORIGIN_REGEX,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+    expose_headers=["Content-Disposition", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
+    max_age=600,
 )
 
 

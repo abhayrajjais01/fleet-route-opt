@@ -38,7 +38,8 @@ def main() -> None:
         seed()
     port = os.environ.get("PORT", "8000")
     workers = os.environ.get("WEB_CONCURRENCY", "2")
-    os.execvp("uvicorn", ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", port, "--workers", workers, "--proxy-headers"])
+    os.execvp("uvicorn", ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", port, "--workers", workers, "--proxy-headers",
+                            "--no-server-header"])   # Week 14 hardening: do not advertise the server software
 
 
 if __name__ == "__main__":

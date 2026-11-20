@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +24,27 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000",
         "https://fleet-route-opt.vercel.app",
     ]
+
+    # Only this project's Vercel deployments (production and previews), not every *.vercel.app site.
+    BACKEND_CORS_ORIGIN_REGEX: str = r"https://fleet-route-opt(-[a-z0-9-]+)?\.vercel\.app"
+
+    # API hardening (Week 14, Track B) - see app/core/http_security.py
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_AUTH_PER_MIN: int = 10        # login / register attempts per client
+    RATE_LIMIT_AI_PER_MIN: int = 60          # copilot, disruption agent, RAG search
+    RATE_LIMIT_EXPORT_PER_MIN: int = 20      # CSV / PDF generation
+    RATE_LIMIT_DEFAULT_PER_MIN: int = 600    # everything else under /api/v1
+    TRUST_PROXY_HEADERS: bool = False        # true only behind the bundled Nginx, which sets X-Real-IP
+    MAX_REQUEST_BYTES: int = 10 * 1024 * 1024
+    # POST /auth/seed-demo-users creates accounts with a published password. Unset = on in development, off in
+    # production (APP_ENV=production); set true/false to override.
+    DEMO_ACCOUNTS_ENABLED: Optional[bool] = None
+
+    @property
+    def demo_accounts_enabled(self) -> bool:
+        if self.DEMO_ACCOUNTS_ENABLED is not None:
+            return self.DEMO_ACCOUNTS_ENABLED
+        return self.APP_ENV != "production"
 
     model_config = SettingsConfigDict(
         env_file=".env",

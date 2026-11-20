@@ -2,6 +2,28 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.main import app as fastapi_app
+from tests.conftest import auth_headers
+
+
+@pytest.fixture
+def client():
+    """Since the Week 14 security audit, fleet endpoints need a signed-in admin or fleet manager."""
+    c = TestClient(fastapi_app)
+    c.headers.update(auth_headers(c, "fleet-admin@crud.io", "ADMIN"))
+    return c
+
+
+def test_fleet_endpoints_require_authentication_and_roles():
+    anon = TestClient(fastapi_app)
+    assert anon.get("/api/v1/fleet/hubs").status_code in (401, 403)
+    assert anon.post("/api/v1/fleet/hubs", json={}).status_code in (401, 403)
+    disp = auth_headers(anon, "disp@crud.io", "DISPATCHER")
+    assert anon.get("/api/v1/fleet/hubs", headers=disp).status_code == 200          # everyone signed in can read
+    assert anon.post("/api/v1/fleet/hubs", headers=disp, json={
+        "name": "Hub", "code": "HUB-X", "address": "Somewhere Road", "latitude": 19.0, "longitude": 72.8,
+        "contact_phone": "+91 22 1234 5678"}).status_code == 403                          # but not change the fleet
+
 
 def test_hub_crud_and_uniqueness(client: TestClient):
     # 1. Create Hub

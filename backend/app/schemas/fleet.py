@@ -8,17 +8,18 @@ from app.models.fleet import (
     LicenseType,
     DriverStatus,
 )
+from app.core.sanitize import CleanStr
 
 
 # ---------------- Hub Schemas ---------------- #
 class HubBase(BaseModel):
-    name: str = Field(..., min_length=2, max_length=255)
-    code: str = Field(..., min_length=2, max_length=50)
-    address: str = Field(..., min_length=5, max_length=500)
+    name: CleanStr = Field(..., min_length=2, max_length=255)
+    code: CleanStr = Field(..., min_length=2, max_length=50)
+    address: CleanStr = Field(..., min_length=5, max_length=500)
     latitude: float = Field(..., ge=-90.0, le=90.0)
     longitude: float = Field(..., ge=-180.0, le=180.0)
-    contact_phone: str = Field(..., min_length=5, max_length=50)
-    operating_hours: str = Field(default="06:00 - 22:00")
+    contact_phone: CleanStr = Field(..., min_length=5, max_length=50)
+    operating_hours: CleanStr = Field(default="06:00 - 22:00")
 
 
 class HubCreate(HubBase):
@@ -26,12 +27,12 @@ class HubCreate(HubBase):
 
 
 class HubUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=2, max_length=255)
-    address: Optional[str] = None
+    name: Optional[CleanStr] = Field(None, min_length=2, max_length=255)
+    address: Optional[CleanStr] = None
     latitude: Optional[float] = Field(None, ge=-90.0, le=90.0)
     longitude: Optional[float] = Field(None, ge=-180.0, le=180.0)
-    contact_phone: Optional[str] = None
-    operating_hours: Optional[str] = None
+    contact_phone: Optional[CleanStr] = None
+    operating_hours: Optional[CleanStr] = None
 
 
 class HubResponse(HubBase):
@@ -44,8 +45,8 @@ class HubResponse(HubBase):
 
 # ---------------- Vehicle Schemas ---------------- #
 class VehicleBase(BaseModel):
-    name: str = Field(..., min_length=2, max_length=255)
-    plate_number: str = Field(..., min_length=2, max_length=50)
+    name: CleanStr = Field(..., min_length=2, max_length=255)
+    plate_number: CleanStr = Field(..., min_length=2, max_length=50)
     vehicle_type: VehicleType = VehicleType.VAN
     max_payload_kg: float = Field(..., gt=0)
     max_volume_m3: float = Field(..., gt=0)
@@ -61,8 +62,8 @@ class VehicleCreate(VehicleBase):
 
 
 class VehicleUpdate(BaseModel):
-    name: Optional[str] = None
-    plate_number: Optional[str] = None
+    name: Optional[CleanStr] = None
+    plate_number: Optional[CleanStr] = None
     vehicle_type: Optional[VehicleType] = None
     max_payload_kg: Optional[float] = Field(None, gt=0)
     max_volume_m3: Optional[float] = Field(None, gt=0)
@@ -83,10 +84,10 @@ class VehicleResponse(VehicleBase):
 
 # ---------------- Driver Schemas ---------------- #
 class DriverBase(BaseModel):
-    full_name: str = Field(..., min_length=2, max_length=255)
-    license_number: str = Field(..., min_length=3, max_length=100)
+    full_name: CleanStr = Field(..., min_length=2, max_length=255)
+    license_number: CleanStr = Field(..., min_length=3, max_length=100)
     license_type: LicenseType = LicenseType.COMMERCIAL
-    phone_number: str = Field(..., min_length=5, max_length=50)
+    phone_number: CleanStr = Field(..., min_length=5, max_length=50)
     status: DriverStatus = DriverStatus.OFF_DUTY
     max_driving_hours_per_day: float = Field(default=8.0, gt=0, le=14)
     hazmat_endorsed: bool = Field(default=False, description="Verified dangerous-goods endorsement (SOP-HZ-001 §2)")
@@ -100,9 +101,9 @@ class DriverCreate(DriverBase):
 
 
 class DriverUpdate(BaseModel):
-    full_name: Optional[str] = None
+    full_name: Optional[CleanStr] = None
     license_type: Optional[LicenseType] = None
-    phone_number: Optional[str] = None
+    phone_number: Optional[CleanStr] = None
     status: Optional[DriverStatus] = None
     max_driving_hours_per_day: Optional[float] = Field(None, gt=0, le=14)
     assigned_hub_id: Optional[int] = None

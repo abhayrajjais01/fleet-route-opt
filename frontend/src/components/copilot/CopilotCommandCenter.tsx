@@ -238,11 +238,12 @@ export const CopilotCommandCenter: React.FC<CopilotCommandCenterProps> = ({
   return (
     <div className="flex flex-col h-full overflow-hidden bg-slate-50/40">
       {/* Top Telemetry Stat Bar */}
-      <div className="flex-shrink-0 flex items-center border-b border-slate-200 bg-white shadow-xs">
+      {/* Week 15 (Track B) responsive pass: below md the stats scroll sideways and the console stacks. */}
+      <div className="flex-shrink-0 flex items-center border-b border-slate-200 bg-white shadow-xs overflow-x-auto">
         {statBar.map((s, i) => (
           <div
             key={s.label}
-            className={`flex-1 flex flex-col items-center justify-center py-2.5 ${
+            className={`flex-1 min-w-[84px] flex flex-col items-center justify-center py-2.5 ${
               i < statBar.length - 1 ? 'border-r border-slate-200' : ''
             }`}
           >
@@ -254,7 +255,7 @@ export const CopilotCommandCenter: React.FC<CopilotCommandCenterProps> = ({
             </p>
           </div>
         ))}
-        <div className="px-4 flex items-center gap-2 border-l border-slate-200">
+        <div className="hidden md:flex px-4 items-center gap-2 border-l border-slate-200">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-violet-50 text-violet-700 border border-violet-200">
             <span className="w-2 h-2 rounded-full bg-violet-600 animate-pulse" />
             {engineInfo?.engine || 'LangGraph StateGraph'}
@@ -269,9 +270,9 @@ export const CopilotCommandCenter: React.FC<CopilotCommandCenterProps> = ({
       </div>
 
       {/* Main Copilot Console Workspace */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
         {/* Left Live Assets & Shipments Sidebar */}
-        <div className="w-60 flex-shrink-0 border-r border-slate-200 bg-white flex flex-col overflow-hidden">
+        <div className="hidden md:flex w-60 flex-shrink-0 border-r border-slate-200 bg-white flex-col overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
             <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
               Live Shipments
@@ -332,7 +333,7 @@ export const CopilotCommandCenter: React.FC<CopilotCommandCenterProps> = ({
 
         {/* Right Chat Stream & Reasoning Console */}
         <div className="flex-1 flex flex-col overflow-hidden bg-slate-50/60">
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 space-y-4">
             {messages.map((m) => {
               const intentCfg = m.intent ? INTENT_CONFIG[m.intent] : null
               const isAssistant = m.sender === 'assistant'

@@ -3,11 +3,12 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from app.services.rag.knowledge_base import CATEGORY_LABELS
+from app.core.sanitize import ChatText
 
 
 # ---------------- Search ---------------- #
 class PolicySearchRequest(BaseModel):
-    query: str = Field(..., min_length=2, max_length=500, description="Natural language policy question")
+    query: ChatText = Field(..., min_length=2, max_length=500, description="Natural language policy question")
     top_k: int = Field(default=5, ge=1, le=20)
     categories: Optional[List[str]] = Field(
         default=None, description=f"Restrict to categories: {', '.join(CATEGORY_LABELS)}"
@@ -50,7 +51,7 @@ class PolicyCitationResponse(BaseModel):
 
 
 class PolicySearchResponse(BaseModel):
-    query: str
+    query: ChatText
     categories: Optional[List[str]]
     results: List[PolicyCitationResponse]
     top_score: float

@@ -39,6 +39,8 @@ class StopRecord:
     in_full: bool = True
     weight_kg: float = 0.0
     priority: str = "STANDARD"
+    latitude: Optional[float] = None   # delivery point (Week 13 Track B: density heatmap)
+    longitude: Optional[float] = None
 
     @property
     def on_time(self) -> bool:

@@ -5,6 +5,7 @@ shipments.py - RESTful CRUD APIs for Shipment Orders & Batch Ingestion (US-002 &
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import Response
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -21,6 +22,7 @@ from app.schemas.shipment import (
     BatchShipmentIngestionResponse,
     BatchShipmentJSONRequest,
 )
+from app.core.sanitize import clean_text, like_pattern
 from app.services.audit_service import record_audit_event
 from app.services.batch_ingestion import (
     generate_csv_template,
@@ -106,6 +108,7 @@ def list_shipments(
     hub_id: Optional[int] = Query(None, description="Filter by origin hub ID"),
     status: Optional[ShipmentStatus] = Query(None, description="Filter by shipment status"),
     priority: Optional[ShipmentPriority] = Query(None, description="Filter by priority"),
+    search: Optional[str] = Query(None, max_length=100, description="Free text: tracking number, customer or address"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -122,6 +125,13 @@ def list_shipments(
         query = query.filter(Shipment.status == status)
     if priority is not None:
         query = query.filter(Shipment.priority == priority)
+    term = clean_text(search) if search else ""
+    if term:
+        # Week 14: the term is cleaned like any other input, and LIKE wildcards the user typed match literally.
+        pattern = like_pattern(term)
+        query = query.filter(or_(Shipment.tracking_number.ilike(pattern, escape="\\"),
+                                 Shipment.customer_name.ilike(pattern, escape="\\"),
+                                 Shipment.destination_address.ilike(pattern, escape="\\")))
 
     return query.order_by(Shipment.id.desc()).offset(skip).limit(limit).all()
 
