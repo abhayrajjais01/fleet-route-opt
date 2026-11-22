@@ -1,17 +1,33 @@
-import { useState, useRef, useEffect } from 'react'
-import { API_BASE, checkApiHealth } from './lib/api'
-import ComplianceInspector from './components/compliance/ComplianceInspector'
+import { useState, useRef, useEffect, lazy, Suspense } from 'react'
+import { API_BASE, checkApiHealth, fetchAuthToken } from './lib/api'
 import { CopilotCommandCenter } from './components/copilot/CopilotCommandCenter'
-import LiveTrackingSection from './components/tracking/LiveTrackingSection'
 import ErrorBoundary from './components/ErrorBoundary'
-import DispatchPlanner, { type DispatchDecision } from './components/workflow/DispatchPlanner'
-import NetworkMapSection from './components/map/NetworkMapSection'
+import type { DispatchDecision } from './components/workflow/DispatchPlanner'
 import CopilotSlidingDrawer from './components/copilot/CopilotSlidingDrawer'
-import MobileDriverCockpit from './components/driver/MobileDriverCockpit'
-import RoutePlannerSection, { type RouteDispatch } from './components/routes/RoutePlannerSection'
-import ReportsSection from './components/reports/ReportsSection'
-import ExecutiveDashboard from './components/analytics/ExecutiveDashboard'
+import type { RouteDispatch } from './components/routes/RoutePlannerSection'
+import AuditCompliancePanel from './components/audit/AuditCompliancePanel'
 import { applyAcceptedProposal } from './lib/proposalsApi'
+
+// Week 15 (Track B): sections load on first visit, so the first screen ships without the maps, charts and planners.
+const ComplianceInspector = lazy(() => import('./components/compliance/ComplianceInspector'))
+const LiveTrackingSection = lazy(() => import('./components/tracking/LiveTrackingSection'))
+const DispatchPlanner = lazy(() => import('./components/workflow/DispatchPlanner'))
+const NetworkMapSection = lazy(() => import('./components/map/NetworkMapSection'))
+const MobileDriverCockpit = lazy(() => import('./components/driver/MobileDriverCockpit'))
+const RoutePlannerSection = lazy(() => import('./components/routes/RoutePlannerSection'))
+const ReportsSection = lazy(() => import('./components/reports/ReportsSection'))
+const ExecutiveDashboard = lazy(() => import('./components/analytics/ExecutiveDashboard'))
+
+function SectionLoading() {
+  return (
+    <div className="h-full flex items-center justify-center" role="status" aria-live="polite">
+      <div className="flex items-center gap-2 text-sm text-slate-500">
+        <span className="w-4 h-4 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" aria-hidden />
+        Loading…
+      </div>
+    </div>
+  )
+}
 import type { UserRole, VehicleType, VehicleStatus, DriverStatus, LicenseType, ShipmentStatus, ShipmentPriority, AuditAction, AdminSection, Vehicle, Driver, Hub, Shipment, User, AuditEntry } from './lib/types'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -66,29 +82,7 @@ const INIT_AUDIT: AuditEntry[] = [
   { id: 4, timestamp: '2026-09-22 11:58:40', actor_name: 'Copilot AI', action_type: 'COPILOT_OVERRIDE', entity_type: 'ROUTE', entity_id: 17, details: 'AI suggested reroute due to NH-48 congestion' },
 ]
 
-// ─── API CLIENT HELPER (base URL & health probe live in lib/api.ts) ──────────
-const DEMO_CREDENTIALS: Record<UserRole, { email: string; pass: string }> = {
-  ADMIN: { email: 'admin@fleetopt.io', pass: 'password123' },
-  FLEET_MANAGER: { email: 'manager@fleetopt.io', pass: 'password123' },
-  DISPATCHER: { email: 'dispatch@fleetopt.io', pass: 'password123' },
-  DRIVER: { email: 'driver@fleetopt.io', pass: 'password123' },
-}
-
-async function fetchAuthToken(role: UserRole = 'ADMIN'): Promise<string | null> {
-  try {
-    const creds = DEMO_CREDENTIALS[role] || DEMO_CREDENTIALS.ADMIN
-    const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: creds.email, password: creds.pass }),
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.access_token || null
-  } catch {
-    return null
-  }
-}
+// Demo sign-in per role lives in lib/api.ts (fetchAuthToken), with the demo credentials the seed script creates.
 
 // ─── STATUS STYLING ───────────────────────────────────────────────────────────
 const SC: Record<string, { bg: string; text: string; dot: string }> = {
@@ -1033,7 +1027,7 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
 }
 
 // ─── AUDIT LOG ────────────────────────────────────────────────────────────────
-function AuditSection({ entries }: { entries: AuditEntry[] }) {
+function AuditSection({ entries, authToken, canReport }: { entries: AuditEntry[]; authToken: string | null; canReport: boolean }) {
   const [filter, setFilter] = useState('ALL')
   const filt = entries.filter(e => filter === 'ALL' || e.action_type === filter)
   const actionColor: Record<string, string> = { ROUTE_MODIFIED: '#2563eb', STATUS_CHANGE: '#7c3aed', COPILOT_OVERRIDE: '#d97706', DISPATCH_APPROVED: '#15803d', ASSET_CREATED: '#0891b2', ASSET_DELETED: '#dc2626' }
@@ -1046,6 +1040,7 @@ function AuditSection({ entries }: { entries: AuditEntry[] }) {
           {['ROUTE_MODIFIED', 'STATUS_CHANGE', 'COPILOT_OVERRIDE', 'DISPATCH_APPROVED', 'ASSET_CREATED', 'ASSET_DELETED'].map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
         </select>
       </div>
+      {canReport && <AuditCompliancePanel authToken={authToken} />}
       <div className="flex-1 overflow-auto">
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-slate-50 z-10"><tr className="border-b border-slate-200">{['#', 'Timestamp', 'Actor', 'Action', 'Entity', 'Details'].map(h => <th key={h} className="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">{h}</th>)}</tr></thead>
@@ -1138,7 +1133,17 @@ const ALL_NAV: { id: AdminSection; label: string; group: 'Operations' | 'Assets 
 export default function App() {
   const [activeRole, setActiveRole] = useState<UserRole>('ADMIN')
   const [section, setSection] = useState<AdminSection>('dashboard')
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  // Week 15 (Track B): below 1024 px the sidebar is an overlay drawer, closed by default and after each navigation.
+  const narrowQuery = '(max-width: 1023px)'
+  const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia(narrowQuery).matches)
+  const [sidebarOpen, setSidebarOpen] = useState(() => !(typeof window !== 'undefined' && window.matchMedia(narrowQuery).matches))
+  useEffect(() => {
+    const mq = window.matchMedia(narrowQuery)
+    const onChange = (e: MediaQueryListEvent) => { setIsNarrow(e.matches); setSidebarOpen(!e.matches) }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  const goTo = (id: AdminSection) => { setSection(id); if (isNarrow) setSidebarOpen(false) }
   const [isBackendOnline, setIsBackendOnline] = useState<boolean | null>(null)
 
   const [hubs, setHubs] = useState<Hub[]>(INIT_HUBS)
@@ -1211,12 +1216,21 @@ export default function App() {
   }
 
   const currentUser = roleUserNames[activeRole]
+  const switchRole = (r: UserRole) => {
+    setActiveRole(r)
+    if (r === 'DRIVER') setSection('tracking')
+    else if (!ALL_NAV.find(n => n.id === section)?.roles.includes(r)) setSection(ALL_NAV.find(n => n.roles.includes(r))!.id)
+  }
 
   return (
     <div className="h-screen flex overflow-hidden bg-slate-50 text-slate-900" style={{ fontFamily: 'DM Sans, sans-serif' }}>
       {/* Sidebar */}
+      {sidebarOpen && isNarrow && (
+        <div className="fixed inset-0 z-40 bg-slate-900/30 lg:hidden" onClick={() => setSidebarOpen(false)} aria-hidden />
+      )}
       {sidebarOpen && (
-        <aside className="w-60 flex-shrink-0 flex flex-col bg-white text-slate-600 border-r border-slate-200">
+        <aside id="app-sidebar" aria-label="Main navigation"
+          className="w-60 flex-shrink-0 flex flex-col bg-white text-slate-600 border-r border-slate-200 fixed inset-y-0 left-0 z-50 shadow-xl lg:static lg:z-auto lg:shadow-none">
           <div className="h-14 flex items-center gap-2.5 px-4 border-b border-slate-200">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-md shadow-violet-200">
               <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5" width="18" height="18"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z" /><circle cx="7" cy="17.5" r="1.5" /><circle cx="17" cy="17.5" r="1.5" /></svg>
@@ -1236,7 +1250,7 @@ export default function App() {
                   {items.map(item => {
                     const on = section === item.id
                     return (
-                      <button key={item.id} onClick={() => setSection(item.id)}
+                      <button key={item.id} onClick={() => goTo(item.id)} aria-current={on ? 'page' : undefined}
                         className={`relative w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${on ? 'bg-violet-50 text-violet-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
                         {on && <span className="absolute -left-3 top-1.5 bottom-1.5 w-1 rounded-r bg-violet-600" />}
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0"><path d={item.path} /></svg>
@@ -1267,13 +1281,14 @@ export default function App() {
 
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Top bar */}
-        <header className="flex-shrink-0 h-14 bg-white border-b border-slate-200 flex items-center gap-3 px-4">
-          <button onClick={() => setSidebarOpen(o => !o)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" title="Toggle sidebar">
+        <header className="flex-shrink-0 h-14 bg-white border-b border-slate-200 flex items-center gap-2 sm:gap-3 px-3 sm:px-4">
+          <button onClick={() => setSidebarOpen(o => !o)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500" title="Toggle sidebar"
+            aria-label={sidebarOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={sidebarOpen} aria-controls="app-sidebar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
           </button>
           <div className="min-w-0 whitespace-nowrap">
             <p className="text-sm font-semibold text-slate-900 leading-tight">{ALL_NAV.find(n => n.id === section)?.label}</p>
-            <p className="text-[11px] text-slate-400 leading-tight">{ALL_NAV.find(n => n.id === section)?.group} · Mumbai–Pune network</p>
+            <p className="hidden sm:block text-[11px] text-slate-400 leading-tight">{ALL_NAV.find(n => n.id === section)?.group} · Mumbai–Pune network</p>
           </div>
           <div className="flex-1" />
           {unassigned > 0 && activeRole !== 'DRIVER' && (
@@ -1283,28 +1298,29 @@ export default function App() {
           )}
 
           {section !== 'dashboard' && activeRole !== 'DRIVER' && (
-            <button onClick={() => setIsCopilotDrawerOpen(true)} title="Open the AI Copilot"
-              className="flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-full bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 whitespace-nowrap">
-              <span className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-500 to-emerald-400 flex items-center justify-center text-[10px]">✦</span>
-              AI Copilot
+            <button onClick={() => setIsCopilotDrawerOpen(true)} title="Open the AI Copilot" aria-label="Open the AI Copilot"
+              className="flex items-center gap-1.5 pl-1.5 pr-1.5 sm:pr-2.5 py-1 rounded-full bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 whitespace-nowrap">
+              <span className="w-5 h-5 rounded-full bg-gradient-to-tr from-blue-500 to-emerald-400 flex items-center justify-center text-[10px]" aria-hidden>✦</span>
+              <span className="hidden sm:inline">AI Copilot</span>
             </button>
           )}
-          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg">
+          <select aria-label="Switch role" value={activeRole} onChange={e => switchRole(e.target.value as UserRole)}
+            className="md:hidden bg-slate-100 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-700 outline-none">
+            {(['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] as UserRole[]).map(r => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
+          </select>
+          <div className="hidden md:flex items-center bg-slate-100 p-0.5 rounded-lg" role="group" aria-label="Switch role">
             {(['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] as UserRole[]).map((r) => (
               <button
                 key={r}
-                onClick={() => {
-                  setActiveRole(r)
-                  if (r === 'DRIVER') setSection('tracking')
-                  else if (!ALL_NAV.find(n => n.id === section)?.roles.includes(r)) setSection(ALL_NAV.find(n => n.roles.includes(r))!.id)
-                }}
+                aria-pressed={activeRole === r}
+                onClick={() => switchRole(r)}
                 className={`px-2.5 py-1 text-[10px] font-bold rounded-md whitespace-nowrap transition ${activeRole === r ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-800'}`}
               >
                 {r.replace('_', ' ')}
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
+          <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-200">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ${currentUser.badgeColor}`}>{currentUser.initials}</div>
             <div className="hidden xl:block leading-tight whitespace-nowrap">
               <p className="text-xs font-semibold text-slate-800">{currentUser.name}</p>
@@ -1316,6 +1332,7 @@ export default function App() {
         {/* Main content */}
         <main className="isolate flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50/30">
           <ErrorBoundary resetKey={`${section}|${activeRole}`}>
+          <Suspense fallback={<SectionLoading />}>
           {section === 'dashboard' && <CopilotCommandCenter vehicles={vehicles} drivers={drivers} shipments={shipments} hubs={hubs} audit={audit} setSection={setSection} activeRole={activeRole} authToken={authToken} />}
           {section === 'shipments' && <ShipmentsSection shipments={shipments} setShipments={setShipments} hubs={hubs} addAudit={addAudit} onTriggerWorkflow={triggerWorkflow} activeRole={activeRole} />}
           {section === 'workflow' && <DispatchPlanner shipments={shipments} hubs={hubs} vehicles={vehicles} drivers={drivers} initialShipmentId={workflowShipment?.id ?? null} onDispatch={dispatch} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
@@ -1345,8 +1362,9 @@ export default function App() {
             )}
           </div>
           {section === 'compliance' && <ComplianceInspector />}
-          {section === 'audit' && <AuditSection entries={audit} />}
+          {section === 'audit' && <AuditSection entries={audit} authToken={authToken} canReport={activeRole === 'ADMIN' || activeRole === 'FLEET_MANAGER'} />}
           {section === 'users' && <UsersSection users={users} setUsers={setUsers} />}
+          </Suspense>
           </ErrorBoundary>
         </main>
       </div>

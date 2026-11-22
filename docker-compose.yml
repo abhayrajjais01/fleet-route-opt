@@ -1,6 +1,8 @@
-# ─── AI Fleet Route Optimizer · local stack ─────────────────────────────────────
-# Week 16 Track A: PostgreSQL + FastAPI backend.  Usage:  docker compose up --build
-# Track B (Abhayraj) adds the frontend service and CI on top of this file.
+# ─── AI Fleet Route Optimizer · full local stack ────────────────────────────────────────────────
+# Week 16. Usage:  docker compose up --build    then open http://localhost:8080
+#   db        PostgreSQL 16                                      (Track A)
+#   backend   FastAPI + agents; seeds demo data on first start    (Track A; hardening settings: Track B)
+#   frontend  React build served by Nginx, proxies /api to backend (Track B)
 services:
   db:
     image: postgres:16-alpine
@@ -30,8 +32,23 @@ services:
       SECRET_KEY: ${SECRET_KEY:-change-me-for-anything-but-local-demo}
       SEED_DEMO_DATA: "true"
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Requests arrive through the frontend's Nginx, which sets X-Real-IP; rate limits key on it.
+      TRUST_PROXY_HEADERS: "true"
+    # Published on this machine only (API clients, /docs). Browsers use the frontend on :8080. Bound to 127.0.0.1
+    # because the backend trusts X-Real-IP from Nginx: a remote caller reaching :8000 directly could forge it.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ""            # same origin: Nginx forwards /api to the backend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
 
 volumes:
   pgdata:

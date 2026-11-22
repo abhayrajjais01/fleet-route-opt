@@ -15,6 +15,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.core.database import get_db
+from app.core.security import get_current_user, require_roles
+from app.models.audit import AuditAction
+from app.models.user import User, UserRole
+from app.services.audit_service import record_audit_event
 from app.models.fleet import (
     Hub,
     Vehicle,
@@ -40,8 +44,22 @@ router = APIRouter()
 
 
 # ==================== FLEET OVERVIEW AGGREGATION ==================== #
+# Week 14 security audit (Track B): these endpoints were open to anonymous callers. Reading the fleet now needs
+# a signed-in user, changing it needs an admin or fleet manager, deleting needs an admin; every change is audited.
+FLEET_MANAGERS = require_roles([UserRole.ADMIN, UserRole.FLEET_MANAGER])
+ADMINS = require_roles([UserRole.ADMIN])
+
+
+def _snapshot(obj) -> dict:
+    """Column values of an ORM row, for the audit trail's before / after states."""
+    return {c.name: getattr(obj, c.name) for c in obj.__table__.columns if c.name not in ("created_at", "updated_at")}
+
+
 @router.get("/overview", response_model=FleetOverviewResponse, summary="Get high-level fleet metrics")
-def get_fleet_overview(db: Session = Depends(get_db)):
+def get_fleet_overview(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Computes aggregate real-time fleet statistics from database tables:
     - Counts of available, in-transit, and maintenance vehicles
@@ -97,6 +115,7 @@ def list_hubs(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Lists distribution hubs with pagination support (skip & limit)."""
     return db.query(Hub).offset(skip).limit(limit).all()
@@ -106,6 +125,7 @@ def list_hubs(
 def create_hub(
     hub_in: HubCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(FLEET_MANAGERS),
 ):
     """Registers a new distribution hub facility. Checks for uniqueness of hub code."""
     existing = db.query(Hub).filter(Hub.code == hub_in.code).first()
@@ -116,13 +136,19 @@ def create_hub(
         )
     hub = Hub(**hub_in.model_dump())
     db.add(hub)
+    db.flush()
+    record_audit_event(db, current_user, AuditAction.ASSET_CREATED, "Hub", hub.id, f"Created hub {hub.code}",
+                       after_state=_snapshot(hub))
     db.commit()
     db.refresh(hub)
     return hub
 
 
 @router.get("/hubs/{hub_id}", response_model=HubResponse, summary="Get hub by ID")
-def get_hub(hub_id: int, db: Session = Depends(get_db)):
+def get_hub(
+    hub_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Fetches details for a specific hub by ID."""
     hub = db.query(Hub).filter(Hub.id == hub_id).first()
     if not hub:
@@ -135,16 +161,20 @@ def update_hub(
     hub_id: int,
     hub_update: HubUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(FLEET_MANAGERS),
 ):
     """Updates an existing hub facility by ID."""
     hub = db.query(Hub).filter(Hub.id == hub_id).first()
     if not hub:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hub not found")
     
+    before = _snapshot(hub)
     update_data = hub_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(hub, field, value)
     
+    record_audit_event(db, current_user, AuditAction.ASSET_UPDATED, "Hub", hub.id, f"Updated hub {hub.code}: {', '.join(update_data) or 'no changes'}", before_state=before,
+                       after_state=_snapshot(hub))
     db.commit()
     db.refresh(hub)
     return hub
@@ -154,11 +184,14 @@ def update_hub(
 def delete_hub(
     hub_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(ADMINS),
 ):
     """Deletes a hub facility by ID."""
     hub = db.query(Hub).filter(Hub.id == hub_id).first()
     if not hub:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hub not found")
+    record_audit_event(db, current_user, AuditAction.ASSET_DELETED, "Hub", hub.id, f"Deleted hub {hub.code}",
+                       before_state=_snapshot(hub))
     db.delete(hub)
     db.commit()
     return None
@@ -173,6 +206,7 @@ def list_vehicles(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Lists fleet vehicles with optional filtering by current_status, vehicle_type, or assigned_hub_id."""
     query = db.query(Vehicle)
@@ -189,6 +223,7 @@ def list_vehicles(
 def create_vehicle(
     vehicle_in: VehicleCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(FLEET_MANAGERS),
 ):
     """Registers a new vehicle unit in the fleet. Verifies hub existence and license plate uniqueness."""
     hub = db.query(Hub).filter(Hub.id == vehicle_in.assigned_hub_id).first()
@@ -204,13 +239,19 @@ def create_vehicle(
     
     vehicle = Vehicle(**vehicle_in.model_dump())
     db.add(vehicle)
+    db.flush()
+    record_audit_event(db, current_user, AuditAction.ASSET_CREATED, "Vehicle", vehicle.id, f"Registered vehicle {vehicle.plate_number}",
+                       after_state=_snapshot(vehicle))
     db.commit()
     db.refresh(vehicle)
     return vehicle
 
 
 @router.get("/vehicles/{vehicle_id}", response_model=VehicleResponse, summary="Get vehicle by ID")
-def get_vehicle(vehicle_id: int, db: Session = Depends(get_db)):
+def get_vehicle(
+    vehicle_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Fetches details for a specific vehicle by ID."""
     vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
     if not vehicle:
@@ -223,6 +264,7 @@ def update_vehicle(
     vehicle_id: int,
     vehicle_update: VehicleUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(FLEET_MANAGERS),
 ):
     """Updates payload, volume, fuel efficiency, or hub allocation of a vehicle."""
     vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
@@ -234,10 +276,13 @@ def update_vehicle(
         if not hub:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assigned Hub does not exist")
 
+    before = _snapshot(vehicle)
     update_data = vehicle_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(vehicle, field, value)
 
+    record_audit_event(db, current_user, AuditAction.ASSET_UPDATED, "Vehicle", vehicle.id, f"Updated vehicle {vehicle.plate_number}: {', '.join(update_data) or 'no changes'}", before_state=before,
+                       after_state=_snapshot(vehicle))
     db.commit()
     db.refresh(vehicle)
     return vehicle
@@ -247,11 +292,14 @@ def update_vehicle(
 def delete_vehicle(
     vehicle_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(ADMINS),
 ):
     """Decommissions and removes a vehicle unit from active roster."""
     vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
     if not vehicle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
+    record_audit_event(db, current_user, AuditAction.ASSET_DELETED, "Vehicle", vehicle.id, f"Decommissioned vehicle {vehicle.plate_number}",
+                       before_state=_snapshot(vehicle))
     db.delete(vehicle)
     db.commit()
     return None
@@ -265,6 +313,7 @@ def list_drivers(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Lists certified drivers with optional status and hub filtering."""
     query = db.query(Driver)
@@ -279,6 +328,7 @@ def list_drivers(
 def create_driver(
     driver_in: DriverCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(FLEET_MANAGERS),
 ):
     """Registers a certified commercial driver. Checks license uniqueness and hub presence."""
     hub = db.query(Hub).filter(Hub.id == driver_in.assigned_hub_id).first()
@@ -294,13 +344,19 @@ def create_driver(
     
     driver = Driver(**driver_in.model_dump())
     db.add(driver)
+    db.flush()
+    record_audit_event(db, current_user, AuditAction.ASSET_CREATED, "Driver", driver.id, f"Registered driver {driver.full_name}",
+                       after_state=_snapshot(driver))
     db.commit()
     db.refresh(driver)
     return driver
 
 
 @router.get("/drivers/{driver_id}", response_model=DriverResponse, summary="Get driver by ID")
-def get_driver(driver_id: int, db: Session = Depends(get_db)):
+def get_driver(
+    driver_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Fetches profile for a specific driver by ID."""
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     if not driver:
@@ -313,6 +369,7 @@ def update_driver(
     driver_id: int,
     driver_update: DriverUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(FLEET_MANAGERS),
 ):
     """Updates driver shift hours, phone number, duty status, or assigned hub."""
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
@@ -324,10 +381,13 @@ def update_driver(
         if not hub:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assigned Hub does not exist")
 
+    before = _snapshot(driver)
     update_data = driver_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(driver, field, value)
 
+    record_audit_event(db, current_user, AuditAction.ASSET_UPDATED, "Driver", driver.id, f"Updated driver {driver.full_name}: {', '.join(update_data) or 'no changes'}", before_state=before,
+                       after_state=_snapshot(driver))
     db.commit()
     db.refresh(driver)
     return driver
@@ -337,11 +397,14 @@ def update_driver(
 def delete_driver(
     driver_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(ADMINS),
 ):
     """Removes a driver profile from active roster."""
     driver = db.query(Driver).filter(Driver.id == driver_id).first()
     if not driver:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
+    record_audit_event(db, current_user, AuditAction.ASSET_DELETED, "Driver", driver.id, f"Removed driver {driver.full_name}",
+                       before_state=_snapshot(driver))
     db.delete(driver)
     db.commit()
     return None

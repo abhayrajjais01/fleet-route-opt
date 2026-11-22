@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
+from app.core.sanitize import ChatText
 
 
 class AgentIntent(str, Enum):
@@ -59,7 +60,7 @@ class PolicyCitationCard(BaseModel):
 
 
 class GuardrailEvaluationResult(BaseModel):
-    query: str
+    query: ChatText
     passed: bool
     status: str  # "VERIFIED" or "ZERO_HALLUCINATION_REJECTED"
     similarity_score: float
@@ -127,7 +128,7 @@ class RouteComplianceRequest(BaseModel):
 # ----------------------------------------------------
 class AgentState(BaseModel):
     session_id: str
-    query: str
+    query: ChatText
     intent: AgentIntent = AgentIntent.GENERAL_INQUIRY
     confidence: float = 0.0
     entities: AgentEntities = Field(default_factory=AgentEntities)
@@ -141,14 +142,14 @@ class AgentState(BaseModel):
 
 
 class CopilotQueryRequest(BaseModel):
-    query: str = Field(..., min_length=1, max_length=2000, description="Dispatcher natural language command or inquiry")
+    query: ChatText = Field(..., max_length=2000, description="Dispatcher natural language command or inquiry (an empty one gets a 400 with a readable message)")
     session_id: Optional[str] = Field(default=None, description="Optional persistent session ID")
     context: Optional[Dict[str, Any]] = Field(default=None, description="Optional contextual payload")
 
 
 class CopilotQueryResponse(BaseModel):
     session_id: str
-    query: str
+    query: ChatText
     intent: AgentIntent
     confidence: float
     entities: AgentEntities

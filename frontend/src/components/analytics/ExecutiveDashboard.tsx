@@ -1,11 +1,18 @@
-// ─── EXECUTIVE KPI ANALYTICS DASHBOARD (US-008, Week 12 · Track B: Abhayraj Jaiswal) ──────────
-// Headline KPIs vs the previous period, daily delivery volume, SLA compliance by time of day and a
-// driver efficiency comparison, all scoped by one filter row (date range, hub, vehicle category).
+// ─── EXECUTIVE KPI ANALYTICS DASHBOARD (US-008, Weeks 12–13 · Track B: Abhayraj Jaiswal) ──────
+// Headline KPIs vs the previous period, daily delivery volume, SLA compliance by time of day, a delivery
+// density heatmap and a driver efficiency comparison, all scoped by one filter row (date range, hub,
+// vehicle type, driver, priority). Every view downloads as CSV; the whole page as a PDF summary.
 // The "Right now" strip reads the live plan and changes the moment a trip event happens; the
 // historical charts refetch on trip events and every minute.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { analyticsApi, type DailyPoint, type DriverEfficiency, type ExecutiveDashboard as Data, type ExecutiveFilters, type HourBucket, type KpiCard, type KpiKey } from '../../lib/analyticsApi'
+import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { analyticsApi, type DailyPoint, type DeliveryDensity, type DriverEfficiency, type ExecutiveDashboard as Data, type ExecutiveFilters, type ExportSection, type HourBucket, type KpiCard, type KpiKey } from '../../lib/analyticsApi'
+import { densityBreaks } from './densityScale'
 import type { Shipment, Vehicle } from '../../lib/types'
+
+const DeliveryDensityMap = lazy(() => import('./DeliveryDensityMap'))
+
+/** Lets any card download its own view as CSV, with the page's current filters. */
+const ExportContext = createContext<(section: ExportSection | 'pdf') => void>(() => {})
 
 // Validated with the dataviz palette checker (light surface): blue / yellow / red, adjacent CVD-safe.
 // Yellow is below 3:1 on white, so every chart has a legend and a table view.
@@ -47,6 +54,7 @@ export default function ExecutiveDashboard({ authToken, shipments, vehicles }: {
   const [error, setError] = useState<string | null>(null)
   const [refreshedAt, setRefreshedAt] = useState<Date | null>(null)
   const [tick, setTick] = useState(0)
+  const [exporting, setExporting] = useState<string | null>(null)
 
   // Trip events (any shipment status or vehicle change) trigger a refetch, debounced; plus once a minute.
   const tripSignature = useMemo(() => shipments.map(s => `${s.id}:${s.status}:${s.assigned_vehicle_id ?? ''}`).join('|'), [shipments])
@@ -72,6 +80,10 @@ export default function ExecutiveDashboard({ authToken, shipments, vehicles }: {
   }, [JSON.stringify(filters), authToken, tick])
 
   const set = (patch: Partial<ExecutiveFilters>) => setFilters(f => ({ ...f, ...patch }))
+  const download = async (kind: ExportSection | 'pdf') => {
+    setExporting(kind)
+    try { await analyticsApi.download(kind, filters, authToken) } catch (e) { setError((e as Error).message) } finally { setExporting(null) }
+  }
   const yesterday = isoDay(new Date(Date.now() - 864e5))
 
   return (
@@ -103,8 +115,19 @@ export default function ExecutiveDashboard({ authToken, shipments, vehicles }: {
           <Select label="All hubs" value={filters.hub} options={data?.options.hubs ?? []} onChange={v => set({ hub: v })} />
           <Select label="All vehicle types" value={filters.vehicle_type} options={data?.options.vehicle_types ?? []} onChange={v => set({ vehicle_type: v })}
             format={v => v.replace('_', ' ').toLowerCase()} />
+          <Select label="All drivers" value={filters.driver} options={data?.options.drivers ?? []} onChange={v => set({ driver: v })} />
+          <Select label="All priorities" value={filters.priority} options={data?.options.priorities ?? []} onChange={v => set({ priority: v })}
+            format={v => v.charAt(0) + v.slice(1).toLowerCase()} />
+          {(filters.hub || filters.vehicle_type || filters.driver || filters.priority) && (
+            <button onClick={() => set({ hub: undefined, vehicle_type: undefined, driver: undefined, priority: undefined })}
+              className="text-sm text-slate-500 hover:text-slate-800 px-1">Clear</button>
+          )}
           <div className="flex-1" />
           <span className="text-xs text-slate-500">{loading ? 'Refreshing…' : refreshedAt ? `Updated ${refreshedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
+          <button onClick={() => download('pdf')} disabled={!data || exporting === 'pdf'}
+            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50">
+            {exporting === 'pdf' ? 'Preparing…' : 'PDF summary'}
+          </button>
         </div>
 
         <LiveStrip shipments={shipments} vehicles={vehicles} />
@@ -113,20 +136,25 @@ export default function ExecutiveDashboard({ authToken, shipments, vehicles }: {
         {!data && !error && <p className="text-sm text-slate-500">Loading KPIs…</p>}
 
         {data && (
+          <ExportContext.Provider value={download}>
           <div className={`space-y-6 transition-opacity ${loading ? 'opacity-60' : ''}`}>
             <KpiTiles kpis={data.kpis} previous={data.previous_period} />
+            <div className="flex justify-end -mt-3"><CsvButton section="kpis" label="KPIs as CSV" /></div>
             <div className="grid lg:grid-cols-5 gap-6">
               <DailyChart daily={data.daily} />
               <HourChart hours={data.sla_by_hour} />
             </div>
-            <Card title="Driver efficiency" subtitle="Ranked by on-time rate, then stops per driving hour">
+            <DensityCard density={data.density} />
+            <Card title="Driver efficiency" subtitle="Ranked by on-time rate, then stops per driving hour" actions={<CsvButton section="drivers" />}>
               <DriverTable drivers={data.drivers} />
             </Card>
             <p className="text-xs text-slate-500">
               {data.source}. {shortDay(data.period.date_from)} – {shortDay(data.period.date_to)} ({data.period.days} days), compared with {shortDay(data.previous_period.date_from)} – {shortDay(data.previous_period.date_to)}.
               Costs assume diesel at ₹{data.assumptions.fuel_price_per_l}/L and drivers at ₹{data.assumptions.driver_cost_per_hour}/h.
+              {data.filters.priority && ' With a priority filter, distance and cost cover the whole trips that served those stops.'}
             </p>
           </div>
+          </ExportContext.Provider>
         )}
       </div>
     </div>
@@ -228,6 +256,16 @@ function Card({ title, subtitle, className = '', actions, children }: { title: s
   )
 }
 
+function CsvButton({ section, label = 'CSV' }: { section: ExportSection; label?: string }) {
+  const download = useContext(ExportContext)
+  return (
+    <button onClick={() => download(section)} title="Download this view as CSV"
+      className="shrink-0 rounded-md px-2 py-0.5 text-xs text-slate-500 ring-1 ring-slate-200 hover:text-slate-800 hover:ring-slate-300">
+      {label}
+    </button>
+  )
+}
+
 function ViewToggle({ table, onChange }: { table: boolean; onChange: (t: boolean) => void }) {
   return (
     <div className="shrink-0">
@@ -294,7 +332,7 @@ function DailyChart({ daily }: { daily: DailyPoint[] }) {
   const labelEvery = Math.ceil(daily.length / 8)
 
   return (
-    <Card className="lg:col-span-3" title="Daily delivery volume" subtitle="Stops attempted each day, by outcome" actions={<ViewToggle table={table} onChange={setTable} />}>
+    <Card className="lg:col-span-3" title="Daily delivery volume" subtitle="Stops attempted each day, by outcome" actions={<div className="flex gap-2"><CsvButton section="daily" /><ViewToggle table={table} onChange={setTable} /></div>}>
       {table ? (
         <DataTable head={['Date', 'Stops', 'On time', 'Late', 'Failed', 'On-time %']}
           rows={daily.map(d => [shortDay(d.date), d.stops, d.on_time, d.late, d.failed, d.on_time_pct == null ? '—' : `${d.on_time_pct}%`])} />
@@ -364,7 +402,7 @@ function HourChart({ hours }: { hours: HourBucket[] }) {
   const worst = valued.length ? valued.reduce((a, b) => (b.on_time_pct! < a.on_time_pct! ? b : a)) : null
 
   return (
-    <Card className="lg:col-span-2" title="SLA compliance by time of day" subtitle="Share of stops reached on time, by hour of arrival" actions={<ViewToggle table={table} onChange={setTable} />}>
+    <Card className="lg:col-span-2" title="SLA compliance by time of day" subtitle="Share of stops reached on time, by hour of arrival" actions={<div className="flex gap-2"><CsvButton section="hours" /><ViewToggle table={table} onChange={setTable} /></div>}>
       {table ? (
         <DataTable head={['Hour', 'Stops', 'On time', 'Late', 'Failed', 'On-time %']}
           rows={hours.map(h => [`${hourLabel(h.hour)}–${hourLabel(h.hour + 1)}`, h.stops, h.on_time, h.late, h.failed, h.on_time_pct == null ? '—' : `${h.on_time_pct}%`])} />
@@ -404,6 +442,34 @@ function HourChart({ hours }: { hours: HourBucket[] }) {
           })()}
           {worst && <p className="text-xs text-slate-500 mt-1">Weakest hour: {hourLabel(worst.hour)} ({worst.on_time_pct}% on time).</p>}
         </div>
+      )}
+    </Card>
+  )
+}
+
+// ─── Delivery density heatmap (Week 13) ─────────────────────────────────
+function DensityCard({ density }: { density: DeliveryDensity }) {
+  const [table, setTable] = useState(false)
+  const total = density.cells.reduce((n, c) => n + c.stops, 0)
+  return (
+    <Card title="Where deliveries happen" subtitle="Delivery attempts per ~2 km square; hover a square for its on-time rate"
+      actions={<div className="flex gap-2"><CsvButton section="density" /><ViewToggle table={table} onChange={setTable} /></div>}>
+      {!density.cells.length ? <p className="text-sm text-slate-500">No deliveries for these filters.</p> : table ? (
+        <DataTable head={['Area (centre)', 'Deliveries', 'On time', 'Failed', 'On-time %']}
+          rows={density.cells.map(c => [`${c.lat.toFixed(3)}, ${c.lon.toFixed(3)}`, c.stops, c.on_time, c.failed, `${c.on_time_pct}%`])} />
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600 mb-2">
+            <span>Deliveries per square</span>
+            {densityBreaks(density.max_stops).map(b => (
+              <span key={b.color} className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: b.color }} />{b.label}</span>
+            ))}
+            <span className="text-slate-400">· {total.toLocaleString('en-IN')} attempts in {density.cells.length} squares</span>
+          </div>
+          <Suspense fallback={<div className="h-80 rounded-lg bg-slate-100 animate-pulse" />}>
+            <DeliveryDensityMap density={density} />
+          </Suspense>
+        </>
       )}
     </Card>
   )

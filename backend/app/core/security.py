@@ -145,6 +145,19 @@ def get_current_user(
     return user
 
 
+def get_optional_user(
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """The signed-in user when a valid token is sent, else None (Week 14: lets admins register privileged users)."""
+    if not token:
+        return None
+    try:
+        return get_current_user(token, db)
+    except HTTPException:
+        return None
+
+
 def require_roles(allowed_roles: List[UserRole]) -> Callable[[User], User]:
     """
     FastAPI Dependency Factory for Role-Based Access Control (RBAC).

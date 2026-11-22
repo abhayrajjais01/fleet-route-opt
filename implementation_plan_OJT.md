@@ -22,16 +22,16 @@ To ensure a true, equal **50-50 division** across both **GenAI / LLM Engineering
 
 ```
 Track A Progress: [████████████████████] 100% (16 / 16 weeks delivered; Weeks 11–16 early)
-Track B Progress: [███████████████░░░░░] 75% (12 / 16 weeks delivered)
+Track B Progress: [████████████████████] 100% (16 / 16 weeks delivered; Weeks 11–16 early)
 Month 1 Progress: [████████████████████] 100% (Weeks 1–4 COMPLETED)
 Month 2 Progress: [████████████████████] 100% (Weeks 5–8 COMPLETED)
 Month 3 Progress: [████████████████████] 100% (Weeks 9–12 COMPLETED)
-Month 4 Progress: [██████████░░░░░░░░░░] Weeks 13–16 Track A done
+Month 4 Progress: [████████████████████] 100% (Weeks 13–16 COMPLETED)
 ```
 
-- **Status as of Nov 15, 2026**: Weeks 1–12 delivered by both tracks (Track B delivered Weeks 11–12 early). Track A (Manthan) also delivered Weeks 13–16 ahead of schedule.
-- **Current Active Milestone**: next is **Month 4, Week 13: Track B Multi-Dimensional Analytics Filtering (Nov 30 – Dec 4, 2026)**.
-- **Regression Suite**: **200 / 200 backend tests passing**; frontend `tsc` 0 errors and production build clean.
+- **Status as of Nov 20, 2026**: all 16 weeks delivered by both tracks (Track A finished Nov 12; Track B delivered Weeks 13–16 on Nov 20).
+- **Current Active Milestone**: release. Remaining: merge the Weeks 13–16 PR, run `docker compose up --build` from a clean state, and record the walkthrough.
+- **Regression Suite**: **236 / 236 backend tests passing** (including the end-to-end regression across US-001 to US-008); frontend `tsc` 0 errors and production build clean.
 
 ---
 
@@ -227,7 +227,7 @@ Month 4 Progress: [██████████░░░░░░░░░░]
 ### Month 4: Cost Analysis, Reporting, DevOps & Final Presentation
 
 #### Week 13: Operational Cost Engine & Advanced Analytics (US-003 & US-008)
-- **Status**: Track A `COMPLETED` ✅ (delivered early, Nov 12) · Track B `PLANNED`
+- **Status**: `COMPLETED` ✅ (Track A Nov 12, Track B Nov 20; both early)
 - **Manthan Nimodiya (Track A)**:
   - Fuel consumption & cost calculation based on vehicle-specific fuel efficiency (km/L) and route topography factors.
   - Driver labor cost calculator based on driving hours and overtime rates.
@@ -239,9 +239,10 @@ Month 4 Progress: [██████████░░░░░░░░░░]
   - CSV / Excel export functionality for all analytics views.
   - Exportable executive summary report.
 - **Weekly Integration Sync**: Verify that fuel and labor cost calculations reflect vehicle assignments and that the executive report exports accurately.
+- **Delivered (Track B, Week 13)**: driver and priority filters, delivery density heatmap, CSV export of every executive view and a PDF executive summary.
 
 #### Week 14: PDF Manifest Generator & Security Hardening (US-008)
-- **Status**: Track A `COMPLETED` ✅ (delivered early, Nov 12) · Track B `PLANNED`
+- **Status**: `COMPLETED` ✅ (Track A Nov 12, Track B Nov 20; both early)
 - **Manthan Nimodiya (Track A)**:
   - Printable PDF Route Manifest generator with QR codes for driver delivery confirmation.
   - Bill of Lading (BOL) document generator for commercial shipments.
@@ -251,9 +252,10 @@ Month 4 Progress: [██████████░░░░░░░░░░]
   - Input sanitization on all user-facing inputs (chat, search, asset creation).
   - Comprehensive audit trail report generator for compliance verification.
 - **Weekly Integration Sync**: Generate a PDF route manifest with printable stop list and verify end-to-end audit log coverage.
+- **Delivered (Track B, Week 14)**: security audit with 12 findings fixed (`documentation/SECURITY_AUDIT.md`), rate limits, security headers, input sanitisation, audit compliance report (CSV / PDF), copilot latency and token telemetry.
 
 #### Week 15: Performance Benchmarks & Stress Testing
-- **Status**: Track A `COMPLETED` ✅ (delivered early, Nov 12) · Track B `PLANNED`
+- **Status**: `COMPLETED` ✅ (Track A Nov 12, Track B Nov 20; both early)
 - **Manthan Nimodiya (Track A)**:
   - VRPTW solver scalability benchmark: 10, 25, 50, 100, 200 stops across 2 to 20 vehicles.
   - RAG retrieval benchmark under concurrent load (10 to 100 concurrent requests).
@@ -263,9 +265,10 @@ Month 4 Progress: [██████████░░░░░░░░░░]
   - Frontend performance optimization (Lighthouse score > 90, bundle size analysis).
   - Full end-to-end regression test suite covering all user stories (US-001 through US-008).
 - **Weekly Integration Sync**: Execute full regression test suite with 100% pass rate and confirm that all performance criteria (VRPTW < 5s, RAG < 3s) are satisfied.
+- **Delivered (Track B, Week 15)**: copilot latency benchmark (worst p95 15.9 ms vs < 3 s, up to 50 concurrent), end-to-end regression across US-001 to US-008, entry bundle halved by lazy-loading, phone layout. A Lighthouse run was not part of this delivery.
 
 #### Week 16: Containerization, Production Runbook & Viva Delivery
-- **Status**: Track A `COMPLETED` ✅ (delivered early, Nov 12) · Track B `PLANNED`
+- **Status**: `COMPLETED` ✅ (Track A Nov 12, Track B Nov 20; both early)
 - **Manthan Nimodiya (Track A)**:
   - Production Docker Compose configuration: Backend + PostgreSQL + Redis (cache).
   - Environment configuration templates (`.env.example`) and secrets management documentation.
@@ -275,3 +278,4 @@ Month 4 Progress: [██████████░░░░░░░░░░]
   - Comprehensive User Manual and API Reference documentation.
   - End-to-end video demonstration walkthrough and final project presentation slides.
 - **Final Integration Sync**: Single-command startup (`docker compose up --build`), verify complete system functionality from clean state, and conduct dry run of project viva presentation.
+- **Delivered (Track B, Week 16)**: frontend Dockerfile + Nginx, full-stack compose (`docker compose up --build` → http://localhost:8080), GitHub Actions CI, User Manual and generated API Reference. The video walkthrough and slides are produced outside the repository.

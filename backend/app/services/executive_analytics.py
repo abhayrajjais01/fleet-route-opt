@@ -7,6 +7,7 @@ Builds the executive dashboard from completed-trip records:
   - daily delivery volume and on-time trend
   - SLA compliance by time of day (hour of arrival)
   - driver efficiency comparison
+  - Week 13: driver and priority filters, delivery density grid for the heatmap, filter options for every dimension
 
 The maths reuses the operational metrics engine (Track A, services/analytics/metrics.py) so the executive view,
 the Reports page and the CSV/PDF exports always agree. Until completed trips are persisted, the data source is
@@ -16,11 +17,11 @@ the simulated dispatch history (services/analytics/history.py), and every respon
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Sequence
 
-from app.services.analytics.history import simulated_history
+from app.services.analytics.history import NETWORK, simulated_history
 from app.services.analytics.metrics import (
     DEFAULT_DRIVER_COST_PER_HOUR,
     DEFAULT_FUEL_PRICE_PER_L,
@@ -78,8 +79,63 @@ def resolve_period(date_from: Optional[date], date_to: Optional[date], today: Op
     return Period(start, end)
 
 
-def period_trips(period: Period, hub: Optional[str] = None, vehicle_type: Optional[str] = None) -> List[TripRecord]:
-    return filter_trips(simulated_history(period.days, period.date_to), hub=hub, vehicle_type=vehicle_type)
+PRIORITIES = ("EXPRESS", "HIGH", "STANDARD", "LOW")
+DENSITY_CELL_DEG = 0.02          # ~2.2 km squares around Mumbai / Pune
+
+
+@dataclass(frozen=True)
+class Filters:
+    hub: Optional[str] = None
+    vehicle_type: Optional[str] = None
+    driver: Optional[str] = None
+    priority: Optional[str] = None
+
+    def as_dict(self) -> Dict[str, Optional[str]]:
+        return {"hub": self.hub, "vehicle_type": self.vehicle_type, "driver": self.driver, "priority": self.priority}
+
+    def label(self) -> str:
+        parts = [f"{k.replace('_', ' ')}: {v}" for k, v in self.as_dict().items() if v]
+        return ", ".join(parts) if parts else "all hubs, vehicles, drivers and priorities"
+
+
+def by_priority(trips: Sequence[TripRecord], priority: Optional[str]) -> List[TripRecord]:
+    """Keeps only the stops of one priority class. A trip with none of them drops out.
+    Distance, time and cost stay those of the whole trip: a stop's share of a shared route is not separable."""
+    if not priority:
+        return list(trips)
+    out = []
+    for t in trips:
+        stops = [s for s in t.stops if s.priority == priority]
+        if stops:
+            out.append(replace(t, stops=stops))
+    return out
+
+
+def period_trips(period: Period, hub: Optional[str] = None, vehicle_type: Optional[str] = None,
+                 driver: Optional[str] = None, priority: Optional[str] = None) -> List[TripRecord]:
+    trips = filter_trips(simulated_history(period.days, period.date_to), hub=hub, vehicle_type=vehicle_type, driver=driver)
+    return by_priority(trips, priority)
+
+
+def delivery_density(trips: Sequence[TripRecord], cell_deg: float = DENSITY_CELL_DEG) -> Dict:
+    """Delivery attempts binned into square cells for the heatmap: count and on-time share per cell."""
+    cells: Dict[tuple, Dict[str, float]] = defaultdict(lambda: {"stops": 0, "on_time": 0, "failed": 0})
+    for t in trips:
+        for s in t.stops:
+            if s.latitude is None or s.longitude is None:
+                continue
+            c = cells[(int(s.latitude // cell_deg), int(s.longitude // cell_deg))]
+            c["stops"] += 1
+            c["on_time"] += s.on_time
+            c["failed"] += not s.delivered
+    out = [{
+        "lat": round((i + 0.5) * cell_deg, 5), "lon": round((j + 0.5) * cell_deg, 5),
+        "stops": int(c["stops"]), "on_time": int(c["on_time"]), "failed": int(c["failed"]),
+        "on_time_pct": round(100.0 * c["on_time"] / c["stops"], 1),
+    } for (i, j), c in cells.items()]
+    out.sort(key=lambda c: -c["stops"])
+    return {"cell_deg": cell_deg, "max_stops": max((c["stops"] for c in out), default=0), "cells": out,
+            "hubs": [{"code": h.code, "lat": h.lat, "lon": h.lon} for h in NETWORK]}
 
 
 def _kpis(trips: Sequence[TripRecord], m: Metrics) -> Dict[str, float]:
@@ -178,22 +234,26 @@ def driver_efficiency(trips: Sequence[TripRecord],
 
 def filter_options() -> Dict[str, List[str]]:
     everything = simulated_history(30)
-    return {"hubs": sorted({t.hub for t in everything}), "vehicle_types": sorted({t.vehicle_type for t in everything})}
+    return {"hubs": sorted({t.hub for t in everything}), "vehicle_types": sorted({t.vehicle_type for t in everything}),
+            "drivers": sorted({t.driver for t in everything}), "priorities": list(PRIORITIES)}
 
 
-def executive_report(period: Period, hub: Optional[str] = None, vehicle_type: Optional[str] = None) -> Dict:
-    current = period_trips(period, hub, vehicle_type)
+def executive_report(period: Period, hub: Optional[str] = None, vehicle_type: Optional[str] = None,
+                     driver: Optional[str] = None, priority: Optional[str] = None) -> Dict:
+    f = Filters(hub, vehicle_type, driver, priority)
+    current = period_trips(period, **f.as_dict())
     prev_period = period.previous()
-    previous = period_trips(prev_period, hub, vehicle_type)
+    previous = period_trips(prev_period, **f.as_dict())
     return {
         "source": SOURCE,
         "period": {"date_from": period.date_from.isoformat(), "date_to": period.date_to.isoformat(), "days": period.days},
         "previous_period": {"date_from": prev_period.date_from.isoformat(), "date_to": prev_period.date_to.isoformat(), "days": prev_period.days},
-        "filters": {"hub": hub, "vehicle_type": vehicle_type},
+        "filters": f.as_dict(),
         "kpis": kpi_cards(current, previous),
         "daily": daily_trend(current, period),
         "sla_by_hour": sla_by_hour(current),
         "drivers": driver_efficiency(current),
+        "density": delivery_density(current),
         "options": filter_options(),
         "assumptions": {"fuel_price_per_l": DEFAULT_FUEL_PRICE_PER_L, "driver_cost_per_hour": DEFAULT_DRIVER_COST_PER_HOUR},
     }

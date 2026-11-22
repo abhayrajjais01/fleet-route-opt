@@ -11,6 +11,7 @@ from enum import Enum
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict, Field
 from app.models.shipment import ShipmentStatus, ShipmentPriority
+from app.core.sanitize import CleanStr, CleanText
 
 
 class TransitFailureReason(str, Enum):
@@ -25,33 +26,33 @@ class TransitFailureReason(str, Enum):
 
 class TransitDepartRequest(BaseModel):
     vehicle_id: Optional[int] = Field(None, description="Vehicle ID departing with this shipment")
-    notes: Optional[str] = Field(None, max_length=500, description="Departure notes")
+    notes: Optional[CleanText] = Field(None, max_length=500, description="Departure notes")
 
 
 class TransitArriveRequest(BaseModel):
     latitude: Optional[float] = Field(None, ge=-90.0, le=90.0, allow_inf_nan=False, description="GPS check-in latitude")
     longitude: Optional[float] = Field(None, ge=-180.0, le=180.0, allow_inf_nan=False, description="GPS check-in longitude")
-    notes: Optional[str] = Field(None, max_length=500, description="Arrival check-in notes")
+    notes: Optional[CleanText] = Field(None, max_length=500, description="Arrival check-in notes")
 
 
 class TransitDeliverRequest(BaseModel):
-    recipient_name: str = Field(..., min_length=2, max_length=255, description="Name of consignee accepting package")
-    signature_text: Optional[str] = Field(None, max_length=255, description="Signee verification text or digital token")
-    notes: Optional[str] = Field(None, max_length=500, description="Handover delivery notes")
+    recipient_name: CleanStr = Field(..., min_length=2, max_length=255, description="Name of consignee accepting package")
+    signature_text: Optional[CleanStr] = Field(None, max_length=255, description="Signee verification text or digital token")
+    notes: Optional[CleanText] = Field(None, max_length=500, description="Handover delivery notes")
 
 
 class TransitFailRequest(BaseModel):
     reason_code: TransitFailureReason = Field(..., description="Standardized failure classification")
-    notes: str = Field(..., min_length=3, max_length=500, description="Detailed explanation of failure cause")
+    notes: CleanText = Field(..., min_length=3, max_length=500, description="Detailed explanation of failure cause")
 
 
 class TransitDelayRequest(BaseModel):
     delay_minutes: int = Field(..., gt=0, le=480, description="Reported delay duration in minutes")
-    reason: str = Field(..., min_length=3, max_length=500, description="Cause of transit delay (traffic, weather, inspection)")
+    reason: CleanText = Field(..., min_length=3, max_length=500, description="Cause of transit delay (traffic, weather, inspection)")
 
 
 class TransitRedispatchRequest(BaseModel):
-    notes: Optional[str] = Field(None, max_length=500, description="Redispatch reason or depot return note")
+    notes: Optional[CleanText] = Field(None, max_length=500, description="Redispatch reason or depot return note")
 
 
 class TransitTransitionResponse(BaseModel):
