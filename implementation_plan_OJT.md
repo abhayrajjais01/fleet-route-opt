@@ -31,7 +31,7 @@ Month 4 Progress: [████████████████████]
 
 - **Status as of Nov 20, 2026**: all 16 weeks delivered by both tracks (Track A finished Nov 12; Track B delivered Weeks 13–16 on Nov 20).
 - **Current Active Milestone**: release. Remaining: merge the Weeks 13–16 PR, run `docker compose up --build` from a clean state, and record the walkthrough.
-- **Regression Suite**: **234 / 234 backend tests passing** (including the end-to-end regression across US-001 to US-008); frontend `tsc` 0 errors and production build clean.
+- **Regression Suite**: **236 / 236 backend tests passing** (including the end-to-end regression across US-001 to US-008); frontend `tsc` 0 errors and production build clean.
 
 ---
 

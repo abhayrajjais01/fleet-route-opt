@@ -7,7 +7,7 @@ An enterprise-grade, end-to-end AI solution for Fleet Route Optimization address
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com)
 [![React 19](https://img.shields.io/badge/React-19.0-61DAFB.svg)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646CFF.svg)](https://vitejs.dev)
-[![Tests](https://img.shields.io/badge/Tests-234%2F234%20Passed%20(100%25)-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-236%2F236%20Passed%20(100%25)-brightgreen.svg)]()
 [![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF.svg)](.github/workflows/ci.yml)
 [![RAG Benchmark](https://img.shields.io/badge/RAG%20Eval-Recall%403%201.00%20%7C%20MRR%200.98-success.svg)]()
 [![Render](https://img.shields.io/badge/Render-Backend%20Live-brightgreen.svg)](https://fleet-route-opt.onrender.com)
@@ -56,7 +56,7 @@ Month 1–4:        [███████████████████�
 | **Week 15** | **Performance** | Benchmark Script, Indexes, Performance Tests | Copilot Latency Benchmark, End-to-End Regression, Bundle Splitting, Responsive Layout | `COMPLETED` ✅ |
 | **Week 16** | **Containerization & Release** | Backend Dockerfile, Postgres Compose, OpenAPI Polish | Frontend Docker + Nginx, Full-Stack Compose, CI, User Manual & API Reference | `COMPLETED` ✅ |
 
-- **Automated Backend Test Suite**: `python -m pytest` → **234 / 234 PASSED (100%)**, including the end-to-end regression across US-001 to US-008, the security suite and the latency guards
+- **Automated Backend Test Suite**: `python -m pytest` → **236 / 236 PASSED (100%)**, including the end-to-end regression across US-001 to US-008, the security suite and the latency guards
 - **Copilot Latency Benchmark**: `python -m scripts.benchmark_copilot` → worst p95 **15.9 ms** across every intent, proposal cards and 50 concurrent dispatchers (target < 3 s)
 - **Performance Benchmark**: `python -m scripts.benchmark` → VRPTW 50 stops ≈ 3 ms (target < 5 s), agent re-route < 20 ms (target < 3 s)
 - **RAG Retrieval Benchmark**: `python -m app.services.rag.evaluation` → **Recall@3 1.00 · MRR 0.98 · p95 < 1 ms** (WikiQA-style eval set)
@@ -188,14 +188,14 @@ fleet-route-opt/
 │   │   ├── export_api_reference.py      # [Track B] Generates documentation/API_REFERENCE.md
 │   │   └── docker_entrypoint.py         # [Track A] Wait for DB, migrate, seed, start API
 │   ├── Dockerfile                       # [Track A] Multi-stage backend image
-│   └── tests/                           # Pytest automated test suites (234/234 passed)
+│   └── tests/                           # Pytest automated test suites (236/236 passed)
 │       ├── test_health.py               # Probe validation (3 tests)
 │       ├── test_auth_rbac.py            # JWT & RBAC tests (5 tests)
 │       ├── test_fleet_crud.py           # Fleet asset CRUD tests (4 tests)
 │       ├── test_shipments_audit.py      # Shipment & audit trail tests (5 tests)
 │       ├── test_batch_ingestion.py      # Batch CSV/JSON ingestion tests (10 tests)
 │       ├── test_rag.py                  # RAG vector store & eval tests (22 tests)
-│       ├── test_security_hardening.py   # [Track B] Security audit suite (26 tests)
+│       ├── test_security_hardening.py   # [Track B] Security audit suite (28 tests)
 │       ├── test_e2e_regression.py       # [Track B] One operating day across US-001 to US-008
 │       └── test_copilot_performance.py  # [Track B] Copilot latency guard
 ├── frontend/
@@ -229,7 +229,7 @@ pip install -r requirements.txt
 # Run database seeder
 python -m scripts.seed_demo_data
 
-# Run all 234 tests
+# Run all 236 tests
 python -m pytest
 
 # Run RAG retrieval benchmark

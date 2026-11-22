@@ -438,5 +438,5 @@
    - `frontend/Dockerfile` + `nginx.conf`: unprivileged Nginx serving the build and proxying `/api` and `/docs`, so the browser uses one origin. Compose now runs db + backend + frontend; the backend port is bound to localhost.
    - `.github/workflows/ci.yml`: tests and benchmark, frontend type-check and build, Docker build and smoke test.
    - `documentation/`: User Manual, API Reference generated from OpenAPI (roles per endpoint), Security Audit, Performance. README updated with deployment and request-flow diagrams.
-5. **Verification**: **234 / 234 backend tests passing**; frontend `tsc` 0 errors and production build clean; dashboard filters, heatmap, exports, audit compliance panel and the phone layout checked in the browser against the running backend. `docker compose config` validates; the images were not built locally (Docker daemon not running), so the CI Docker job is their first build.
+5. **Verification**: **236 / 236 backend tests passing**; frontend `tsc` 0 errors and production build clean; dashboard filters, heatmap, exports, audit compliance panel and the phone layout checked in the browser against the running backend. `docker compose config` validates; the images were not built locally (Docker daemon not running), so the CI Docker job is their first build.
 

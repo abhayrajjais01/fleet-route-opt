@@ -1,7 +1,7 @@
 # API Security Audit (Week 14)
 
 Track B, Abhayraj Jaiswal. Scope: every FastAPI endpoint under `/api/v1`, the CORS policy, user-facing text inputs,
-exports, and the audit trail. Tests: `backend/tests/test_security_hardening.py` (26 cases),
+exports, and the audit trail. Tests: `backend/tests/test_security_hardening.py` (28 cases),
 `backend/tests/test_fleet_crud.py::test_fleet_endpoints_require_authentication_and_roles`, and the end-to-end
 regression `backend/tests/test_e2e_regression.py`.
 
@@ -42,12 +42,17 @@ wildcards. HTML output is escaped by React and by the Leaflet popup helper (`esc
 `GET /audit/report`, `/audit/export.csv` and `/audit/report.pdf` (admin, fleet manager) run three checks over the
 whole log, shown as pass / fail on the Audit Log page:
 
-1. **Sequence**: audit ids are gap-free, so a removed entry is detected.
+1. **Sequence**: audit ids should be gap-free. On SQLite an aborted insert does not consume an id, so a gap means a
+   removed entry (**fail**). PostgreSQL sequences are never rolled back, so there a gap may be an aborted transaction
+   and is reported for **review**, not as tampering.
 2. **Snapshots**: every status change and update carries both the before and after state.
-3. **Coverage**: every shipment that has left `UNASSIGNED` has at least one audit entry.
+3. **Coverage**: every shipment's current status must equal the last status its audit history recorded (or
+   `UNASSIGNED` if it has none, which is how every shipment starts). A status changed behind the API fails the check
+   even when the shipment has other audit entries.
 
-`test_audit_report_checks_and_exports` tampers with the database (deletes an entry, changes a shipment behind the
-API) and asserts both checks fail with the right ids.
+`test_audit_report_checks_and_exports`, `test_coverage_catches_unlogged_transition_of_an_audited_shipment` and
+`test_sequence_gaps_are_for_review_on_postgresql` tamper with the database (delete an entry, change a status behind
+the API) and assert the checks report it, with the right severity per database.
 
 ## Multi-agent telemetry
 
@@ -68,5 +73,5 @@ requests.
   or server-side sessions, would allow logout-everywhere.
 - **`SECRET_KEY`** has a development default. Production deployments must set their own (the compose file reads
   `SECRET_KEY` from the environment).
-- **Audit sequence check** detects deletions but not in-place edits. Hash-chaining each entry to the previous one
-  would make edits detectable too.
+- **Audit sequence check** cannot prove deletion on PostgreSQL (ids skip on rollbacks) and never detects in-place
+  edits. Hash-chaining each entry to the previous one (serialised writes) would make both detectable.

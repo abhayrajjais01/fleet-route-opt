@@ -4,17 +4,32 @@
 import { useEffect, useState } from 'react'
 import { auditApi, type AuditReport, type AuditReportFilters } from '../../lib/auditApi'
 
-const CHECKS: { key: keyof AuditReport['checks']; label: string; pass: (r: AuditReport) => string; fail: (r: AuditReport) => string }[] = [
-  { key: 'sequence', label: 'No missing entries',
-    pass: r => `${r.checks.sequence.entries} entries, numbered without gaps`,
-    fail: r => `${r.checks.sequence.gaps.reduce((n, g) => n + g.missing, 0)} entr${r.checks.sequence.gaps.length === 1 ? 'y' : 'ies'} missing (after #${r.checks.sequence.gaps[0]?.after_id})` },
-  { key: 'snapshots', label: 'Before / after recorded',
-    pass: () => 'Every change keeps both states',
-    fail: r => `${r.checks.snapshots.missing.length} change${r.checks.snapshots.missing.length === 1 ? '' : 's'} without a full snapshot` },
-  { key: 'coverage', label: 'Every shipment traced',
-    pass: r => r.checks.coverage.shipments_checked ? `All ${r.checks.coverage.shipments_checked} dispatched shipments have history` : 'No shipment has been dispatched yet',
-    fail: r => `${r.checks.coverage.untracked.length} changed with no audit entry (${r.checks.coverage.untracked.slice(0, 3).map(u => u.tracking_number).join(', ')}${r.checks.coverage.untracked.length > 3 ? '…' : ''})` },
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+const CHECKS: { key: keyof AuditReport['checks']; label: string; detail: (r: AuditReport) => string }[] = [
+  { key: 'sequence', label: 'No missing entries', detail: r => {
+    const c = r.checks.sequence
+    if (c.status === 'pass') return `${plural(c.entries, 'entry', 'entries')}, numbered without gaps`
+    const missing = c.gaps.reduce((n, g) => n + g.missing, 0)
+    return `${plural(missing, 'id', 'ids')} missing (first after #${c.gaps[0]?.after_id}). ${c.note}`
+  } },
+  { key: 'snapshots', label: 'Before / after recorded', detail: r => {
+    const c = r.checks.snapshots
+    return c.ok ? 'Every change keeps both states' : `${plural(c.missing.length, 'change', 'changes')} without a full snapshot`
+  } },
+  { key: 'coverage', label: 'Every status change logged', detail: r => {
+    const c = r.checks.coverage
+    if (c.ok) return c.shipments_checked ? `All ${c.shipments_checked} shipments match their last logged status` : 'No shipments yet'
+    const list = c.untracked.slice(0, 3).map(u => `${u.tracking_number} is ${u.status}, logged ${u.last_logged_status ?? 'never'}`).join('; ')
+    return `${plural(c.untracked.length, 'shipment', 'shipments')} in an unlogged status: ${list}${c.untracked.length > 3 ? '…' : ''}`
+  } },
 ]
+
+const LOOK = {
+  pass: { box: 'bg-white ring-slate-200', dot: 'bg-emerald-600', icon: '✓', word: 'Pass', text: 'text-emerald-700' },
+  warn: { box: 'bg-amber-50 ring-amber-200', dot: 'bg-amber-500', icon: '?', word: 'Review', text: 'text-amber-800' },
+  fail: { box: 'bg-red-50 ring-red-200', dot: 'bg-red-600', icon: '!', word: 'Fail', text: 'text-red-700' },
+} as const
 
 export default function AuditCompliancePanel({ authToken }: { authToken: string | null }) {
   const [filters, setFilters] = useState<AuditReportFilters>({})
@@ -67,13 +82,14 @@ export default function AuditCompliancePanel({ authToken }: { authToken: string 
       {report && (
         <ul className="mt-2 grid sm:grid-cols-3 gap-2">
           {CHECKS.map(c => {
-            const ok = report.checks[c.key].ok
+            const look = LOOK[report.checks[c.key].status ?? (report.checks[c.key].ok ? 'pass' : 'fail')]
+            const detail = c.detail(report)
             return (
-              <li key={c.key} className={`flex items-start gap-2 rounded-lg px-2.5 py-2 ring-1 ${ok ? 'bg-white ring-slate-200' : 'bg-red-50 ring-red-200'}`}>
-                <span aria-hidden className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${ok ? 'bg-emerald-600' : 'bg-red-600'}`}>{ok ? '✓' : '!'}</span>
+              <li key={c.key} className={`flex items-start gap-2 rounded-lg px-2.5 py-2 ring-1 ${look.box}`}>
+                <span aria-hidden className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${look.dot}`}>{look.icon}</span>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-slate-800">{c.label} <span className={ok ? 'text-emerald-700' : 'text-red-700'}>· {ok ? 'Pass' : 'Fail'}</span></p>
-                  <p className="text-[11px] text-slate-500 truncate" title={ok ? c.pass(report) : c.fail(report)}>{ok ? c.pass(report) : c.fail(report)}</p>
+                  <p className="text-xs font-semibold text-slate-800">{c.label} <span className={look.text}>· {look.word}</span></p>
+                  <p className="text-[11px] text-slate-500 truncate" title={detail}>{detail}</p>
                 </div>
               </li>
             )

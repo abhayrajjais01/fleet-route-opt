@@ -4,9 +4,10 @@ audit_report.py - Compliance audit trail report (US-008, Week 14 · Track B: Abh
 Turns the append-only audit log into something an auditor can sign off:
 
   build_report()  summary for a period and filters: totals by action, entity, actor and day, plus three checks
-                    - sequence: audit ids must be gap-free; a gap means an entry was removed
+                    - sequence: audit ids should be gap-free; on SQLite a gap means an entry was removed (fail), on
+                      PostgreSQL it may be an aborted transaction (warn, for review)
                     - snapshots: every STATUS_CHANGE / ASSET_UPDATED entry must carry before and after states
-                    - coverage: every shipment that has left UNASSIGNED must have at least one audit entry
+                    - coverage: every shipment's current status must be the last status its audit history recorded
   audit_csv()     every entry in the period, one row each, safe to open in a spreadsheet (formula cells neutralised)
   audit_pdf()     the printable report: checks, totals and the full entry list
 
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
@@ -79,28 +81,74 @@ def _iso(dt: Optional[datetime]) -> Optional[str]:
     return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).isoformat()
 
 
-def integrity_checks(db: Session) -> Dict:
-    ids = [i for (i,) in db.query(AuditLog.id).order_by(AuditLog.id.asc()).all()]
-    gaps = []
-    for prev, nxt in zip(ids, ids[1:]):
-        if nxt != prev + 1:
-            gaps.append({"after_id": prev, "before_id": nxt, "missing": nxt - prev - 1})
+def _dialect(db: Session) -> str:
+    bind = db.get_bind()
+    return bind.dialect.name if bind is not None else "unknown"
 
+
+def _sequence_check(db: Session) -> Dict:
+    """Gap-free ids. On SQLite an aborted insert does not consume an id, so a gap means a removed entry (fail).
+    PostgreSQL sequences are never rolled back, so there a gap may just be an aborted transaction: it is reported
+    for review (warn), not as tampering."""
+    ids = [i for (i,) in db.query(AuditLog.id).order_by(AuditLog.id.asc()).all()]
+    gaps = [{"after_id": prev, "before_id": nxt, "missing": nxt - prev - 1}
+            for prev, nxt in zip(ids, ids[1:]) if nxt != prev + 1]
+    gaps_prove_deletion = _dialect(db) == "sqlite"
+    if not gaps:
+        status, note = "pass", "Entries are numbered without gaps."
+    elif gaps_prove_deletion:
+        status, note = "fail", "Ids are missing from the log, so entries were removed."
+    else:
+        status, note = "warn", ("Ids are missing. On PostgreSQL an aborted transaction also skips ids, so check the "
+                                "gaps against the application log before treating them as removed entries.")
+    return {"ok": status != "fail", "status": status, "note": note, "entries": len(ids),
+            "first_id": ids[0] if ids else None, "last_id": ids[-1] if ids else None, "gaps": gaps[:50]}
+
+
+def _logged_statuses(db: Session) -> Dict[int, str]:
+    """Each shipment's status as last recorded by the audit trail (the newest Shipment entry that carries one)."""
+    logged: Dict[int, str] = {}
+    rows = (db.query(AuditLog.entity_id, AuditLog.after_state)
+            .filter(AuditLog.entity_type == "Shipment", AuditLog.after_state.isnot(None))
+            .order_by(AuditLog.id.asc()))
+    for entity_id, after in rows:
+        try:
+            status = json.loads(after).get("status")
+        except (ValueError, AttributeError):
+            continue
+        if status:
+            logged[entity_id] = status
+    return logged
+
+
+def _coverage_check(db: Session) -> Dict:
+    """Every shipment's current status must be the last status the audit trail recorded for it. A shipment with no
+    recorded status must still be UNASSIGNED (how every shipment starts, including batch imports, which are audited
+    as one ShipmentBatch entry). A status changed behind the API therefore shows up even if the shipment has other
+    audit entries."""
+    logged = _logged_statuses(db)
+    untracked = []
+    rows = db.query(Shipment.id, Shipment.tracking_number, Shipment.status).order_by(Shipment.id).all()
+    for sid, tracking, status in rows:
+        expected = logged.get(sid, ShipmentStatus.UNASSIGNED.value)
+        if status.value != expected:
+            untracked.append({"id": sid, "tracking_number": tracking, "status": status.value,
+                              "last_logged_status": logged.get(sid)})
+    return {"ok": not untracked, "status": "pass" if not untracked else "fail", "shipments_checked": len(rows),
+            "untracked": untracked[:200]}
+
+
+def integrity_checks(db: Session) -> Dict:
     missing_snapshots = [
         {"id": e.id, "action_type": e.action_type.value, "entity": f"{e.entity_type}:{e.entity_id}"}
         for e in db.query(AuditLog).filter(AuditLog.action_type.in_(SNAPSHOT_ACTIONS))
         .filter((AuditLog.before_state.is_(None)) | (AuditLog.after_state.is_(None))).order_by(AuditLog.id).limit(200)
     ]
-
-    audited = {i for (i,) in db.query(AuditLog.entity_id).filter(AuditLog.entity_type == "Shipment").distinct()}
-    moved = db.query(Shipment.id, Shipment.tracking_number, Shipment.status).filter(Shipment.status != ShipmentStatus.UNASSIGNED).all()
-    untracked = [{"id": sid, "tracking_number": tn, "status": st.value} for sid, tn, st in moved if sid not in audited]
-
     return {
-        "sequence": {"ok": not gaps, "entries": len(ids), "first_id": ids[0] if ids else None, "last_id": ids[-1] if ids else None,
-                     "gaps": gaps[:50]},
-        "snapshots": {"ok": not missing_snapshots, "missing": missing_snapshots},
-        "coverage": {"ok": not untracked, "shipments_checked": len(moved), "untracked": untracked[:200]},
+        "sequence": _sequence_check(db),
+        "snapshots": {"ok": not missing_snapshots, "status": "pass" if not missing_snapshots else "fail",
+                      "missing": missing_snapshots},
+        "coverage": _coverage_check(db),
     }
 
 
@@ -152,7 +200,7 @@ def audit_pdf(report: Dict, rows: List[AuditLog], filters_label: str) -> bytes:
     styles = getSampleStyleSheet()
     small = styles["BodyText"].clone("small", fontSize=7.5, leading=9)
     ink, accent, line = colors.HexColor("#1c1a2b"), colors.HexColor("#2a78d6"), colors.HexColor("#e3e0ee")
-    good, bad = colors.HexColor("#0f7b3f"), colors.HexColor("#b42318")
+    good, bad, review = colors.HexColor("#0f7b3f"), colors.HexColor("#b42318"), colors.HexColor("#9a5b00")
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=14 * mm, rightMargin=14 * mm, topMargin=14 * mm,
                             bottomMargin=14 * mm, title="Audit Trail Compliance Report", author="AI Fleet Route Optimizer")
@@ -168,13 +216,16 @@ def audit_pdf(report: Dict, rows: List[AuditLog], filters_label: str) -> bytes:
         return t
 
     c = report["checks"]
+    seq, cov = c["sequence"], c["coverage"]
+    missing_ids = sum(g["missing"] for g in seq["gaps"])
     verdict = [
-        ("Sequence", c["sequence"]["ok"], f"{c['sequence']['entries']} entries, ids {c['sequence']['first_id']}-{c['sequence']['last_id']}"
-         if c["sequence"]["ok"] else f"{len(c['sequence']['gaps'])} gap(s): entries are missing from the log"),
-        ("Before / after snapshots", c["snapshots"]["ok"], "every status change and update has both states" if c["snapshots"]["ok"]
+        ("Sequence", seq["status"], f"{seq['entries']} entries, ids {seq['first_id']}-{seq['last_id']}, no gaps" if seq["status"] == "pass"
+         else f"{missing_ids} id(s) missing in {len(seq['gaps'])} gap(s). {seq['note']}"),
+        ("Before / after snapshots", c["snapshots"]["status"], "every status change and update has both states" if c["snapshots"]["ok"]
          else f"{len(c['snapshots']['missing'])} change entr(ies) without a full snapshot"),
-        ("Shipment coverage", c["coverage"]["ok"], f"all {c['coverage']['shipments_checked']} dispatched shipments have audit history"
-         if c["coverage"]["ok"] else f"{len(c['coverage']['untracked'])} shipment(s) changed status with no audit entry"),
+        ("Shipment coverage", cov["status"], f"all {cov['shipments_checked']} shipments match their last logged status" if cov["ok"]
+         else f"{len(cov['untracked'])} shipment(s) in a status the audit trail never recorded: "
+              + ", ".join(f"{u['tracking_number']} ({u['status']}, logged {u['last_logged_status'] or 'none'})" for u in cov["untracked"][:5])),
     ]
     story: List = [
         Paragraph("Audit Trail Compliance Report", styles["Title"]),
@@ -183,8 +234,10 @@ def audit_pdf(report: Dict, rows: List[AuditLog], filters_label: str) -> bytes:
         Spacer(1, 5 * mm),
         Paragraph("Integrity checks (whole log)", styles["Heading2"]),
     ]
-    t = table([["Check", "Result", "Detail"]] + [[n, "PASS" if ok else "FAIL", d] for n, ok, d in verdict], [55 * mm, 22 * mm, 170 * mm])
-    t.setStyle(TableStyle([("TEXTCOLOR", (1, i + 1), (1, i + 1), good if ok else bad) for i, (_, ok, _) in enumerate(verdict)]
+    shade = {"pass": good, "warn": review, "fail": bad}
+    t = table([["Check", "Result", "Detail"]] + [[n, {"pass": "PASS", "warn": "REVIEW", "fail": "FAIL"}[st], Paragraph(escape(d), small)]
+                                                  for n, st, d in verdict], [55 * mm, 22 * mm, 170 * mm])
+    t.setStyle(TableStyle([("TEXTCOLOR", (1, i + 1), (1, i + 1), shade[st]) for i, (_, st, _) in enumerate(verdict)]
                           + [("FONT", (1, 1), (1, -1), "Helvetica-Bold", 8.5)]))
     story += [t, Spacer(1, 5 * mm)]
 

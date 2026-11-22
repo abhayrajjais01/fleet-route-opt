@@ -281,3 +281,50 @@ def test_anonymous_disruption_requests_never_reach_the_llm(client, monkeypatch):
     h = _headers(client, "llm-user@w14.io", "DISPATCHER")
     assert client.post(f"{API}/routes/disruption", json=body, headers=h).status_code == 200
     assert calls == [1]                                                 # signed in: the LLM planner is tried
+
+
+def test_coverage_catches_unlogged_transition_of_an_audited_shipment(client):
+    """Review finding: a shipment with an ASSET_CREATED entry whose status is later changed behind the API used to pass."""
+    h = _headers(client, "sec-cover@w14.io")
+    hub_id = _hub(client, h, code="HUB-SEC-02")
+    s = _shipment(client, h, hub_id, "TRK-COV-1")
+    assert client.get(f"{API}/audit/report", headers=h).json()["checks"]["coverage"]["ok"]
+
+    db = TestingSessionLocal()
+    try:
+        db.query(Shipment).filter(Shipment.id == s["id"]).update({"status": ShipmentStatus.IN_TRANSIT})
+        db.commit()
+    finally:
+        db.close()
+    coverage = client.get(f"{API}/audit/report", headers=h).json()["checks"]["coverage"]
+    assert coverage["status"] == "fail"
+    assert coverage["untracked"] == [{"id": s["id"], "tracking_number": "TRK-COV-1", "status": "IN_TRANSIT",
+                                      "last_logged_status": "UNASSIGNED"}]
+
+    # Once the change goes through the API it is logged, and coverage passes again.
+    assert client.patch(f"{API}/shipments/{s['id']}/status", headers=h, json={"status": "DELIVERED", "notes": "handed over"}).status_code == 200
+    assert client.get(f"{API}/audit/report", headers=h).json()["checks"]["coverage"]["ok"]
+
+
+def test_sequence_gaps_are_for_review_on_postgresql(client, monkeypatch):
+    """Review finding: PostgreSQL sequences skip ids on rolled-back transactions, so a gap there is not proof of deletion."""
+    import app.services.audit_report as audit_report
+    h = _headers(client, "sec-seq@w14.io")
+    hub_id = _hub(client, h, code="HUB-SEC-03")
+    s1 = _shipment(client, h, hub_id, "TRK-SEQ-1")
+    _shipment(client, h, hub_id, "TRK-SEQ-2")
+    db = TestingSessionLocal()
+    try:
+        db.query(AuditLog).filter(AuditLog.entity_type == "Shipment", AuditLog.entity_id == s1["id"]).delete()
+        db.commit()
+    finally:
+        db.close()
+
+    sqlite = client.get(f"{API}/audit/report", headers=h).json()["checks"]["sequence"]
+    assert sqlite["status"] == "fail" and not sqlite["ok"]               # SQLite never skips ids: a gap is a deletion
+
+    monkeypatch.setattr(audit_report, "_dialect", lambda db: "postgresql")
+    pg = client.get(f"{API}/audit/report", headers=h).json()["checks"]["sequence"]
+    assert pg["status"] == "warn" and pg["ok"] and pg["gaps"] and "aborted transaction" in pg["note"]
+    pdf = client.get(f"{API}/audit/report.pdf", headers=h)
+    assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF")

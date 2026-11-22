@@ -112,10 +112,11 @@ Everything above, plus:
 - **Users**: manage accounts and roles. On the API, only an admin can create dispatcher, fleet-manager or admin
   accounts (`POST /api/v1/auth/register` with an admin's token); people who sign up on their own get a driver account.
 - **Deleting** hubs, vehicles and drivers (API: admin only).
-- **Audit Log → Compliance report**: three checks over the server's audit log, each *Pass* or *Fail*:
-  - *No missing entries*: entries are numbered without gaps (a gap means one was removed).
+- **Audit Log → Compliance report**: three checks over the server's audit log, each *Pass*, *Review* or *Fail*:
+  - *No missing entries*: entries are numbered without gaps. On PostgreSQL a gap can also come from an aborted
+    transaction, so it shows as *Review* rather than *Fail*.
   - *Before / after recorded*: every change keeps both states.
-  - *Every shipment traced*: every dispatched shipment has audit history.
+  - *Every status change logged*: each shipment's current status is the last one its audit history recorded.
   
   Pick a date range, then *Export CSV* (opens safely in Excel) or *PDF report* for an auditor.
 - **Copilot telemetry** (`GET /api/v1/copilot/telemetry`): latency per agent and LLM token usage.

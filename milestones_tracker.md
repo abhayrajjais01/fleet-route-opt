@@ -15,7 +15,7 @@
 | **Current Active Week** | **All weeks delivered; remaining: review and merge the Weeks 13–16 PR, final dry run** |
 | **Track A Status** | **All 16 Track A weeks delivered** (Weeks 11–16 delivered early) |
 | **Track B Status** | **All 16 Track B weeks delivered** (Weeks 11–12 on Nov 15, Weeks 13–16 on Nov 20; all early) |
-| **Automated Test Suite** | **234 / 234 PASSED** (`pytest -q` in `backend/`) |
+| **Automated Test Suite** | **236 / 236 PASSED** (`pytest -q` in `backend/`) |
 
 ```
 Track A Progress: [████████████████████] 100% (16 / 16 weeks delivered)
@@ -260,7 +260,7 @@ Month 4 Progress: [████████████████████]
   - [x] `core/sanitize.py`: input sanitisation on chat, search, shipments, fleet assets, transit notes and accounts; literal LIKE search on `GET /shipments?search=`
   - [x] Audit compliance report: `/audit/report`, `/audit/export.csv`, `/audit/report.pdf` with sequence, snapshot and coverage checks; pass / fail panel on the Audit Log page
   - [x] Multi-agent latency and token logging: `services/copilot/telemetry.py`, `GET /copilot/telemetry`
-  - [x] `backend/tests/test_security_hardening.py` (26 tests)
+  - [x] `backend/tests/test_security_hardening.py` (28 tests)
 
 #### Week 15: Benchmarks & Performance Hardening vs. Multi-Agent Stress Tests & End-to-End Regression
 - **Status**: `COMPLETED` ✅ (both tracks delivered early)
@@ -289,5 +289,5 @@ Month 4 Progress: [████████████████████]
 
 #### Test summary (Nov 20, 2026: all 16 weeks, both tracks)
 - Track A new suites: `test_route_operations.py` (27), `test_reports.py` (8), `test_performance.py` (3)
-- Track B new suites: `test_rag_guardrails.py` (5), `test_policy_agent.py` (12), `test_mobile_driver_api.py` (6), `test_action_proposals.py` (10), `test_executive_analytics.py` (8), `test_security_hardening.py` (26), `test_e2e_regression.py` (1), `test_copilot_performance.py` (1)
-- **Full backend suite: 234 / 234 passed**; frontend `tsc` 0 errors and production build clean
+- Track B new suites: `test_rag_guardrails.py` (5), `test_policy_agent.py` (12), `test_mobile_driver_api.py` (6), `test_action_proposals.py` (10), `test_executive_analytics.py` (8), `test_security_hardening.py` (28), `test_e2e_regression.py` (1), `test_copilot_performance.py` (1)
+- **Full backend suite: 236 / 236 passed**; frontend `tsc` 0 errors and production build clean

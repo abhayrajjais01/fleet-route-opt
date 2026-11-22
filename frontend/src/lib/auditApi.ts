@@ -2,10 +2,12 @@
 // Track B: Abhayraj Jaiswal — US-008
 import { API_V1, apiRequest } from './api'
 
+/** pass; warn = needs a human look (e.g. id gaps on PostgreSQL, where aborted transactions also skip ids); fail */
+export type CheckStatus = 'pass' | 'warn' | 'fail'
 export interface AuditChecks {
-  sequence: { ok: boolean; entries: number; first_id: number | null; last_id: number | null; gaps: { after_id: number; before_id: number; missing: number }[] }
-  snapshots: { ok: boolean; missing: { id: number; action_type: string; entity: string }[] }
-  coverage: { ok: boolean; shipments_checked: number; untracked: { id: number; tracking_number: string; status: string }[] }
+  sequence: { ok: boolean; status: CheckStatus; note: string; entries: number; first_id: number | null; last_id: number | null; gaps: { after_id: number; before_id: number; missing: number }[] }
+  snapshots: { ok: boolean; status: CheckStatus; missing: { id: number; action_type: string; entity: string }[] }
+  coverage: { ok: boolean; status: CheckStatus; shipments_checked: number; untracked: { id: number; tracking_number: string; status: string; last_logged_status: string | null }[] }
 }
 export interface AuditReport {
   generated_at: string; total: number; truncated: boolean; first_entry_at: string | null; last_entry_at: string | null
