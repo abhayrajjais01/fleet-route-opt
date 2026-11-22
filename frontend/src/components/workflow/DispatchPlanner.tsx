@@ -3,8 +3,11 @@
 // driver, departure) as rows you click to change, a short checklist whose rows expand into the governing SOP
 // clause from the RAG knowledge base, and a single Approve button. The system proposes; the dispatcher decides.
 import { useEffect, useMemo, useState } from 'react'
-import type { AuditEntry, Driver, Hub, Shipment, Vehicle } from '../../lib/types'
-import { clock, estimateLeg, legsAlong, toMinutes, type Leg } from '../../lib/geo'
+import type { AuditEntry, Driver, Hub, Shipment, User, Vehicle } from '../../lib/types'
+import { ACCESS_NOTE, appAccess } from '../../lib/driverAccess'
+import { clock, estimateLeg, toMinutes, type Leg } from '../../lib/geo'
+import { roadRoute } from '../../lib/roads'
+import { travelTime } from '../../lib/traffic'
 import { routesApi } from '../../lib/routesApi'
 import { ragApi, type PolicyCitation } from '../../lib/ragApi'
 import LeafletMap from '../map/LeafletMap'
@@ -36,8 +39,8 @@ const ICONS = {
   clock: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
 }
 
-export default function DispatchPlanner({ shipments, hubs, vehicles, drivers, initialShipmentId, onDispatch, addAudit, onOpenTracking }: {
-  shipments: Shipment[]; hubs: Hub[]; vehicles: Vehicle[]; drivers: Driver[]
+export default function DispatchPlanner({ shipments, hubs, vehicles, drivers, users, initialShipmentId, onDispatch, addAudit, onOpenTracking }: {
+  shipments: Shipment[]; hubs: Hub[]; vehicles: Vehicle[]; drivers: Driver[]; users: User[]
   initialShipmentId: number | null
   onDispatch: (d: DispatchDecision) => void
   addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
@@ -80,14 +83,14 @@ export default function DispatchPlanner({ shipments, hubs, vehicles, drivers, in
         ))}
       </aside>
       {shipment
-        ? <PlanView key={shipment.id} shipment={shipment} hubs={hubs} vehicles={vehicles} drivers={drivers} onDispatch={onDispatch} addAudit={addAudit} onOpenTracking={onOpenTracking} />
+        ? <PlanView key={shipment.id} shipment={shipment} hubs={hubs} vehicles={vehicles} drivers={drivers} users={users} onDispatch={onDispatch} addAudit={addAudit} onOpenTracking={onOpenTracking} />
         : <div className="flex-1 flex items-center justify-center text-sm text-slate-500">Add a shipment to start planning.</div>}
     </div>
   )
 }
 
-function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onOpenTracking }: {
-  shipment: Shipment; hubs: Hub[]; vehicles: Vehicle[]; drivers: Driver[]
+function PlanView({ shipment, hubs, vehicles, drivers, users, onDispatch, addAudit, onOpenTracking }: {
+  shipment: Shipment; hubs: Hub[]; vehicles: Vehicle[]; drivers: Driver[]; users: User[]
   onDispatch: (d: DispatchDecision) => void
   addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
   onOpenTracking: () => void
@@ -103,6 +106,7 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
   const [open, setOpen] = useState<null | 'hub' | 'vehicle' | 'driver'>(null)
   const [openCheck, setOpenCheck] = useState<PolicyKey | null>(null)
   const [hubLegs, setHubLegs] = useState<Record<number, Leg>>({})
+  const [hubLegsRoad, setHubLegsRoad] = useState(false)   // true = road network distances, false = estimate
   const [routeLegs, setRouteLegs] = useState<Leg[] | null>(null)
   const [policies, setPolicies] = useState<Partial<Record<PolicyKey, PolicyCitation | null>>>({})
   const [justDispatched, setJustDispatched] = useState(false)
@@ -110,9 +114,12 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
   useEffect(() => {
     if (!hasCoords || !hubs.length) return
     const stop = { id: 'stop', latitude: shipment.latitude!, longitude: shipment.longitude! }
+    let cancelled = false
+    // Row = from, column = to: hub (row j+1) -> customer (column 0). Road distances can differ by direction.
     routesApi.distanceMatrix([stop, ...hubs.map(h => ({ id: `hub-${h.id}`, latitude: h.latitude, longitude: h.longitude }))])
-      .then(m => setHubLegs(Object.fromEntries(hubs.map((h, j) => [h.id, { km: m.distance_km[0][j + 1], minutes: m.duration_min[0][j + 1] }]))))
-      .catch(() => setHubLegs(Object.fromEntries(hubs.map(h => [h.id, estimateLeg([shipment.latitude!, shipment.longitude!], [h.latitude, h.longitude])]))))
+      .then(m => { if (cancelled) return; setHubLegsRoad(m.source === 'osrm'); setHubLegs(Object.fromEntries(hubs.map((h, j) => [h.id, { km: m.distance_km[j + 1][0], minutes: m.duration_min[j + 1][0] }]))) })
+      .catch(() => { if (cancelled) return; setHubLegsRoad(false); setHubLegs(Object.fromEntries(hubs.map(h => [h.id, estimateLeg([h.latitude, h.longitude], [shipment.latitude!, shipment.longitude!])]))) })
+    return () => { cancelled = true }
   }, [shipment.id, hasCoords, hubs])
 
   // Vehicles: best fit = eligible vehicle with the highest payload utilisation.
@@ -136,11 +143,18 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
   useEffect(() => {
     if (!hasCoords || !hub) return
     let cancelled = false
-    legsAlong([[hub.latitude, hub.longitude], [shipment.latitude!, shipment.longitude!], [hub.latitude, hub.longitude]], vehicle?.vehicle_type ?? 'VAN')
+    roadRoute([[hub.latitude, hub.longitude], [shipment.latitude!, shipment.longitude!], [hub.latitude, hub.longitude]], vehicle?.vehicle_type ?? 'VAN')
       .then(r => { if (!cancelled) setRouteLegs(r.legs) })
     return () => { cancelled = true }
   }, [shipment.id, hub?.id, vehicle?.vehicle_type, hasCoords])
-  const tripMinutes = routeLegs ? routeLegs[0].minutes + routeLegs[1].minutes : 0
+  // Drive times depend on the time of day (rush hours), so they are timed from the chosen departure.
+  const departMin = toMinutes(departure)
+  const open_ = toMinutes(shipment.time_window_start), close = toMinutes(shipment.time_window_end)
+  const outMin = routeLegs ? travelTime(routeLegs[0].minutes, departMin) : 0
+  const eta = routeLegs ? departMin + outMin : NaN
+  const leaveStop = Math.max(eta, open_) + 10
+  const backLegMin = routeLegs ? travelTime(routeLegs[1].minutes, leaveStop) : 0
+  const tripMinutes = outMin + backLegMin
   const tripKm = routeLegs ? routeLegs[0].km + routeLegs[1].km : 0
 
   // Hard blocks: a mandatory rest break, or a trip longer than the legal daily driving limit.
@@ -154,17 +168,18 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
     else if (!assignedHere && d.status === 'ON_TRIP') { verdict = 'warn'; note = 'On another trip · override: takes this after' }
     else if (!assignedHere && d.status === 'OFF_DUTY') { verdict = 'warn'; note = 'Off duty · override: call in' }
     else if (tripMinutes > d.max_driving_hours_per_day * 60 * 0.8) { verdict = 'warn'; note = 'Uses most of today\'s driving hours' }
+    // App access: a deactivated account blocks; no login is allowed but flagged (route must be shared another way).
+    const access = appAccess(d, users)
+    if (access === 'deactivated') { verdict = 'fail'; note = ACCESS_NOTE.deactivated }
+    else if (access === 'none' && verdict !== 'fail') { note = verdict === 'warn' ? `${note} · no app login` : `No app login · ${note}`; verdict = 'warn' }
     return { d, verdict, note }
   })
   const bestDriver = [...driverRows].filter(r => r.verdict !== 'fail').sort((a, b) => rank(a.verdict) - rank(b.verdict) || b.d.rating - a.d.rating)[0]?.d ?? null
   const driver = drivers.find(d => d.id === driverId) ?? (locked && vehicle ? drivers.find(d => d.current_vehicle_id === vehicle.id) : null) ?? bestDriver
 
-  const departMin = toMinutes(departure)
-  const eta = routeLegs ? departMin + routeLegs[0].minutes : NaN
-  const open_ = toMinutes(shipment.time_window_start), close = toMinutes(shipment.time_window_end)
   const lateMin = Math.max(0, eta - close)
   const waitMin = Math.max(0, open_ - eta)
-  const backMin = routeLegs ? Math.max(eta, open_) + 10 + routeLegs[1].minutes : NaN
+  const backMin = routeLegs ? leaveStop + backLegMin : NaN
 
   useEffect(() => {
     let cancelled = false
@@ -210,7 +225,7 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
   return (
     <div className="flex-1 relative min-w-0">
       <LeafletMap hubs={hubs} stops={[{ ...shipment, latitude: shipment.latitude!, longitude: shipment.longitude! }]} selectedHubId={hub.id}
-        metrics={routeLegs ? { [shipment.id]: { rank: 1, roadKm: routeLegs[0].km, minutes: routeLegs[0].minutes } } : {}} onSelectHub={() => {}}
+        metrics={routeLegs ? { [shipment.id]: { rank: 1, roadKm: routeLegs[0].km, minutes: outMin } } : {}} onSelectHub={() => {}}
         fitPadding={{ topLeft: [60, 60], bottomRight: [460, 60] }} />
 
       <div className="absolute top-4 right-4 bottom-4 w-[400px] rounded-2xl bg-white shadow-xl shadow-slate-900/15 ring-1 ring-slate-900/5 flex flex-col overflow-hidden">
@@ -232,10 +247,10 @@ function PlanView({ shipment, hubs, vehicles, drivers, onDispatch, addAudit, onO
 
           {/* Decisions */}
           <div className="px-3 py-2">
-            <Decision icon={ICONS.hub} label="From" value={hub.name} sub={hubLegs[hub.id] ? `${hubLegs[hub.id].km.toFixed(1)} km · ${fmtDur(hubLegs[hub.id].minutes)} to the customer` : 'Measuring distance…'}
+            <Decision icon={ICONS.hub} label="From" value={hub.name} sub={hubLegs[hub.id] ? `${hubLegs[hub.id].km.toFixed(1)} km${hubLegsRoad ? ' by road' : ' (est.)'} · ${fmtDur(travelTime(hubLegs[hub.id].minutes, departMin))} to the customer at ${departure}` : 'Measuring distance…'}
               verdict={closerHub ? 'warn' : 'pass'} open={open === 'hub'} onToggle={() => !locked && toggle('hub')} locked={locked}>
               {hubs.map(h => (
-                <Option key={h.id} selected={h.id === hub.id} disabled={locked} title={h.name} note={hubLegs[h.id] ? `${hubLegs[h.id].km.toFixed(1)} km · ${fmtDur(hubLegs[h.id].minutes)}` : '…'}
+                <Option key={h.id} selected={h.id === hub.id} disabled={locked} title={h.name} note={hubLegs[h.id] ? `${hubLegs[h.id].km.toFixed(1)} km${hubLegsRoad ? '' : ' (est.)'} · ${fmtDur(travelTime(hubLegs[h.id].minutes, departMin))}` : '…'}
                   badge={h.id === shipment.hub_id ? 'Order\'s hub' : undefined}
                   onClick={() => { setHubId(h.id); setVehicleId(null); setDriverId(null); setOpen(null) }} />
               ))}

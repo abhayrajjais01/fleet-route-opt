@@ -1,6 +1,7 @@
 // ─── LEAFLET MAP (US-004, Track A: Manthan Nimodiya) ──────────────────────────
 // Thin imperative wrapper around Leaflet with OpenStreetMap tiles (free, no API key).
-// Draws distribution hubs, delivery waypoints and dashed hub→stop links for the selected hub.
+// Draws distribution hubs, delivery waypoints and dashed hub→stop links for the selected hub, plus the real
+// road path to the stop the dispatcher is looking at (focusPath).
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -53,18 +54,20 @@ function stopPopup(s: MapStop, metric?: StopMetric): string {
   </div>`
 }
 
-export default function LeafletMap({ hubs, stops, selectedHubId, metrics, onSelectHub, fitPadding, ref }: {
+export default function LeafletMap({ hubs, stops, selectedHubId, metrics, onSelectHub, fitPadding, focusPath, ref }: {
   hubs: MapHub[]
   stops: MapStop[]
   selectedHubId: number | null
   metrics: Record<number, StopMetric>
   onSelectHub: (id: number) => void
   fitPadding?: { topLeft: [number, number]; bottomRight: [number, number] } // keep routes clear of floating panels
+  focusPath?: [number, number][] | null   // road path hub → focused stop
   ref?: Ref<MapHandle>
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
   const layerRef = useRef<L.LayerGroup | null>(null)
+  const pathLayer = useRef<L.LayerGroup | null>(null)
   const markersRef = useRef<{ hubs: Map<number, L.Marker>; stops: Map<number, L.Marker> }>({ hubs: new Map(), stops: new Map() })
   const onSelectHubRef = useRef(onSelectHub)
   onSelectHubRef.current = onSelectHub
@@ -80,7 +83,7 @@ export default function LeafletMap({ hubs, stops, selectedHubId, metrics, onSele
     // Leaflet measures its container once; re-measure whenever the flex layout resizes it.
     const observer = new ResizeObserver(() => map.invalidateSize())
     observer.observe(containerRef.current)
-    return () => { observer.disconnect(); map.remove(); mapRef.current = null }
+    return () => { observer.disconnect(); map.remove(); mapRef.current = null; pathLayer.current = null }
   }, [])
 
   // Redraw markers whenever data, selection or metrics change.
@@ -113,6 +116,20 @@ export default function LeafletMap({ hubs, stops, selectedHubId, metrics, onSele
       markersRef.current.hubs.set(h.id, marker)
     }
   }, [hubs, stops, selectedHubId, metrics])
+
+  // Road path to the focused stop, on its own layer so it doesn't force a full redraw.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    if (!pathLayer.current) pathLayer.current = L.layerGroup().addTo(map)
+    pathLayer.current.clearLayers()
+    if (focusPath && focusPath.length > 1) {
+      L.polyline(focusPath, { color: '#fff', weight: 8, opacity: 0.95, interactive: false }).addTo(pathLayer.current)
+      L.polyline(focusPath, { color: '#6d28d9', weight: 4.5, opacity: 0.95, lineCap: 'round', interactive: false }).addTo(pathLayer.current)
+      // Show the whole drive, clear of the side panel.
+      map.flyToBounds(L.latLngBounds(focusPath), { ...(fitPadding ? { paddingTopLeft: fitPadding.topLeft, paddingBottomRight: fitPadding.bottomRight } : { padding: [48, 48] }), maxZoom: 15, duration: 0.6 })
+    }
+  }, [focusPath])
 
   // Fit the viewport to the selected hub's network (or everything) when the selection changes.
   useEffect(() => {

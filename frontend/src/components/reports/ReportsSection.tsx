@@ -15,24 +15,29 @@ const KPI_TILES: { key: keyof Kpis; label: string; fmt: (v: number) => string; d
   { key: 'fleet_utilisation_pct', label: 'Fleet utilisation', fmt: v => `${v}%`, def: 'fleet_utilisation_pct', good: 'up' },
 ]
 
-export default function ReportsSection() {
+export default function ReportsSection({ authToken }: { authToken: string | null }) {
   const [filters, setFilters] = useState<ReportFilters>({ days: 30 })
   const [data, setData] = useState<MetricsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [exporting, setExporting] = useState<'csv' | 'pdf' | null>(null)
 
   useEffect(() => {
+    if (!authToken) {
+      // Still signing in; the effect re-runs when the token arrives. Say so if it never does.
+      const t = setTimeout(() => setError('Could not sign in to the backend, so reports are unavailable. Check that it is running.'), 8000)
+      return () => clearTimeout(t)
+    }
     let cancelled = false
     setError(null)
-    reportsApi.metrics(filters)
+    reportsApi.metrics(filters, authToken)
       .then(d => { if (!cancelled) setData(d) })
       .catch(e => { if (!cancelled) setError(e instanceof TypeError ? 'Reports need the backend to be running.' : (e as Error).message) })
     return () => { cancelled = true }
-  }, [JSON.stringify(filters)])
+  }, [JSON.stringify(filters), authToken])
 
   async function exportFile(kind: 'csv' | 'pdf') {
     setExporting(kind)
-    try { await reportsApi.download(kind, filters) } catch (e) { setError((e as Error).message) } finally { setExporting(null) }
+    try { await reportsApi.download(kind, filters, authToken) } catch (e) { setError((e as Error).message) } finally { setExporting(null) }
   }
   const set = (patch: Partial<ReportFilters>) => setFilters(f => ({ ...f, ...patch }))
 

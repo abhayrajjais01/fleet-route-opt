@@ -21,11 +21,15 @@ export function reportQuery(f: ReportFilters): string {
   return q.toString()
 }
 
+const auth = (token: string | null): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {})
+
+/** Reports are restricted to managers and dispatchers, so every call carries the signed-in user's token. */
 export const reportsApi = {
-  metrics: (f: ReportFilters) => apiRequest<MetricsResponse>(`/reports/metrics?${reportQuery(f)}`),
-  /** Downloads a CSV or PDF export by fetching it and saving the blob. */
-  async download(kind: 'csv' | 'pdf', f: ReportFilters) {
-    const res = await fetch(`${API_V1}/reports/${kind === 'csv' ? 'export.csv' : 'summary.pdf'}?${reportQuery(f)}`)
+  metrics: (f: ReportFilters, token: string | null) => apiRequest<MetricsResponse>(`/reports/metrics?${reportQuery(f)}`, { headers: auth(token) }),
+  /** Downloads a CSV or PDF export by fetching it (with the token) and saving the blob. */
+  async download(kind: 'csv' | 'pdf', f: ReportFilters, token: string | null) {
+    const res = await fetch(`${API_V1}/reports/${kind === 'csv' ? 'export.csv' : 'summary.pdf'}?${reportQuery(f)}`, { headers: auth(token) })
+    if (res.status === 401 || res.status === 403) throw new Error('Your role cannot export reports.')
     if (!res.ok) throw new Error(`Export failed (${res.status})`)
     const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? `fleet-report.${kind}`
     const url = URL.createObjectURL(await res.blob())

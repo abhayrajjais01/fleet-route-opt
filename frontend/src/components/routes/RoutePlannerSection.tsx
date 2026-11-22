@@ -8,8 +8,11 @@
 //   Week 9  ask the Optimization Agent "what if" in plain language; its proposal is applied only on approval
 //   Week 11 "Explain" shows the SOP-grounded rationale and turn-by-turn driver instructions
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AuditEntry, Driver, Hub, Shipment, Vehicle } from '../../lib/types'
+import type { AuditEntry, Driver, Hub, Shipment, User, Vehicle } from '../../lib/types'
+import { appAccess } from '../../lib/driverAccess'
 import { clock, estimateLeg, toMinutes, type LatLng } from '../../lib/geo'
+import { placesNear } from '../../lib/places'
+import { travelTime } from '../../lib/traffic'
 import {
   optimizeRoutes, routeOpsApi,
   type DisruptionProposal, type RouteEvaluation, type RouteExplanation, type RouteStopIn, type RouteVehicle, type SlaState,
@@ -30,6 +33,7 @@ const toStopIn = (s: Shipment): RouteStopIn => ({
 const toVehicle = (v: Vehicle, driver?: Driver | null): RouteVehicle => ({
   id: String(v.id), label: v.plate_number, capacity_kg: v.max_payload_kg, capacity_m3: v.max_volume_m3, vehicle_type: v.vehicle_type,
   max_shift_hours: Math.min(14, driver?.max_driving_hours_per_day ?? 10),
+  ...(driver?.full_name ? { driver_name: driver.full_name } : {}),
 })
 
 /** Instant client-side estimate (same constants as the backend) so a drag never waits on the network. */
@@ -38,16 +42,18 @@ function localEvaluate(hub: Hub, v: Vehicle, driver: Driver | null, stops: Shipm
   const out: RouteEvaluation['stops'] = []
   stops.forEach((s, i) => {
     const leg = estimateLeg(at, [s.latitude!, s.longitude!], v.vehicle_type)
-    const arrival = t + leg.minutes, open = toMinutes(s.time_window_start), close = toMinutes(s.time_window_end)
+    const legMin = travelTime(leg.minutes, t)
+    const arrival = t + legMin, open = toMinutes(s.time_window_start), close = toMinutes(s.time_window_end)
     const start = Math.max(arrival, open), late = Math.max(0, arrival - close)
     const sla: SlaState = late > 0 ? 'PREDICTED_BREACH' : close - arrival <= 15 ? 'AT_RISK' : 'ON_TIME'
     out.push({ stop_id: String(s.id), sequence: i + 1, arrival: clock(arrival), service_start: clock(start), departure: clock(start + 10), wait_min: start - arrival,
-      leg_km: leg.km, leg_min: leg.minutes, completed: false, sla, minutes_late: late, eta_shift_min: null })
+      leg_km: leg.km, leg_min: legMin, completed: false, sla, minutes_late: late, eta_shift_min: null })
     km += leg.km; t = start + 10; at = [s.latitude!, s.longitude!]
   })
   const back = estimateLeg(at, [hub.latitude, hub.longitude], v.vehicle_type)
+  const backMin = travelTime(back.minutes, t)
   const kg = stops.reduce((a, s) => a + s.weight_kg, 0), m3 = stops.reduce((a, s) => a + s.volume_m3, 0)
-  const duration = t + back.minutes - toMinutes(departure), limit = (driver?.max_driving_hours_per_day ?? 10) * 60
+  const duration = t + backMin - toMinutes(departure), limit = (driver?.max_driving_hours_per_day ?? 10) * 60
   const violations = [
     ...(kg > v.max_payload_kg ? [`Over payload: ${kg} kg on a ${v.max_payload_kg} kg vehicle`] : []),
     ...(m3 > v.max_volume_m3 ? [`Over volume: ${m3.toFixed(1)} m³ on a ${v.max_volume_m3} m³ vehicle`] : []),
@@ -55,13 +61,13 @@ function localEvaluate(hub: Hub, v: Vehicle, driver: Driver | null, stops: Shipm
     ...(duration > limit ? [`Route takes ${Math.round(duration)} min, over the ${limit} min shift limit`] : []),
   ]
   return { route_state: 'ROUTE_PROPOSED', feasible: !violations.length, stops: out, distance_km: km + back.km, duration_min: duration,
-    return_time: clock(t + back.minutes), load_kg: kg, load_m3: m3, utilisation: Math.max(kg / v.max_payload_kg, m3 / v.max_volume_m3), violations }
+    return_time: clock(t + backMin), load_kg: kg, load_m3: m3, utilisation: Math.max(kg / v.max_payload_kg, m3 / v.max_volume_m3), violations }
 }
 
 const fmtDur = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, '0')}m` : `${Math.round(m)} min`)
 
-export default function RoutePlannerSection({ hubs, vehicles, drivers, shipments, onAddShipments, onDispatchRoutes, addAudit, onOpenTracking }: {
-  hubs: Hub[]; vehicles: Vehicle[]; drivers: Driver[]; shipments: Shipment[]
+export default function RoutePlannerSection({ hubs, vehicles, drivers, users, shipments, onAddShipments, onDispatchRoutes, addAudit, onOpenTracking }: {
+  hubs: Hub[]; vehicles: Vehicle[]; drivers: Driver[]; users: User[]; shipments: Shipment[]
   onAddShipments: (s: Shipment[]) => void
   onDispatchRoutes: (r: RouteDispatch[]) => void
   addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
@@ -80,7 +86,7 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, shipments
   const [vehicleIds, setVehicleIds] = useState<Set<number>>(new Set())
   const [plan, setPlan] = useState<PlanRoute[] | null>(null)
   const [unassigned, setUnassigned] = useState<Record<string, string>>({})
-  const [stats, setStats] = useState<{ km: number; separate: number; saving: number; ms: number } | null>(null)
+  const [stats, setStats] = useState<{ km: number; separate: number; saving: number; ms: number; roads: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [focusId, setFocusId] = useState<string | null>(null)
@@ -99,7 +105,10 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, shipments
 
   const hubPoint = { id: `hub-${hub.id}`, latitude: hub.latitude, longitude: hub.longitude }
   const hubDrivers = drivers.filter(d => d.assigned_hub_id === hubId)
-  const freeDrivers = drivers.filter(d => d.assigned_hub_id === hubId && d.status === 'ON_DUTY' && d.current_vehicle_id == null).sort((a, b) => b.rating - a.rating)
+  // Auto-assignment: on-duty, unassigned drivers whose account isn't deactivated; drivers with the app first, then by rating.
+  const freeDrivers = drivers
+    .filter(d => d.assigned_hub_id === hubId && d.status === 'ON_DUTY' && d.current_vehicle_id == null && appAccess(d, users) !== 'deactivated')
+    .sort((a, b) => Number(appAccess(b, users) === 'active') - Number(appAccess(a, users) === 'active') || b.rating - a.rating)
 
   async function evaluateRoute(r: PlanRoute): Promise<PlanRoute> {
     if (!r.stops.length) return { ...r, evaluation: null, confirmed: true }
@@ -144,7 +153,7 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, shipments
       })
       setPlan(await Promise.all(routes.map(evaluateRoute)))
       setUnassigned(res.unassigned)
-      setStats({ km: res.total_distance_km, separate: res.separate_trips_km, saving: res.saving_pct, ms: res.compute_ms })
+      setStats({ km: res.total_distance_km, separate: res.separate_trips_km, saving: res.saving_pct, ms: res.compute_ms, roads: res.distance_source === 'osrm' })
       addAudit({ actor_name: 'Dispatcher', action_type: 'ROUTE_MODIFIED', entity_type: 'HUB', entity_id: hub.id,
         details: `Optimized ${orders.length} orders onto ${res.routes.length} route(s) at ${hub.code}: ${res.total_distance_km} km, ${res.saving_pct}% less than separate trips` })
     } catch (e) {
@@ -232,12 +241,18 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, shipments
     const windows = [['08:30', '11:00'], ['09:00', '12:00'], ['10:00', '13:00'], ['11:00', '15:00'], ['12:00', '17:00']]
     const names = ['Croma', 'Decathlon', 'Big Basket', 'Asian Paints', 'Zepto', 'Blinkit', 'Lenskart', 'Pepperfry']
     const base = Date.now()
+    // Real localities near the hub (so stops are on reachable streets); a small offset keeps repeat samples apart.
+    const places = placesNear(hub, names.length)
     onAddShipments(names.map((n, i) => {
       const [ws, we] = windows[i % windows.length]
-      return { id: base + i, tracking_number: `SMP-${String(base + i).slice(-5)}`, customer_name: `${n} (sample)`, destination_address: `Sample stop near ${hub.name}`,
+      const place = places[i]
+      const jitter = () => rng(0.003) - 0.0015
+      return { id: base + i, tracking_number: `SMP-${String(base + i).slice(-5)}`, customer_name: `${n} (sample)`,
+        destination_address: place ? `${place.area}, ${place.city}` : `Sample stop near ${hub.name}`,
         weight_kg: 80 + Math.round(rng(320)), volume_m3: Math.round((0.4 + rng(2.4)) * 10) / 10, time_window_start: ws, time_window_end: we,
         priority: (['STANDARD', 'STANDARD', 'HIGH', 'LOW', 'EXPRESS'] as const)[i % 5], status: 'UNASSIGNED', hub_id: hub.id,
-        latitude: hub.latitude + (rng(0.12) - 0.06), longitude: hub.longitude + (rng(0.12) - 0.06) }
+        latitude: place ? place.lat + jitter() : hub.latitude + (rng(0.08) - 0.04),
+        longitude: place ? place.lon + jitter() : hub.longitude + (rng(0.08) - 0.04) }
     }))
   }
 
@@ -326,6 +341,9 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, shipments
               <div><p className="text-xl font-semibold text-slate-900 tabular-nums">{plan.filter(r => r.stops.length).length}</p><p className="text-xs text-slate-500">routes</p></div>
               <div><p className="text-xl font-semibold text-slate-900 tabular-nums">{plan.reduce((a, r) => a + (r.evaluation?.distance_km ?? 0), 0).toFixed(0)} km</p><p className="text-xs text-slate-500">vs {stats.separate.toFixed(0)} km separately</p></div>
               <div><p className={`text-xl font-semibold tabular-nums ${lateCount ? 'text-amber-600' : 'text-emerald-600'}`}>{lateCount}</p><p className="text-xs text-slate-500">late stops</p></div>
+              <p className="col-span-3 text-[11px] text-slate-400" title={stats.roads ? 'Distances from the OpenStreetMap road network (OSRM)' : 'Road routing unavailable; distances estimated from straight-line distance'}>
+                {stats.roads ? 'Planned on real road distances' : 'Estimated distances (road routing unavailable)'} · solved in {stats.ms < 1000 ? `${Math.round(stats.ms)} ms` : `${(stats.ms / 1000).toFixed(1)} s`}
+              </p>
             </div>
           )}
           <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
@@ -349,12 +367,18 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, shipments
                       <option value="">{r.driver ? 'Choose driver' : 'No driver: choose one'}</option>
                       {hubDrivers.map(d => {
                         const swapWith = plan.find((x, k) => k !== ri && x.stops.length > 0 && x.driver?.id === d.id)
-                        const label = swapWith ? ` · swap with ${swapWith.vehicle.plate_number}`
+                        const access = appAccess(d, users)
+                        const label = access === 'deactivated' ? ' · account deactivated'
+                          : swapWith ? ` · swap with ${swapWith.vehicle.plate_number}`
                           : d.status === 'ON_DUTY' ? '' : d.status === 'ON_TRIP' && d.current_vehicle_id !== r.vehicle.id ? ' · on a trip (override)'
                           : d.status === 'RESTING' ? ' · mandatory rest' : d.status === 'OFF_DUTY' ? ' · off duty (override)' : ''
-                        return <option key={d.id} value={d.id} disabled={d.status === 'RESTING'}>{d.full_name} ★{d.rating}{label}</option>
+                        return <option key={d.id} value={d.id} disabled={d.status === 'RESTING' || access === 'deactivated'}>{d.full_name} ★{d.rating}{label}{access === 'none' ? ' · no app login' : ''}</option>
                       })}
                     </select>
+                    {r.driver && appAccess(r.driver, users) === 'none' && (
+                      <span title="This driver has no login, so the route will not appear in their driver app. Create a login in Users, or share the route another way."
+                        className="flex-shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-200">no app login</span>
+                    )}
                     {!r.confirmed && <span className="ml-auto text-[11px] text-slate-400">estimating…</span>}
                   </div>
                   {r.evaluation && (
@@ -505,8 +529,7 @@ function ExplainModal({ hubName, hubPoint, route, departure, onClose }: {
   const [err, setErr] = useState<string | null>(null)
   const [tab, setTab] = useState<'why' | 'driver'>('why')
   useEffect(() => {
-    const separate = route.stops.reduce((a, s) => a + 2 * estimateLeg([hubPoint.latitude, hubPoint.longitude], [s.latitude!, s.longitude!]).km, 0)
-    routeOpsApi.explain(hubPoint, hubName, toVehicle(route.vehicle, route.driver), route.stops.map(toStopIn), departure, separate)
+    routeOpsApi.explain(hubPoint, hubName, toVehicle(route.vehicle, route.driver), route.stops.map(toStopIn), departure)
       .then(setEx).catch(e => setErr(e instanceof TypeError ? 'Explanations need the backend to be running.' : (e as Error).message))
   }, [])
   return (
@@ -521,9 +544,29 @@ function ExplainModal({ hubName, hubPoint, route, departure, onClose }: {
               <button key={k} onClick={() => setTab(k)} className={`flex-1 py-1.5 text-sm font-medium rounded-md ${tab === k ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>{l}</button>
             ))}
           </div>
-          <ul className="mt-3 space-y-2 text-sm text-slate-700">
-            {(tab === 'why' ? ex.stop_reasons.map(r => r.reason) : ex.driver_instructions).map((line, i) => <li key={i}>{line}</li>)}
-          </ul>
+          {tab === 'why' || !ex.legs?.length ? (
+            <ul className="mt-3 space-y-2 text-sm text-slate-700">
+              {(tab === 'why' ? ex.stop_reasons.map(r => r.reason) : ex.driver_instructions).map((line, i) => <li key={i}>{line}</li>)}
+            </ul>
+          ) : (
+            <div className="mt-3 space-y-3 text-sm text-slate-700">
+              <p>{ex.driver_instructions[0]}</p>
+              <ol className="space-y-3">
+                {ex.legs.map((leg, i) => (
+                  <li key={i} className="rounded-xl ring-1 ring-slate-200 px-3 py-2.5">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="font-medium text-slate-900">{i < ex.legs!.length - 1 ? `${i + 1}. ${leg.to}` : `Return to ${leg.to}`}</p>
+                      <p className="text-xs text-slate-500 tabular-nums whitespace-nowrap">{leg.km.toFixed(1)} km · {Math.round(leg.minutes)} min · arrive {leg.arrive}</p>
+                    </div>
+                    <ol className="mt-1.5 space-y-0.5 text-xs text-slate-600 list-decimal list-inside marker:text-slate-400">
+                      {leg.steps.map((st, k) => <li key={k}>{st}</li>)}
+                    </ol>
+                  </li>
+                ))}
+              </ol>
+              {ex.directions_source !== 'osrm' && <p className="text-xs text-slate-500">Street-level directions are unavailable right now, so legs show compass headings.</p>}
+            </div>
+          )}
           {ex.citations.length > 0 && (
             <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
               <p className="text-xs font-medium text-slate-500">Policies this plan follows</p>

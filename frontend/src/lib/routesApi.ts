@@ -14,9 +14,23 @@ export interface DistanceMatrixResponse {
   duration_min: number[][]
   computed_ms: number
   cache: { hits: number; misses: number; entries: number; max_entries: number }
+  source?: 'osrm' | 'estimate'
+}
+
+export interface RoadPathResponse {
+  source: 'osrm' | 'estimate'
+  legs: { km: number; minutes: number; path: [number, number][] }[]
+  total_km: number
+  total_minutes: number
+  off_road: string[]
 }
 
 export const routesApi = {
+  roadPath: (points: GeoPoint[], vehicleType: MatrixVehicleType = 'VAN') =>
+    apiRequest<RoadPathResponse>('/routes/road-path', {
+      method: 'POST',
+      body: JSON.stringify({ points, vehicle_type: vehicleType }),
+    }),
   distanceMatrix: (points: GeoPoint[], vehicleType: MatrixVehicleType = 'VAN') =>
     apiRequest<DistanceMatrixResponse>('/routes/distance-matrix', {
       method: 'POST',
@@ -36,6 +50,7 @@ export interface OptimizeResponse {
   separate_trips_km: number
   saving_pct: number
   compute_ms: number
+  distance_source?: 'osrm' | 'estimate'
 }
 
 export function optimizeRoutes(hub: GeoPoint, stops: OptimizeStop[], vehicles: OptimizeVehicle[], departure: string) {
@@ -43,7 +58,7 @@ export function optimizeRoutes(hub: GeoPoint, stops: OptimizeStop[], vehicles: O
 }
 
 // ─── Route evaluation, explanations, optimization agent (Weeks 8–12) ──────────
-export interface RouteVehicle { id: string; label?: string; capacity_kg: number; capacity_m3: number; vehicle_type: MatrixVehicleType; max_shift_hours?: number }
+export interface RouteVehicle { id: string; label?: string; capacity_kg: number; capacity_m3: number; vehicle_type: MatrixVehicleType; max_shift_hours?: number; driver_name?: string }
 export interface RouteStopIn extends OptimizeStop { name?: string; address?: string; priority?: string }
 export type SlaState = 'ON_TIME' | 'AT_RISK' | 'PREDICTED_BREACH' | 'SLA_BREACHED' | 'FAILED'
 export interface StopEta {
@@ -57,6 +72,9 @@ export interface RouteEvaluation {
 export interface RouteExplanation {
   summary: string; stop_reasons: { stop_id: string; reason: string }[]; driver_instructions: string[]
   citations: { doc_id: string; section: string; heading: string; excerpt: string; score: number }[]; evaluation: RouteEvaluation
+  legs?: { to: string; km: number; minutes: number; arrive: string; steps: string[] }[]
+  directions_source?: 'osrm' | 'estimate'
+  distance_source?: 'osrm' | 'estimate'
 }
 export interface FleetRouteIn { vehicle: RouteVehicle; stops: RouteStopIn[]; departure: string; completed?: Record<string, string> }
 export interface DisruptionProposal {
@@ -71,8 +89,8 @@ const post = <T,>(path: string, body: unknown) => apiRequest<T>(path, { method: 
 export const routeOpsApi = {
   evaluate: (hub: GeoPoint, vehicle: RouteVehicle, stops: RouteStopIn[], departure: string) =>
     post<RouteEvaluation>('/routes/evaluate', { hub, vehicle, stops, departure }),
-  explain: (hub: GeoPoint, hubName: string, vehicle: RouteVehicle, stops: RouteStopIn[], departure: string, separateTripsKm?: number) =>
-    post<RouteExplanation>('/routes/explain', { hub, hub_name: hubName, vehicle, stops, departure, separate_trips_km: separateTripsKm }),
+  explain: (hub: GeoPoint, hubName: string, vehicle: RouteVehicle, stops: RouteStopIn[], departure: string) =>
+    post<RouteExplanation>('/routes/explain', { hub, hub_name: hubName, vehicle, stops, departure }),
   disruption: (message: string, hub: GeoPoint, routes: FleetRouteIn[], spareVehicles: RouteVehicle[], now: string) =>
     post<DisruptionProposal>('/routes/disruption', { message, hub, routes, spare_vehicles: spareVehicles, now }),
 }

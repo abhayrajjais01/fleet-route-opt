@@ -1,7 +1,6 @@
 // ─── LEG COST ESTIMATES (Track A: Manthan Nimodiya) ──────────────────────────
-// The backend distance engine (/api/v1/routes/distance-matrix) is the source of truth. The local estimate
-// below mirrors its constants so screens keep working when the API is unreachable.
-import { routesApi, type MatrixVehicleType } from './routesApi'
+// The backend (distance matrix + road router, see lib/roads.ts) is the source of truth. The local estimate
+// below mirrors the distance engine's constants so screens keep working when the API is unreachable.
 
 export type LatLng = [number, number]
 export interface Leg { km: number; minutes: number }
@@ -31,19 +30,6 @@ export function estimateLeg(a: LatLng, b: LatLng, vehicleType = 'VAN'): Leg {
   const km = straight * interp(straight, ANCHOR_KM, CIRCUITY)
   const speed = interp(straight, ANCHOR_KM, SPEED_KMH) * (VEHICLE_SPEED_FACTOR[vehicleType] ?? 1)
   return { km, minutes: (km / speed) * 60 }
-}
-
-/** Road km and drive minutes for each consecutive pair of points (A→B, B→C, ...). */
-export async function legsAlong(points: LatLng[], vehicleType: string): Promise<{ legs: Leg[]; source: 'api' | 'estimate' }> {
-  const local = () => points.slice(1).map((p, i) => estimateLeg(points[i], p, vehicleType))
-  if (points.length < 2) return { legs: [], source: 'estimate' }
-  // The matrix endpoint rejects duplicate ids, not duplicate coordinates, so index-based ids are safe.
-  try {
-    const m = await routesApi.distanceMatrix(points.map(([latitude, longitude], i) => ({ id: `p${i}`, latitude, longitude })), vehicleType as MatrixVehicleType)
-    return { legs: points.slice(1).map((_, i) => ({ km: m.distance_km[i][i + 1], minutes: m.duration_min[i][i + 1] })), source: 'api' }
-  } catch {
-    return { legs: local(), source: 'estimate' }
-  }
 }
 
 export function clock(min: number): string {
