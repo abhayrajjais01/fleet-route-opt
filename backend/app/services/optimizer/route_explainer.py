@@ -4,7 +4,8 @@ route_explainer.py - RAG-Grounded Route Explanations & Driver Instructions (Week
 Turns a planned route into three pieces of plain language:
   1. dispatch rationale - a short executive summary of why the route looks the way it does
   2. stop reasons       - why each stop sits where it does in the sequence
-  3. driver instructions - stop-by-stop directions with compass heading, distance and drive time
+  3. driver instructions - stop-by-stop legs with distance, drive time and arrival, plus turn-by-turn directions
+                           with real street names from the road network (compass heading when it is unavailable)
 
 Zero-hallucination by construction: every sentence is assembled from computed facts (ETAs, windows, loads,
 distances) and every policy statement quotes a passage retrieved from the SOP knowledge base with its
@@ -18,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.services.optimizer.eta_engine import RouteEvaluation, SLA_AT_RISK, SLA_ON_TIME
+from app.services.optimizer.traffic import factor_at
 from app.services.optimizer.vrptw_solver import Stop, VehicleSpec
 
 
@@ -39,11 +41,22 @@ class Citation:
 
 
 @dataclass
+class LegGuide:
+    to: str                 # stop name, or the hub for the return leg
+    km: float
+    minutes: float
+    arrive: str
+    steps: List[str]        # turn-by-turn directions
+
+
+@dataclass
 class Explanation:
     summary: str
     stop_reasons: List[Tuple[str, str]]
     driver_instructions: List[str]
     citations: List[Citation] = field(default_factory=list)
+    legs: List[LegGuide] = field(default_factory=list)
+    directions_source: str = "estimate"   # "osrm" = real street names, "estimate" = compass headings
 
 
 COMPASS = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"]
@@ -91,7 +104,10 @@ def explain_route(
     evaluation: RouteEvaluation,
     depart_min: int,
     separate_trips_km: Optional[float] = None,
+    directions: Optional[List[List[str]]] = None,
+    distance_source: str = "estimate",
 ) -> Explanation:
+    """directions: turn-by-turn lines per leg (hub -> stop 1 -> ... -> hub) from road_router.road_directions."""
     by_id = {s.id: s for s in stops}
     etas = evaluation.stops
     name = lambda sid: info.get(sid, StopInfo(sid)).name  # noqa: E731
@@ -118,6 +134,12 @@ def explain_route(
         parts.append("Every stop arrives inside its delivery window.")
     if waits >= 15:
         parts.append(f"The driver waits {round(waits)} min in total for windows to open.")
+    peaks = {name_: f for name_, f in (("leaves", factor_at(depart_min)), ("returns", factor_at(evaluation.return_min))) if f > 1.0}
+    if peaks:
+        when = " and ".join(f"{k} in the {'morning' if (depart_min if k == 'leaves' else evaluation.return_min) % 1440 < 720 else 'evening'} peak" for k in peaks)
+        parts.append(f"It {when}, so drive times are up to {round((max(peaks.values()) - 1) * 100)}% longer than at midday; the ETAs include this.")
+    parts.append("Distances and directions follow the road network." if distance_source == "osrm"
+                 else "Road routing was unavailable, so distances are estimated from straight-line distance.")
     summary = " ".join(parts)
 
     # 2. Why each stop is where it is
@@ -141,20 +163,30 @@ def explain_route(
         status = "on time" if e.sla in (SLA_ON_TIME, SLA_AT_RISK) else f"{round(e.minutes_late)} min late"
         reasons.append((s.id, f"Stop {i + 1}, {name(s.id)}: {'; '.join(bits)} ({status})."))
 
-    # 3. Turn-by-turn driver instructions (heading, distance and time per leg)
+    # 3. Driver instructions: one line per leg, with turn-by-turn directions on real streets when available
+    have_roads = bool(directions) and len(directions) == len(etas) + 1
     instructions = [f"Load {len(etas)} consignment{'s' if len(etas) != 1 else ''} in reverse delivery order and leave {hub_name} at {clock(depart_min)}."]
+    legs: List[LegGuide] = []
     prev_pt = hub
     for i, e in enumerate(etas):
         s = by_id[e.stop_id]
         here = (s.lat, s.lon)
         addr = info.get(s.id).address if info.get(s.id) and info[s.id].address else ""
-        line = f"{i + 1}. Head {bearing(prev_pt, here)} for {e.leg_km:.1f} km (~{round(e.leg_min)} min) to {name(s.id)}{', ' + addr if addr else ''}. Arrive {clock(e.arrival)}"
+        steps = directions[i] if have_roads else [f"Head {bearing(prev_pt, here)} for {e.leg_km:.1f} km"]
+        via = _main_road(steps)
+        line = f"{i + 1}. Drive {e.leg_km:.1f} km (~{round(e.leg_min)} min){' via ' + via if via else ' ' + bearing(prev_pt, here)} to {name(s.id)}{', ' + addr if addr else ''}. Arrive {clock(e.arrival)}"
         if e.wait >= 1:
             line += f", wait until {clock(e.service_start)} when the window opens"
         line += f"; unload and collect proof of delivery by {clock(e.departure)}."
         instructions.append(line)
+        legs.append(LegGuide(name(s.id), round(e.leg_km, 2), round(e.leg_min, 1), clock(e.arrival), steps))
         prev_pt = here
-    instructions.append(f"Return {bearing(prev_pt, hub)} to {hub_name}, arriving about {clock(evaluation.return_min)}.")
+    back_km = max(0.0, evaluation.distance_km - sum(e.leg_km for e in etas))
+    back_min = max(0.0, evaluation.return_min - (etas[-1].departure if etas else depart_min))
+    back_steps = directions[-1] if have_roads else [f"Head {bearing(prev_pt, hub)} for {back_km:.1f} km"]
+    via = _main_road(back_steps)
+    instructions.append(f"Return{' via ' + via if via else ' ' + bearing(prev_pt, hub)} to {hub_name}, arriving about {clock(evaluation.return_min)}.")
+    legs.append(LegGuide(hub_name, round(back_km, 2), round(back_min, 1), clock(evaluation.return_min), back_steps))
 
     # Policy grounding: rules this plan depends on, quoted from the SOP knowledge base.
     queries = ["vehicle payload and volume capacity limits overloading", "driver maximum daily driving hours and rest breaks",
@@ -162,4 +194,22 @@ def explain_route(
     if any(info.get(s.id) and info[s.id].priority == "EXPRESS" for s in stops):
         queries.append("express priority shipments same day delivery")
     citations = _policy_citations(queries)
-    return Explanation(summary=summary, stop_reasons=reasons, driver_instructions=instructions, citations=citations)
+    return Explanation(summary=summary, stop_reasons=reasons, driver_instructions=instructions, citations=citations,
+                       legs=legs, directions_source="osrm" if have_roads else "estimate")
+
+
+def _main_road(steps: Sequence[str]) -> str:
+    """The road the driver spends longest on, from lines like 'Turn left onto X for 2.4 km'."""
+    best, best_km = "", 0.0
+    for line in steps:
+        if " onto " not in line and " on " not in line:
+            continue
+        road, _, dist = line.split(" onto " if " onto " in line else " on ", 1)[1].rpartition(" for ")
+        try:
+            value, unit = dist.split()
+            km = float(value) / (1000 if unit == "m" else 1)
+        except ValueError:
+            continue
+        if km > best_km:
+            best, best_km = road, km
+    return best

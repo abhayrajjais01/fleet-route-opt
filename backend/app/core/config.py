@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
+    # Road routing (Track A): "osrm" draws and times routes on the real road network, "estimate" uses the
+    # offline haversine model. Point OSRM_URL at a self-hosted OSRM for production traffic.
+    ROAD_ROUTING: str = "osrm"
+    OSRM_URL: str = "https://router.project-osrm.org"
+    OSRM_TIMEOUT_S: float = 6.0
+    # Time-of-day congestion (rush hours) applied to every drive time; see services/optimizer/traffic.py.
+    TRAFFIC_MODEL: bool = True
+
     # CORS Whitelist
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:3000",

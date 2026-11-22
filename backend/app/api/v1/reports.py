@@ -12,12 +12,15 @@ Data source: simulated dispatch history (see services/analytics/history.py) unti
 from datetime import date
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
+
+from app.core.security import require_roles
+from app.models.user import UserRole
 from pydantic import BaseModel
 
 from app.services.analytics.exports import stops_csv, summary_pdf
-from app.services.analytics.history import simulated_history
+from app.services.analytics.history import history
 from app.services.analytics.metrics import (
     DEFAULT_DRIVER_COST_PER_HOUR,
     DEFAULT_FUEL_PRICE_PER_L,
@@ -27,7 +30,8 @@ from app.services.analytics.metrics import (
     filter_trips,
 )
 
-router = APIRouter()
+# Operational KPIs and customer-level exports are business data: managers and dispatchers only (not drivers).
+router = APIRouter(dependencies=[Depends(require_roles([UserRole.ADMIN, UserRole.FLEET_MANAGER, UserRole.DISPATCHER]))])
 
 DEFINITIONS = {
     "otif_pct": "Stops delivered inside the window and in full, as a share of all stops",
@@ -62,7 +66,7 @@ class MetricsResponse(BaseModel):
 
 
 def _trips(days: int, hub: Optional[str], vehicle_type: Optional[str], driver: Optional[str]) -> List[TripRecord]:
-    return filter_trips(simulated_history(days), hub=hub, vehicle_type=vehicle_type, driver=driver)
+    return filter_trips(history(days), hub=hub, vehicle_type=vehicle_type, driver=driver)
 
 
 def _filters_text(hub, vehicle_type, driver) -> str:
@@ -83,7 +87,7 @@ def metrics(days: int = DaysQ, hub: Optional[str] = HubQ, vehicle_type: Optional
             fuel_price: float = FuelQ, driver_cost: float = WageQ):
     trips = _trips(days, hub, vehicle_type, driver)
     kw = dict(fuel_price_per_l=fuel_price, driver_cost_per_hour=driver_cost)
-    everything = simulated_history(days)
+    everything = history(days)
     daily = [{"date": d, **m.as_dict()} for d, m in breakdown(trips, lambda t: t.date, **kw).items()]
     return MetricsResponse(
         source=f"Simulated dispatch history: {days} days replayed through the VRPTW solver and ETA engine",

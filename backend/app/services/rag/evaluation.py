@@ -21,7 +21,9 @@ from typing import List
 
 from app.services.rag.knowledge_base import KnowledgeBase, get_knowledge_base
 
-EVAL_SET_PATH = Path(__file__).parent / "eval_set.json"
+EVAL_SET_PATH = Path(__file__).parent / "eval_set.json"          # development set (tuning allowed)
+VALIDATION_PATH = Path(__file__).parent / "eval_validation.json" # natural phrasings, used while tuning
+TEST_PATH = Path(__file__).parent / "eval_test.json"             # untouched final check, never tuned against
 
 
 @dataclass
@@ -38,9 +40,9 @@ class RetrievalReport:
     misses: List[str]
 
 
-def evaluate(kb: KnowledgeBase | None = None, k: int = 3) -> RetrievalReport:
+def evaluate(kb: KnowledgeBase | None = None, k: int = 3, path: Path = EVAL_SET_PATH) -> RetrievalReport:
     kb = kb or get_knowledge_base()
-    questions = json.loads(EVAL_SET_PATH.read_text(encoding="utf-8"))["questions"]
+    questions = json.loads(path.read_text(encoding="utf-8"))["questions"]
 
     hits_at_1 = hits_at_k = 0
     reciprocal_ranks: List[float] = []
@@ -87,6 +89,8 @@ def evaluate(kb: KnowledgeBase | None = None, k: int = 3) -> RetrievalReport:
 
 
 if __name__ == "__main__":
-    report = evaluate()
-    for key, value in report.__dict__.items():
-        print(f"{key:>28}: {value}")
+    for label, path in (("development set", EVAL_SET_PATH), ("validation set", VALIDATION_PATH), ("test set", TEST_PATH)):
+        print(f"--- {label} ---")
+        report = evaluate(path=path)
+        for key, value in report.__dict__.items():
+            print(f"{key:>28}: {value}")

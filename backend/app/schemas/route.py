@@ -32,10 +32,32 @@ class DistanceMatrixResponse(BaseModel):
     ids: List[str]
     vehicle_type: VehicleType
     straight_km: List[List[float]] = Field(..., description="Great-circle (haversine) distances")
-    distance_km: List[List[float]] = Field(..., description="Detour-corrected road distance estimates")
+    distance_km: List[List[float]] = Field(..., description="Road distances (OSRM) or detour-corrected estimates")
     duration_min: List[List[float]] = Field(..., description="Estimated driving minutes for the vehicle type")
     computed_ms: float
     cache: Dict[str, int]
+    source: str = Field("estimate", description="'osrm' = real road network, 'estimate' = haversine model")
+
+
+class RoadPathRequest(BaseModel):
+    """Ordered points to drive through, e.g. hub -> stops -> hub. Duplicate coordinates are allowed."""
+
+    points: List[GeoPoint] = Field(..., min_length=2, max_length=100)
+    vehicle_type: VehicleType = VehicleType.VAN
+
+
+class RoadLegResponse(BaseModel):
+    km: float
+    minutes: float
+    path: List[List[float]] = Field(..., description="[lat, lon] pairs along the road, start to end")
+
+
+class RoadPathResponse(BaseModel):
+    source: str = Field(..., description="'osrm' = real road network, 'estimate' = straight-line fallback")
+    legs: List[RoadLegResponse]
+    total_km: float
+    total_minutes: float
+    off_road: List[str] = Field(default_factory=list, description="Ids of points far from any road (check the address)")
 
 
 # ---------------- VRPTW Optimization (Week 6) ---------------- #
@@ -97,6 +119,7 @@ class OptimizeResponse(BaseModel):
     separate_trips_km: float = Field(..., description="Baseline: every stop as its own round trip")
     saving_pct: float
     compute_ms: float
+    distance_source: str = Field("estimate", description="'osrm' = planned on real road distances, 'estimate' = offline model")
 
 
 # ---------------- Route evaluation & downstream ETAs (Weeks 8, 10, 12) ---------------- #
@@ -110,6 +133,7 @@ class RouteVehicle(BaseModel):
     capacity_m3: float = Field(..., gt=0)
     vehicle_type: VehicleType = VehicleType.VAN
     max_shift_hours: float = Field(10, gt=0, le=14)
+    driver_name: Optional[str] = Field(None, max_length=120, description="Lets the agent resolve 'Vikram's truck'")
 
 
 class RouteStopIn(OptimizeStop):
@@ -193,7 +217,7 @@ class SlaCheckResponse(BaseModel):
 # ---------------- Route explanation (Week 11) ---------------- #
 class ExplainRequest(EvaluateRequest):
     hub_name: str = Field("the hub", max_length=255)
-    separate_trips_km: Optional[float] = Field(None, gt=0)
+    separate_trips_km: Optional[float] = Field(None, gt=0, description="Deprecated and ignored: the server computes it")
 
 
 class CitationResponse(BaseModel):
@@ -204,12 +228,23 @@ class CitationResponse(BaseModel):
     score: float
 
 
+class LegGuideResponse(BaseModel):
+    to: str
+    km: float
+    minutes: float
+    arrive: str
+    steps: List[str] = Field(..., description="Turn-by-turn directions for this leg")
+
+
 class ExplainResponse(BaseModel):
     summary: str
     stop_reasons: List[Dict[str, str]]
     driver_instructions: List[str]
     citations: List[CitationResponse]
     evaluation: EvaluateResponse
+    legs: List[LegGuideResponse] = Field(default_factory=list)
+    directions_source: str = Field("estimate", description="'osrm' = real street names, 'estimate' = compass headings")
+    distance_source: str = Field("estimate", description="'osrm' = road network distances, 'estimate' = haversine model")
 
 
 # ---------------- Optimization agent (Week 9) ---------------- #

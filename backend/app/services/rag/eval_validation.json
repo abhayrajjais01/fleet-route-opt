@@ -1,0 +1,276 @@
+{
+  "description": "Validation set (Nov 2026): natural dispatcher/driver phrasings used while improving retrieval. Tuning against it is allowed; the untouched eval_test.json is the final check.",
+  "questions": [
+    {
+      "question": "the vaccine boxes got too warm for 40 minutes, what now",
+      "relevant": [
+        "SOP-CC-001#4"
+      ]
+    },
+    {
+      "question": "do I need to cool the fridge truck before putting the medicines in",
+      "relevant": [
+        "SOP-CC-001#2"
+      ]
+    },
+    {
+      "question": "how often should the cold box temperature be written down",
+      "relevant": [
+        "SOP-CC-001#3"
+      ]
+    },
+    {
+      "question": "frozen goods should be delivered first or last on the route",
+      "relevant": [
+        "SOP-CC-001#5"
+      ]
+    },
+    {
+      "question": "what temperature range is allowed for chilled dairy",
+      "relevant": [
+        "SOP-CC-001#1"
+      ]
+    },
+    {
+      "question": "how many hours can a truck driver work in a day in India",
+      "relevant": [
+        "SOP-DR-001#2",
+        "SOP-DR-001#1"
+      ]
+    },
+    {
+      "question": "which country's driving hour rule applies when they differ",
+      "relevant": [
+        "SOP-DR-001#1"
+      ]
+    },
+    {
+      "question": "driving limits for a trip through Germany",
+      "relevant": [
+        "SOP-DR-001#3"
+      ]
+    },
+    {
+      "question": "US trucker 11 hour rule",
+      "relevant": [
+        "SOP-DR-001#4"
+      ]
+    },
+    {
+      "question": "who checks the tachograph logs and what if someone drives too long",
+      "relevant": [
+        "SOP-DR-001#5"
+      ]
+    },
+    {
+      "question": "driver feels sleepy on the highway what should he do",
+      "relevant": [
+        "SOP-DR-002#2"
+      ]
+    },
+    {
+      "question": "can we plan deliveries at 2 am",
+      "relevant": [
+        "SOP-DR-002#3"
+      ]
+    },
+    {
+      "question": "minimum gap between two shifts for the same driver",
+      "relevant": [
+        "SOP-DR-002#4"
+      ]
+    },
+    {
+      "question": "driver had a drink last night, can he still start the shift",
+      "relevant": [
+        "SOP-DR-002#1"
+      ]
+    },
+    {
+      "question": "is a normal licence enough to carry gas cylinders",
+      "relevant": [
+        "SOP-HZ-001#2"
+      ]
+    },
+    {
+      "question": "which shipments count as dangerous cargo",
+      "relevant": [
+        "SOP-HZ-001#1"
+      ]
+    },
+    {
+      "question": "orange plates on the truck for chemicals",
+      "relevant": [
+        "SOP-HZ-001#3"
+      ]
+    },
+    {
+      "question": "what documents must travel with flammable liquids",
+      "relevant": [
+        "SOP-HZ-001#4"
+      ]
+    },
+    {
+      "question": "can explosives go in the same truck as oxidisers",
+      "relevant": [
+        "SOP-HZ-001#5"
+      ]
+    },
+    {
+      "question": "can a chemical tanker go through a tunnel or park anywhere overnight",
+      "relevant": [
+        "SOP-HZ-001#6"
+      ]
+    },
+    {
+      "question": "how many fire extinguishers does a hazmat truck need",
+      "relevant": [
+        "SOP-HZ-001#7"
+      ]
+    },
+    {
+      "question": "acid is leaking from a drum on the road",
+      "relevant": [
+        "SOP-HZ-002#1"
+      ]
+    },
+    {
+      "question": "how far back should people stand from a gas leak",
+      "relevant": [
+        "SOP-HZ-002#2"
+      ]
+    },
+    {
+      "question": "how quickly must a chemical spill be told to the control room",
+      "relevant": [
+        "SOP-HZ-002#3"
+      ]
+    },
+    {
+      "question": "does a hazmat accident have to be reported to the government",
+      "relevant": [
+        "SOP-HZ-002#4"
+      ]
+    },
+    {
+      "question": "when can the truck from the chemical spill drive again",
+      "relevant": [
+        "SOP-HZ-002#5"
+      ]
+    },
+    {
+      "question": "engine died in the middle of the expressway",
+      "relevant": [
+        "SOP-OP-001#1"
+      ]
+    },
+    {
+      "question": "does a human have to approve the AI's new plan after a breakdown",
+      "relevant": [
+        "SOP-OP-001#2"
+      ]
+    },
+    {
+      "question": "stuck in a traffic jam, when should I tell dispatch I'm running late",
+      "relevant": [
+        "SOP-OP-001#3"
+      ]
+    },
+    {
+      "question": "driver took a different road than planned",
+      "relevant": [
+        "SOP-OP-001#4"
+      ]
+    },
+    {
+      "question": "customer was not home to receive the parcel",
+      "relevant": [
+        "SOP-OP-001#5"
+      ]
+    },
+    {
+      "question": "what happens if the truck shows up before the delivery slot opens",
+      "relevant": [
+        "SOP-OP-002#1"
+      ]
+    },
+    {
+      "question": "difference between express and high priority orders",
+      "relevant": [
+        "SOP-OP-002#2"
+      ]
+    },
+    {
+      "question": "when is a delivery counted as late against the SLA",
+      "relevant": [
+        "SOP-OP-002#3"
+      ]
+    },
+    {
+      "question": "how is the on time in full percentage calculated",
+      "relevant": [
+        "SOP-OP-002#4"
+      ]
+    },
+    {
+      "question": "what do we need to collect from the customer at handover",
+      "relevant": [
+        "SOP-OP-002#5"
+      ]
+    },
+    {
+      "question": "can I put 200 kg extra on the van if it fits",
+      "relevant": [
+        "SOP-VS-001#1"
+      ]
+    },
+    {
+      "question": "how should heavy boxes be stacked and strapped",
+      "relevant": [
+        "SOP-VS-001#2"
+      ]
+    },
+    {
+      "question": "what does the driver check on the truck every morning",
+      "relevant": [
+        "SOP-VS-001#3"
+      ]
+    },
+    {
+      "question": "the brakes feel soft, who do I tell",
+      "relevant": [
+        "SOP-VS-001#4"
+      ]
+    },
+    {
+      "question": "how much battery buffer should the electric van keep",
+      "relevant": [
+        "SOP-VS-001#5"
+      ]
+    },
+    {
+      "question": "what is the salary of a delivery driver",
+      "relevant": []
+    },
+    {
+      "question": "how do I reset my password",
+      "relevant": []
+    },
+    {
+      "question": "what is the diesel price in Pune today",
+      "relevant": []
+    },
+    {
+      "question": "who won the cricket match yesterday",
+      "relevant": []
+    },
+    {
+      "question": "how do I apply for leave",
+      "relevant": []
+    },
+    {
+      "question": "what is the GST rate on courier services",
+      "relevant": []
+    }
+  ]
+}

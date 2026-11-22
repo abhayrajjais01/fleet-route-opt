@@ -9,6 +9,8 @@ Endpoints:
 - POST /routes/sla-check: SLA alerts across all live routes (Week 12).
 - POST /routes/explain: SOP-grounded route rationale + turn-by-turn driver instructions (Week 11).
 - POST /routes/disruption: Optimization Agent turns a disruption message into a re-route proposal (Week 9).
+- POST /routes/road-path: real road geometry, distance and time for an ordered stop sequence (OSRM on
+  OpenStreetMap, with the haversine estimate as the offline fallback). Drives every map's route lines.
 - POST /routes/distance-matrix: Pairwise haversine, detour-corrected road distance and travel-time matrices
   for up to 250 points (hubs + delivery stops). This is the cost input for the VRPTW solver (Week 6) and
   powers the distance panel on the Network Map.
@@ -26,6 +28,7 @@ from app.schemas.route import (
     EvaluateResponse,
     ExplainRequest,
     ExplainResponse,
+    LegGuideResponse,
     ProposalResponse,
     RecalculateRequest,
     RouteVehicle,
@@ -36,12 +39,16 @@ from app.schemas.route import (
     StopEtaResponse,
     DistanceMatrixRequest,
     DistanceMatrixResponse,
+    RoadLegResponse,
+    RoadPathRequest,
+    RoadPathResponse,
     OptimizeRequest,
     OptimizeResponse,
     RouteResponse,
     VisitResponse,
 )
 from app.services.optimizer.distance_matrix import build_distance_matrix, cache_stats
+from app.services.optimizer.road_router import SNAP_WARN_M, road_directions, road_route
 from app.services.optimizer.eta_engine import RouteEvaluation, recalculate
 from app.services.optimizer.route_explainer import StopInfo, explain_route
 from app.services.optimizer.vrptw_solver import Stop, VehicleSpec, solve
@@ -72,6 +79,7 @@ def compute_distance_matrix(request: DistanceMatrixRequest):
         duration_min=matrix.duration_min.round(1).tolist(),
         computed_ms=round(computed_ms, 3),
         cache=cache_stats(),
+        source=matrix.source,
     )
 
 
@@ -83,6 +91,24 @@ def _hhmm(text: str) -> int:
 def _clock(minutes: float) -> str:
     m = int(round(minutes)) % 1440
     return f"{m // 60:02d}:{m % 60:02d}"
+
+
+@router.post("/road-path", response_model=RoadPathResponse, summary="Road geometry, distance and time for a stop sequence")
+def road_path(request: RoadPathRequest):
+    """
+    Follows the real road network between consecutive points. Each leg carries its km, drive minutes for the
+    vehicle type and the road path to draw. `source` says whether the road network or the estimate was used.
+    """
+    route = road_route([(p.latitude, p.longitude) for p in request.points], request.vehicle_type.value)
+    off_road = [p.id for p, d in zip(request.points, route.snap_m) if d > SNAP_WARN_M]
+    return RoadPathResponse(
+        source=route.source,
+        legs=[RoadLegResponse(km=round(l.km, 3), minutes=round(l.minutes, 1), path=[[lat, lon] for lat, lon in l.path])
+              for l in route.legs],
+        total_km=round(route.km, 2),
+        total_minutes=round(route.minutes, 1),
+        off_road=off_road,
+    )
 
 
 @router.post("/optimize", response_model=OptimizeResponse, summary="Solve VRPTW for a batch of stops")
@@ -114,6 +140,7 @@ def optimize_routes(request: OptimizeRequest):
         separate_trips_km=baseline,
         saving_pct=round((1 - solution.total_distance_km / baseline) * 100, 1) if baseline else 0.0,
         compute_ms=solution.compute_ms,
+        distance_source=solution.distance_source,
     )
 
 
@@ -205,16 +232,24 @@ def explain(request: ExplainRequest):
     """Rationale, per-stop reasons and driver instructions built only from computed facts and quoted SOP clauses."""
     stops = _stops(request.stops)
     vehicle = _vehicle(request.vehicle)
-    ev = recalculate((request.hub.latitude, request.hub.longitude), stops, vehicle, _hhmm(request.departure))
+    hub = (request.hub.latitude, request.hub.longitude)
+    ev = recalculate(hub, stops, vehicle, _hhmm(request.departure))
     info = {s.id: StopInfo(s.name or s.id, s.address or "", s.priority) for s in request.stops}
-    ex = explain_route(request.hub_name, (request.hub.latitude, request.hub.longitude), stops, info, vehicle,
-                       request.vehicle.label or request.vehicle.id, ev, _hhmm(request.departure), request.separate_trips_km)
+    # Baseline "one trip per customer" uses the same distance source as the plan, so the saving is like-for-like.
+    m = build_distance_matrix([hub] + [(s.lat, s.lon) for s in stops], vehicle.vehicle_type)
+    separate = float(sum(m.distance_km[0][i] + m.distance_km[i][0] for i in range(1, len(stops) + 1)))
+    directions = road_directions([hub] + [(s.lat, s.lon) for s in stops] + [hub])
+    ex = explain_route(request.hub_name, hub, stops, info, vehicle, request.vehicle.label or request.vehicle.id, ev,
+                       _hhmm(request.departure), separate, directions=directions, distance_source=m.source)
     return ExplainResponse(
         summary=ex.summary,
         stop_reasons=[{"stop_id": sid, "reason": text} for sid, text in ex.stop_reasons],
         driver_instructions=ex.driver_instructions,
         citations=[CitationResponse(**c.__dict__) for c in ex.citations],
         evaluation=_evaluation_response(ev),
+        legs=[LegGuideResponse(**leg.__dict__) for leg in ex.legs],
+        directions_source=ex.directions_source,
+        distance_source=m.source,
     )
 
 
@@ -230,6 +265,7 @@ def disruption(request: DisruptionRequest, caller: Optional[User] = Depends(get_
         routes=[RouteState(
             vehicle=_vehicle(r.vehicle), label=r.vehicle.label or r.vehicle.id, stops=_stops(r.stops), depart_min=_hhmm(r.departure),
             completed={k: _hhmm(v) for k, v in r.completed.items()}, names={s.id: (s.name or s.id) for s in r.stops},
+            driver=r.vehicle.driver_name or "",
         ) for r in request.routes],
         spare_vehicles=[_vehicle(v) for v in request.spare_vehicles],
         now_min=_hhmm(request.now),

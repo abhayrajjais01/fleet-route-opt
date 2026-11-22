@@ -86,9 +86,14 @@ class InMemoryVectorStore:
         return [SearchHit(self._chunks[i], round(float(scores[i]), 4)) for i in order if mask[i]]
 
 
+HEADING_WEIGHT = 3  # section headings summarise the rule, so their terms count this many times (field boosting)
+
+
 def embedding_text(chunk: Chunk) -> str:
     """
     Text actually embedded for a chunk. The document title and section heading carry strong topical signal
-    (e.g. "Hazardous Materials ... Transport Policy"), so they are prepended to the section body.
+    (e.g. "Hazardous Materials ... Transport Policy"), so they are prepended to the section body, with the
+    heading repeated HEADING_WEIGHT times (chosen on the development + validation sets: 1x -> 3x raised
+    validation Recall@1 from 0.76 to 0.81 with no development regressions).
     """
-    return f"{chunk.doc_title}. {chunk.heading}. {chunk.text}"
+    return f"{chunk.doc_title}. {'. '.join([chunk.heading] * HEADING_WEIGHT)}. {chunk.text}"

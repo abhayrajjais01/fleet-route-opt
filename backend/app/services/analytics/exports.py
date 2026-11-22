@@ -31,6 +31,13 @@ def _hhmm(m: float | None) -> str:
     return f"{m // 60:02d}:{m % 60:02d}"
 
 
+def _safe_cell(value):
+    """Neutralise spreadsheet formula injection (OWASP): text starting with = + - @ or a control char is prefixed with '."""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
+
+
 def stops_csv(trips: Iterable[TripRecord]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
@@ -38,11 +45,11 @@ def stops_csv(trips: Iterable[TripRecord]) -> str:
     for t in trips:
         for s in t.stops:
             late = max(0.0, (s.arrival or 0) - s.window_close) if s.arrival is not None else ""
-            w.writerow([
+            w.writerow([_safe_cell(v) for v in [
                 t.date, t.trip_id, t.hub, t.vehicle_id, t.vehicle_type, t.driver, s.shipment_id, s.customer, s.priority,
                 s.weight_kg, _hhmm(s.window_close), _hhmm(s.arrival), round(late, 1) if late != "" else "",
                 s.delivered, s.in_full, s.on_time, s.otif, t.distance_km, t.duration_min,
-            ])
+            ]])
     return buf.getvalue()
 
 

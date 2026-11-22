@@ -87,6 +87,7 @@ class RouteState:
     depart_min: int
     completed: Dict[str, float] = field(default_factory=dict)   # stop id -> actual departure minute
     names: Dict[str, str] = field(default_factory=dict)         # stop id -> customer name
+    driver: str = ""                                             # driver's name, so "Vikram's truck" resolves
 
 
 @dataclass
@@ -137,9 +138,15 @@ def resolve_vehicle(ref: Optional[str], ctx: FleetContext) -> RouteState:
     if not ref:
         raise AgentError("Which vehicle? Mention its plate or id, e.g. 'MH-04-AB-2045 broke down'.")
     key = _norm(ref)
-    for r in ctx.routes:
-        if key in (_norm(r.vehicle.id), _norm(r.label)) or (key and key in _norm(r.label)):
-            return r
+    # Exact id or plate first. A short id like "2" must never match inside another plate ("MH-02-EE-1001").
+    exact = [r for r in ctx.routes if key in (_norm(r.vehicle.id), _norm(r.label))]
+    if exact:
+        return exact[0]
+    partial = [r for r in ctx.routes if len(key) >= 4 and key in _norm(r.label)]
+    if len(partial) == 1:
+        return partial[0]
+    if len(partial) > 1:
+        raise AgentError(f"'{ref}' matches more than one vehicle: {', '.join(r.label for r in partial)}.")
     raise AgentError(f"No dispatched vehicle matches '{ref}'.")
 
 
@@ -298,8 +305,131 @@ def execute_tool(name: str, args: Dict[str, Any], ctx: FleetContext) -> Proposal
     raise AgentError(f"Unknown tool {name}")
 
 
+# ─────────────────────────────── Understanding messages ─────────────────────────────── #
+# Fleet-aware parsing of free text. The Router Agent (Track B) classifies general copilot intents; for
+# disruptions the agent also knows which vehicles are actually on the road, so it can resolve "2045",
+# "the box truck" or "Vikram's truck", read "half an hour" or "1h30", and ask instead of guessing.
+
+_BREAKDOWN_RE = re.compile(
+    r"\b(broke(?:n)?\s*down|breakdown|break\s*down|engine\s+(?:died|dead|failure|failed|stopped|seized)|overheat(?:ed|ing)?|"
+    r"flat\s+(?:tyre|tire)|puncture[ds]?|won'?t\s+start|will\s+not\s+start|stalled|accident|crash(?:ed)?|collision|"
+    r"tow(?:ed|ing)?|out\s+of\s+service|can'?t\s+continue|cannot\s+continue|gearbox|clutch\s+(?:failed|gone)|battery\s+(?:dead|died))\b", re.I)
+_DELAY_RE = re.compile(r"\b(delay(?:ed|s)?|late|stuck|traffic|jam|congestion|held\s+up|waiting|queue|slow(?:ed)?(?:\s+down)?|behind\s+schedule)\b", re.I)
+_REROUTE_RE = re.compile(r"\b(re-?route|re-?optimi[sz]e|re-?sequence|re-?order|rearrange|reshuffle|change\s+the\s+order|better\s+(?:sequence|order|route))\b", re.I)
+_NEGATION_RE = re.compile(r"\b(?:not|no|isn'?t|wasn'?t|hasn'?t|never)\s+(?:\w+\s+){0,2}$", re.I)
+_DENIAL_AFTER_RE = re.compile(r"^\W{0,3}\s*(?:no|nope|not really|false alarm)\b", re.I)   # "accident? no, just traffic"
+
+_NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+                 "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
+                 "ninety": 90, "a": 1, "an": 1}
+_UNIT_MIN = r"(?:m|min|mins|minute|minutes)"
+_UNIT_HR = r"(?:h|hr|hrs|hour|hours)"
+
+
+def _words_to_numbers(text: str) -> str:
+    """'forty five minutes' -> '45 minutes' (tens + units only; enough for delay reports)."""
+    def tens_units(m: re.Match) -> str:
+        return str(_NUMBER_WORDS[m.group(1).lower()] + (_NUMBER_WORDS[m.group(2).lower()] if m.group(2) else 0))
+    units = "one|two|three|four|five|six|seven|eight|nine"
+    text = re.sub(rf"\b(twenty|thirty|forty|fifty)(?:[\s-]+({units}))?\b", tens_units, text, flags=re.I)
+    return re.sub(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|sixty|ninety)\b",
+                  lambda m: str(_NUMBER_WORDS[m.group(1).lower()]), text, flags=re.I)
+
+
+def parse_minutes(text: str) -> Optional[int]:
+    """Delay length in minutes from free text, or None when the message gives no duration."""
+    t = _words_to_numbers(text.lower())
+    phrases = [(r"\bhour and a half\b|\b1\.5\s*" + _UNIT_HR + r"\b", 90), (r"\bhalf\s+(?:an\s+)?hour\b", 30),
+               (r"\bquarter\s+(?:of\s+)?(?:an\s+)?hour\b", 15), (r"\bcouple\s+of\s+hours\b", 120),
+               (r"\b(?:an|1|one)\s+hour\b(?!\s*(?:and|\d))", 60)]
+    for pattern, minutes in phrases:
+        if re.search(pattern, t):
+            return minutes
+    m = re.search(rf"\b(\d+(?:\.\d+)?)\s*{_UNIT_HR}\s*(?:and\s*)?(\d+)\s*{_UNIT_MIN}?\b", t)       # 2 hours and 15 minutes, 1h30
+    if m:
+        return int(round(float(m.group(1)) * 60 + int(m.group(2))))
+    m = re.search(rf"\b(\d+(?:\.\d+)?)\s*{_UNIT_HR}\b", t)
+    if m:
+        return int(round(float(m.group(1)) * 60))
+    m = re.search(rf"\b(\d+)\s*{_UNIT_MIN}\b", t)
+    if m:
+        return int(m.group(1))
+    # "running 25 late", "delayed by 45": a bare number next to a delay word is minutes (the dispatcher approves anyway)
+    m = re.search(r"\b(?:running|by|about|around)\s+(\d{1,3})\s+late\b|\b(?:late|delay(?:ed)?|behind)\s+(?:by\s+)?(\d{1,3})\b(?!\s*(?:km|kg|%|stops?|orders?))", t)
+    if m:
+        return int(m.group(1) or m.group(2))
+    return None
+
+
+_TYPE_WORDS = {"VAN": r"\bvan\b", "BOX_TRUCK": r"\bbox\s*truck\b|\blorry\b", "SEMI_TRUCK": r"\bsemi\b|\btrailer\b|\bhauler\b",
+               "EV": r"\bev\b|\belectric\b"}
+
+
+def find_vehicle(text: str, ctx: FleetContext) -> RouteState:
+    """
+    The dispatched vehicle a message is about: full plate or id, a distinctive part of the plate ("2045",
+    "AB-2045"), the driver's name, or the vehicle type when only one such vehicle is out. Raises AgentError
+    (asking which one) when nothing or more than one vehicle matches, so the agent never guesses.
+    """
+    low, flat = text.lower(), _norm(text)
+    tokens = {_norm(t) for t in re.findall(r"[A-Za-z0-9-]+", text) if len(_norm(t)) >= 3}
+
+    def unique(cands: List[RouteState]) -> Optional[RouteState]:
+        found = list({id(r): r for r in cands}.values())
+        if len(found) > 1:
+            raise AgentError(f"Which vehicle do you mean: {' or '.join(r.label for r in found)}?")
+        return found[0] if found else None
+
+    # 1. Whole plate or vehicle id written anywhere (any spacing or dashes).
+    hit = unique([r for r in ctx.routes if _norm(r.label) and _norm(r.label) in flat] or
+                 [r for r in ctx.routes if _norm(r.vehicle.id) in tokens and len(_norm(r.vehicle.id)) >= 2])
+    if hit:
+        return hit
+    # 2. A distinctive plate fragment: the 4-digit number, a series like "AB-2045" or a prefix like "MH-04".
+    frags = [tok for tok in tokens if any(ch.isdigit() for ch in tok) and len(tok) >= 4]
+    hit = unique([r for r in ctx.routes for tok in frags if _norm(r.label).endswith(tok) or _norm(r.label).startswith(tok)])
+    if hit:
+        return hit
+    # 3. The driver's first or last name.
+    hit = unique([r for r in ctx.routes if r.driver and any(re.search(rf"\b{re.escape(part)}\b", low) for part in r.driver.lower().split() if len(part) >= 3)])
+    if hit:
+        return hit
+    # 4. The vehicle type, when only one vehicle of that type is out.
+    for vtype, pattern in _TYPE_WORDS.items():
+        if re.search(pattern, low):
+            hit = unique([r for r in ctx.routes if r.vehicle.vehicle_type == vtype])
+            if hit:
+                return hit
+    if re.search(r"\b[A-Z]{2}[- ]?\d{2}[- ]?[A-Z]{1,2}[- ]?\d{4}\b", text, re.I):
+        raise AgentError("That vehicle is not on a dispatched route right now.")
+    raise AgentError("Which vehicle? Mention its plate (e.g. '2045'), the driver or the vehicle type.")
+
+
+def _mentions(pattern: re.Pattern, text: str) -> bool:
+    """True when the pattern occurs without a negation just before it ("not broken down")."""
+    return any(not _NEGATION_RE.search(text[:m.start()]) and not _DENIAL_AFTER_RE.search(text[m.end():]) for m in pattern.finditer(text))
+
+
+def understand(message: str, ctx: FleetContext) -> Tuple[str, str, Dict[str, Any]]:
+    """Message -> (intent, tool, arguments) grounded in the current fleet. Asks (AgentError) rather than guesses."""
+    breakdown, delay, reroute = _mentions(_BREAKDOWN_RE, message), _mentions(_DELAY_RE, message), _mentions(_REROUTE_RE, message)
+    minutes = parse_minutes(message)
+    if not (breakdown or delay or reroute or minutes):
+        raise AgentError("I handle breakdowns, delays and re-route requests. Try '2045 broke down' or '1001 delayed 30 min'.")
+    route = find_vehicle(message, ctx)
+    vid = route.vehicle.id
+    if breakdown:
+        return "VEHICLE_BREAKDOWN", "reassign_stops", {"vehicle_id": vid}
+    if delay or minutes:
+        if not minutes:
+            raise AgentError(f"How late is {route.label}? Add the minutes, e.g. '{route.label} delayed 30 min'.")
+        return "TRAFFIC_DELAY", "apply_delay", {"vehicle_id": vid, "minutes": minutes}
+    return "REROUTE_REQUEST", "reoptimize_route", {"vehicle_id": vid}
+
+
 # ─────────────────────────────── Planners ─────────────────────────────── #
 def plan_deterministic(message: str) -> Tuple[str, str, Dict[str, Any]]:
+    """Router Agent based planner (kept for callers without fleet context; handle_disruption uses understand())."""
     from app.services.copilot.router_agent import get_router_agent
     from app.schemas.copilot import AgentIntent
 
@@ -307,7 +437,7 @@ def plan_deterministic(message: str) -> Tuple[str, str, Dict[str, Any]]:
     intent, _, _ = router.classify_intent(message)
     ent = router.extract_entities(message)
     vid = ent.vehicle_id or ""
-    if re.search(r"\b(broke(n)?\s*down|breakdown|engine (failure|failed)|flat (tyre|tire)|accident|crash(ed)?|out of service)\b", message, re.I):
+    if _mentions(_BREAKDOWN_RE, message):
         intent = AgentIntent.VEHICLE_BREAKDOWN
     if intent == AgentIntent.VEHICLE_BREAKDOWN:
         return intent.value, "reassign_stops", {"vehicle_id": vid}
@@ -364,7 +494,7 @@ def handle_disruption(message: str, ctx: FleetContext, use_llm: bool = True) -> 
             resolve_vehicle(str(planned[2].get("vehicle_id", "")), ctx)
         except AgentError:
             planned, planner = None, "deterministic"   # never trust an LLM argument we cannot ground in the fleet
-    intent, tool, args = planned or plan_deterministic(message)
+    intent, tool, args = planned or understand(message, ctx)
     proposal = execute_tool(tool, args, ctx)
     proposal.intent, proposal.planner = intent, planner
     return proposal
