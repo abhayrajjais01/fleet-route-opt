@@ -1,0 +1,33 @@
+{
+  "description": "Disruption messages as dispatchers type them (Nov 2026). Fleet: MH-02-EE-1001 (VAN, Rajesh Kumar), MH-04-AB-2045 (BOX_TRUCK, Vikram Singh). expect.tool null = the agent must ask instead of guessing.",
+  "messages": [
+    {"text": "MH-04-AB-2045 broke down near Sion", "tool": "reassign_stops", "vehicle": "MH-04-AB-2045"},
+    {"text": "MH-02-EE-1001 delayed 40 min", "tool": "apply_delay", "vehicle": "MH-02-EE-1001", "minutes": 40},
+    {"text": "re-optimise MH-02-EE-1001", "tool": "reoptimize_route", "vehicle": "MH-02-EE-1001"},
+    {"text": "2045 engine died on the expressway", "tool": "reassign_stops", "vehicle": "MH-04-AB-2045"},
+    {"text": "truck 2045 has a flat tyre, can't continue", "tool": "reassign_stops", "vehicle": "MH-04-AB-2045"},
+    {"text": "the box truck overheated and is being towed", "tool": "reassign_stops", "vehicle": "MH-04-AB-2045"},
+    {"text": "Vikram's truck won't start after the stop at BKC", "tool": "reassign_stops", "vehicle": "MH-04-AB-2045"},
+    {"text": "accident involving AB-2045, vehicle out of service", "tool": "reassign_stops", "vehicle": "MH-04-AB-2045"},
+    {"text": "1001 stuck in traffic for half an hour", "tool": "apply_delay", "vehicle": "MH-02-EE-1001", "minutes": 30},
+    {"text": "Rajesh is running 25 late", "tool": "apply_delay", "vehicle": "MH-02-EE-1001", "minutes": 25},
+    {"text": "the van is held up at the toll plaza, about an hour", "tool": "apply_delay", "vehicle": "MH-02-EE-1001", "minutes": 60},
+    {"text": "MH02EE1001 late by 1h30 due to rain", "tool": "apply_delay", "vehicle": "MH-02-EE-1001", "minutes": 90},
+    {"text": "2045 waiting at the gate, 1.5 hours delay", "tool": "apply_delay", "vehicle": "MH-04-AB-2045", "minutes": 90},
+    {"text": "box truck caught in a jam on the WEH, twenty minutes", "tool": "apply_delay", "vehicle": "MH-04-AB-2045", "minutes": 20},
+    {"text": "1001 will be forty five minutes late", "tool": "apply_delay", "vehicle": "MH-02-EE-1001", "minutes": 45},
+    {"text": "traffic congestion for vikram, 15 mins", "tool": "apply_delay", "vehicle": "MH-04-AB-2045", "minutes": 15},
+    {"text": "2045 delayed 2 hours and 15 minutes", "tool": "apply_delay", "vehicle": "MH-04-AB-2045", "minutes": 135},
+    {"text": "1001 slowed down by a quarter of an hour", "tool": "apply_delay", "vehicle": "MH-02-EE-1001", "minutes": 15},
+    {"text": "reorder the stops for 2045", "tool": "reoptimize_route", "vehicle": "MH-04-AB-2045"},
+    {"text": "find a better sequence for Rajesh's van", "tool": "reoptimize_route", "vehicle": "MH-02-EE-1001"},
+    {"text": "please reroute the box truck", "tool": "reoptimize_route", "vehicle": "MH-04-AB-2045"},
+    {"text": "resequence MH-02-EE-1001 remaining deliveries", "tool": "reoptimize_route", "vehicle": "MH-02-EE-1001"},
+    {"text": "2045 is not broken down, just 20 min late", "tool": "apply_delay", "vehicle": "MH-04-AB-2045", "minutes": 20},
+    {"text": "vehicle broke down", "tool": null},
+    {"text": "everything is running late today", "tool": null},
+    {"text": "1001 is late", "tool": null},
+    {"text": "MH-09-ZZ-9999 broke down", "tool": null},
+    {"text": "what is the weather like", "tool": null}
+  ]
+}

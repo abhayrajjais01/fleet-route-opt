@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.services.optimizer.distance_matrix import build_distance_matrix
+from app.services.optimizer.traffic import travel_time
 from app.services.optimizer.vrptw_solver import Stop, VehicleSpec
 
 AT_RISK_MARGIN_MIN = 15  # an ETA within 15 min of the window closing is flagged AT_RISK
@@ -130,7 +131,7 @@ def recalculate(
     for seq, s in enumerate(stops, start=1):
         node = seq
         if s.id in completed:
-            leg_km, leg_min = float(dist[at, node]), float(dur[at, node])
+            leg_km, leg_min = float(dist[at, node]), travel_time(float(dur[at, node]), t)
             departure = float(completed[s.id])
             arrival = departure - s.service_min
             sla, late = classify_sla(arrival, s.window_close, completed=True)
@@ -146,7 +147,7 @@ def recalculate(
             if pos_idx is not None:
                 at = pos_idx
             resumed = True
-        leg_km, leg_min = float(dist[at, node]), float(dur[at, node])
+        leg_km, leg_min = float(dist[at, node]), travel_time(float(dur[at, node]), t)
         arrival = t + leg_min
         is_failed = s.id in failed_set
         start = arrival if is_failed else max(arrival, s.window_open)
@@ -158,7 +159,7 @@ def recalculate(
         total_km += leg_km
         t, at = departure, node
 
-    back_km, back_min = float(dist[at, 0]), float(dur[at, 0])
+    back_km, back_min = float(dist[at, 0]), travel_time(float(dur[at, 0]), t)
     total_km += back_km
     return_min = t + back_min
     duration = return_min - depart_min

@@ -148,34 +148,88 @@ def chunk_document(doc: SourceDocument, max_words: int = 120, overlap_sentences:
 
 
 # ==================== TEXT NORMALISATION ==================== #
-# Domain synonyms are rewritten to one canonical token so "dangerous goods" and "hazmat" match each other.
+# Domain thesaurus: everyday words dispatchers and drivers use, rewritten to the vocabulary the SOPs use, so
+# "the fridge truck got too warm" finds the temperature-excursion rule. Applied to documents and queries
+# alike, in order, after lower-casing. Replacements keep the original word where the SOPs also use it.
 _SYNONYMS: Sequence[tuple[str, str]] = (
-    (r"\bdangerous goods?\b", "hazmat"),
+    # --- hazardous materials ---
+    (r"\bdangerous (?:goods?|cargo|loads?)\b", "hazmat"),
     (r"\bhazardous (?:materials?|goods|substances?|cargo)\b", "hazmat"),
     (r"\bhazchem\b", "hazmat"),
+    (r"\b(?:chemicals?|acids?|ammonia|chlorine|corrosives?|corrosive cargo|paint thinners?|solvents?|lithium batter(?:y|ies)|gas cylinders?|lpg|explosives?)\b",
+     lambda m: f"{m.group(0)} hazmat"),
+    (r"\bflammables?\b", "flammable"),
+    (r"\b(?:tankers?)\b", "tanker hazmat"),
+    (r"\b(?:orange[- ]coloured plates?|orange plates?|hazard signs?|placards?)\b", "placard"),
+    (r"\b(?:hazard labels?|warning labels?)\b", "label placard"),
+    (r"\b(?:paperwork|papers|documents?)\b", "shipping papers document"),
+    (r"\b(?:spill(?:ed|s)?|leak(?:ing|s|ed)?|overturned|rolled over)\b", "spill leak incident"),
+    (r"\b(?:stand back|keep (?:people )?away|how far back|evacuation radius|radius)\b", "isolation distance evacuation"),
+    (r"\b(?:control room|head office|the office)\b", "dispatch"),
+    (r"\b(?:government|authorit(?:y|ies)|regulators?|police)\b", "authority regulatory"),
+    (r"\b(?:clean[- ]?up|decontaminat\w*)\b", "decontaminate"),
+    (r"\b(?:extinguishers?|spill kits?)\b", "extinguisher equipment"),
+    (r"\b(?:unattended|left alone|dhaba|park(?:ed|ing)? overnight)\b", "parking attendance unattended"),
+    # --- driver hours, fatigue, fitness ---
     (r"\bhours[- ]of[- ]service\b", "hos"),
-    (r"\bworking hours?\b", "hos"),
-    (r"\bdriving hours?\b", "hos driving"),
-    (r"\brefrigerated (?:vehicles?|trucks?|units?)\b", "reefer"),
+    (r"\b(?:working|work|driving) (?:hours?|limits?|time)\b", "hos driving"),
+    (r"\b(?:how many hours|hours (?:a|per) day|legal hours|hour limits?|hour rules?|overtime)\b", "hos driving"),
+    (r"\b(?:tachographs?|logbooks?|eld)\b", "tachograph electronic logging"),
+    (r"\b(?:exceed(?:s|ed|ing)?|go(?:es)? over|drove too long|driving too long|past the (?:legal )?(?:hours|limit))\b", "exceed violation"),
+    (r"\b(?:written down|write down|note(?:d)? down)\b", "logged"),
+    (r"\b(?:told|tell|inform(?:ed)?|let \w+ know)\b", "notify"),
+    (r"\b(?:how quickly|how fast|how soon)\b", "within minutes"),
+    (r"\b(?:germany|france|spain|italy|europe(?:an)?|eu)\b", "eu european"),
+    (r"\b(?:usa|u\.s\.|united states|americans?|us trucker)\b", "us fmcsa"),
+    (r"\b(?:india|indian)\b", "india"),
+    (r"\btired(?:ness)?\b|\bdrowsy\b|\bsleepy\b|\byawn\w*|\bdozing\b|\bnodding off\b", "fatigue"),
+    (r"\bdrift(?:ing|s|ed)? (?:across|out of) lanes?\b", "fatigue drifting lane"),
+    (r"\b(?:drink|drinking|drunk|alcohol|hangover|medication|medicines? that|cough syrup)\b", "alcohol medication fit duty"),
+    (r"\b(?:[0-4](?::\d\d)? ?am|midnight|overnight|late at night|night time)\b", "night"),
+    (r"\b(?:between (?:two )?shifts|start again|back[- ]to[- ]back|rest gap|gap between)\b", "shift rest"),
+    # --- cold chain ---
+    (r"\brefrigerated (?:vehicles?|trucks?|units?|trailers?)\b", "reefer"),
+    (r"\brefrigeration (?:units?|systems?)\b", "reefer unit"),
+    (r"\b(?:fridge|freezer|cold box|cold room|reefer) ?(?:trucks?|vans?|units?|trailers?)?\b", "reefer"),
     (r"\bcold[- ]chain\b", "coldchain"),
     (r"\btemperature[- ]controlled\b", "coldchain"),
-    (r"\bfridge\b", "reefer"),
-    (r"\b(?:petrol|gasoline|diesel|fuel|paint|solvents?)\b", "flammable liquid"),
-    (r"\bbroke down\b|\bbroken down\b", "breakdown"),
-    (r"\bbreaks? down\b", "breakdown"),
-    (r"\bnot (?:at )?home\b|\bnot available\b|\bunavailable\b", "absent"),
+    (r"\b(?:vaccines?|insulin|medicines?|pharma)\b", "vaccine pharmaceutical"),
+    (r"\b(?:ice[- ]?creams?|frozen)\b", "frozen"),
+    (r"\b(?:dairy|chilled|milk)\b", "chilled"),
+    (r"\b(?:too (?:warm|hot|cold)|got (?:warm|hot)|warmed up|stopped working|out of range)\b", "excursion"),
+    (r"\b(?:data loggers?|loggers?|temperature readings?)\b", "data logger monitoring"),
+    (r"\b(?:cool(?:ing)? (?:down|the)|pre[- ]?cool\w*)\b", "pre-cool"),
+    # --- operations ---
+    (r"\bbroke down\b|\bbroken down\b|\bbreaks? down\b", "breakdown"),
+    (r"\b(?:engine (?:died|failed|stopped)|flat tyres?|puncture|won'?t start|cannot move|stalled)\b", "breakdown"),
+    (r"\b(?:running late|stuck in traffic|traffic jam|(?:\d+ )?minutes? late|reach \w+ late)\b", "delay late"),
+    (r"\b(?:different road|wrong road|detour|off the planned (?:route|path|road)|off route|off the route)\b", "deviation"),
+    (r"\bnot (?:at )?home\b|\bnot available\b|\bunavailable\b|\bnobody (?:there|home)\b", "absent"),
+    (r"\b(?:refused|rejected|returned the)\b", "refused failed delivery"),
+    (r"\b(?:hand(?:ing)? ?over|handover|signature|otp|one[- ]time pin|photo)\b", "proof delivery"),
+    (r"\breassign(?:ment|ing|ed)?\b", "re-assignment"),
+    (r"\bsigns? off\b", "approval"),
     (r"\bon[- ]time in[- ]full\b", "otif"),
+    (r"\b(?:items? short|short delivery|incomplete order|missing items?)\b", "in full otif"),
     (r"\bservice level agreements?\b", "sla"),
+    (r"\b(?:promised window|counted as late|delivered late|after the (?:promised )?window)\b", "sla breach late"),
+    (r"\b(?:delivery )?slots?\b", "time window"),
+    (r"\bsame[- ]day\b", "express same-day"),
+    # --- vehicle and load safety ---
     (r"\bkgs?\b|\bkilograms?\b", "kg"),
-    (r"\bplacards?\b|\borange[- ]coloured plates?\b", "placard"),
-    (r"\btired(?:ness)?\b|\bdrowsy\b|\bsleepy\b", "fatigue"),
+    (r"\b(?:overload(?:ed|ing)?|too heavy|heavier than|over the limit|extra (?:kg|weight|load))\b", "overload payload"),
+    (r"\b(?:strap(?:s|ped|ping)?|tie(?:d)? down|stack(?:ed|ing)?|sliding|shifting|pallets?)\b", "secure load distribution"),
+    (r"\b(?:every morning|before leaving|daily check|tyre pressure|lights? check|walk[- ]?around)\b", "pre-trip inspection"),
+    (r"\b(?:brakes? (?:feel )?(?:soft|spongy|weak)|warning light|dashboard light|faults?|defects?)\b", "defect maintenance"),
+    (r"\b(?:electric (?:vans?|vehicles?|trucks?)|ev|evs|battery|charge|charging)\b", "ev electric range"),
 )
 
 _STOPWORDS = frozenset(
     """a an and are as at be been before being by can could do does for from had has have how i if in into is it its
     may me must my no not of on or our shall should so such than that the their them then there these they this to
     under until up was we were what when where which while who whom why will with within would you your all any each
-    every per via also only more most other same""".split()
+    every per via also only more most other same now got get gets please tell know need want happen happens
+    still just really today yesterday tomorrow ok okay going""".split()
 )
 
 _TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9_\-]*")

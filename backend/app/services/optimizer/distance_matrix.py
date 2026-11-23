@@ -1,9 +1,15 @@
 """
-distance_matrix.py - Haversine Distance & Travel Duration Engine (US-003 / US-004, Track A: Manthan Nimodiya)
+distance_matrix.py - Road Distance & Travel Duration Engine (US-003 / US-004, Track A: Manthan Nimodiya)
 
-Produces the pairwise cost matrices the VRPTW solver (Week 6) consumes:
-    distance_km[i][j]  - estimated ROAD distance from point i to point j
-    duration_min[i][j] - estimated driving time for the selected vehicle type
+Produces the pairwise cost matrices the VRPTW solver, ETA engine and agent consume:
+    distance_km[i][j]  - ROAD distance from point i to point j (may differ from j -> i: one-way streets)
+    duration_min[i][j] - driving time for the selected vehicle type
+
+Two sources, same interface (`DistanceMatrix.source` says which was used):
+- "osrm": real road distances from OSRM's /table service on OpenStreetMap data (see osrm_client.py). Time is
+  our Indian-traffic speed model applied to the real road distance, never faster than OSRM's free-flow time.
+- "estimate": the offline model below. Used when OSRM is disabled, down, or the point set is too large, and
+  for any pair OSRM cannot route. Deterministic, so tests and simulations are reproducible.
 
 How the estimate is built (no paid routing API, fully deterministic):
 1. Great-circle distance with the haversine formula on a spherical Earth (mean radius 6371.0088 km).
@@ -28,6 +34,8 @@ from functools import lru_cache
 from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
+
+from app.services.optimizer import osrm_client
 
 EARTH_RADIUS_KM = 6371.0088  # IUGG mean Earth radius
 
@@ -84,6 +92,7 @@ class DistanceMatrix:
     distance_km: np.ndarray   # n x n detour-corrected road distances
     duration_min: np.ndarray  # n x n driving minutes for the vehicle type
     vehicle_type: str
+    source: str = "estimate"  # "osrm" = real road network, "estimate" = haversine model
 
     @property
     def size(self) -> int:
@@ -113,24 +122,64 @@ def _cached_matrix(coord_key: Tuple[Tuple[float, float], ...], vehicle_type: str
     return DistanceMatrix(straight_km=straight, distance_km=road, duration_min=duration, vehicle_type=vehicle_type)
 
 
-def build_distance_matrix(points: Sequence[Tuple[float, float]], vehicle_type: str = "VAN") -> DistanceMatrix:
+def road_minutes(road_km, straight_km, free_flow_min, vehicle_type: str = "VAN"):
+    """
+    Drive time on a known road distance: our traffic-calibrated speed for a leg of that length, but never
+    faster than the free-flow time the router reports. Works on scalars and NumPy arrays.
+    """
+    vf = VEHICLE_SPEED_FACTOR.get(vehicle_type, 1.0)
+    modelled = road_km / (np.interp(straight_km, ANCHOR_KM, SPEED_KMH) * vf) * 60.0
+    return np.maximum(modelled, free_flow_min / vf)
+
+
+@lru_cache(maxsize=256)
+def _road_matrix(coord_key: Tuple[Tuple[float, float], ...], vehicle_type: str) -> DistanceMatrix:
+    """Road matrices from OSRM /table; pairs OSRM cannot route keep the estimate. Raises OsrmUnavailable."""
+    data = osrm_client.table(coord_key)
+    est = _cached_matrix(coord_key, vehicle_type)
+    dist_m = np.array(data["distances"], dtype=np.float64)   # None -> nan
+    dur_s = np.array(data["durations"], dtype=np.float64)
+    n = len(coord_key)
+    if dist_m.shape != (n, n) or dur_s.shape != (n, n):
+        raise osrm_client.OsrmUnavailable(f"table shape {dist_m.shape} for {n} points")
+    routed = np.isfinite(dist_m) & np.isfinite(dur_s)
+    road = np.where(routed, dist_m / 1000.0, est.distance_km)
+    duration = np.where(routed, road_minutes(road, est.straight_km, np.nan_to_num(dur_s) / 60.0, vehicle_type), est.duration_min)
+    straight = np.array(est.straight_km)
+    for m in (straight, road, duration):
+        np.fill_diagonal(m, 0.0)
+        m.setflags(write=False)
+    return DistanceMatrix(straight_km=straight, distance_km=road, duration_min=duration, vehicle_type=vehicle_type, source="osrm")
+
+
+def build_distance_matrix(points: Sequence[Tuple[float, float]], vehicle_type: str = "VAN", roads: bool = True) -> DistanceMatrix:
     """
     Builds (or fetches from cache) the distance/duration matrices for an ordered list of (lat, lon) points.
     Row/column i always refers to points[i], so callers keep their own id <-> index mapping.
+
+    roads=True uses real road distances when OSRM is available and falls back to the estimate otherwise;
+    roads=False always uses the estimate (bulk simulations that must be fast and reproducible).
     """
     if len(points) < 1:
         raise ValueError("At least one point is required")
     key = tuple((round(float(lat), COORD_PRECISION), round(float(lon), COORD_PRECISION)) for lat, lon in points)
+    if roads and len(key) >= 2 and osrm_client.enabled():
+        try:
+            return _road_matrix(key, vehicle_type)
+        except osrm_client.OsrmUnavailable:
+            pass
     return _cached_matrix(key, vehicle_type)
 
 
 def cache_stats() -> Dict[str, int]:
-    info = _cached_matrix.cache_info()
-    return {"hits": info.hits, "misses": info.misses, "entries": info.currsize, "max_entries": info.maxsize or 0}
+    est, road = _cached_matrix.cache_info(), _road_matrix.cache_info()
+    return {"hits": est.hits + road.hits, "misses": est.misses + road.misses, "entries": est.currsize + road.currsize,
+            "max_entries": (est.maxsize or 0) + (road.maxsize or 0)}
 
 
 def clear_cache() -> None:
     _cached_matrix.cache_clear()
+    _road_matrix.cache_clear()
 
 
 def nearest_neighbours(matrix: DistanceMatrix, origin: int, k: int | None = None) -> List[int]:

@@ -18,7 +18,7 @@ from app.services.rag.embeddings import (
     parse_sop_markdown,
     tokenize,
 )
-from app.services.rag.evaluation import evaluate
+from app.services.rag.evaluation import TEST_PATH, VALIDATION_PATH, evaluate
 from app.services.rag.knowledge_base import CATEGORY_LABELS, get_knowledge_base
 from app.services.rag.vector_store import InMemoryVectorStore, cosine_similarity
 
@@ -147,6 +147,33 @@ def test_retrieval_benchmark_meets_quality_and_latency_targets():
     assert report.recall_at_3 >= 0.9, report.misses
     assert report.mrr >= 0.8
     assert report.p95_latency_ms < 100, "vector search must stay under the 100 ms PRD target"
+
+
+def test_natural_phrasing_quality_does_not_regress():
+    """
+    Validation and test sets use everyday dispatcher/driver wording (Nov 2026). Before the domain thesaurus and
+    heading boost they scored R@1 0.42 / 0.48; these floors sit a little under the current 0.83 / 0.80.
+    """
+    for path, floor_r1, floor_r3 in ((VALIDATION_PATH, 0.78, 0.9), (TEST_PATH, 0.75, 0.88)):
+        report = evaluate(path=path)
+        assert report.recall_at_1 >= floor_r1, (path.name, report.recall_at_1, report.misses)
+        assert report.recall_at_3 >= floor_r3, (path.name, report.recall_at_3, report.misses)
+
+
+def test_everyday_words_reach_the_right_sop():
+    """Within the top 3, like Recall@3 (the fridge question ranks the excursion rule 2nd, after the bands)."""
+    kb = get_knowledge_base()
+    for query, chunk in [("fridge truck stopped working with vaccines inside", "SOP-CC-001#4"),
+                         ("engine died on the expressway", "SOP-OP-001#1"),
+                         ("orange plates for chemicals", "SOP-HZ-001#3"),
+                         ("brakes feel soft, who do I tell", "SOP-VS-001#4")]:
+        assert chunk in [h.chunk.chunk_id for h in kb.search(query, top_k=3)], query
+
+
+def test_fuel_price_question_does_not_match_hazmat_rules():
+    """'diesel' used to be rewritten to 'flammable liquid', so a fuel-price question matched the hazmat policy."""
+    hits = get_knowledge_base().search("what is the diesel price in Pune today", top_k=1)
+    assert not hits or hits[0].score < 0.18
 
 
 def test_unanswerable_questions_score_below_every_answerable_question():

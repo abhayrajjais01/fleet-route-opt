@@ -106,8 +106,31 @@ def test_explanation_is_grounded_and_complete():
     assert "saves" in ex.summary
     assert len(ex.stop_reasons) == 3 and "high priority" in ex.stop_reasons[0][1]
     assert len(ex.driver_instructions) == 5   # load + 3 stops + return
-    assert ex.driver_instructions[1].startswith("1. Head ")
+    assert ex.driver_instructions[1].startswith("1. Drive ")
     assert ex.citations and all(c.doc_id.startswith("SOP-") for c in ex.citations)
+    # Offline: every leg (3 stops + return) still has a direction, as a compass heading.
+    assert ex.directions_source == "estimate" and len(ex.legs) == 4
+    assert all(leg.steps and leg.steps[0].startswith("Head ") for leg in ex.legs)
+    assert "morning peak" in ex.summary  # leaves 08:30
+
+
+def test_explanation_uses_street_directions_when_available():
+    route = [MYNTRA, TCS, NYKAA]
+    ev = evaluate(HUB, route, VAN, 13 * 60)
+    dirs = [["Head south on S V Road for 300 m", "Turn left onto Western Express Highway (WEH) for 6.2 km"],
+            ["Turn right onto LBS Marg for 2.0 km"], ["Continue onto Link Road for 900 m"], ["Turn left onto JVLR for 4.1 km"]]
+    ex = explain_route("Mumbai Central Depot", HUB, route, {}, VAN, "MH-02", ev, 13 * 60, directions=dirs, distance_source="osrm")
+    assert ex.directions_source == "osrm"
+    assert "via Western Express Highway (WEH)" in ex.driver_instructions[1]   # longest road on the leg
+    assert ex.legs[0].steps == dirs[0] and ex.legs[-1].to == "Mumbai Central Depot"
+    assert "peak" not in ex.summary and "follow the road network" in ex.summary  # midday departure
+
+
+def test_mismatched_directions_fall_back_to_compass():
+    route = [MYNTRA, TCS]
+    ev = evaluate(HUB, route, VAN, 600)
+    ex = explain_route("Hub", HUB, route, {}, VAN, "V", ev, 600, directions=[["Turn left onto X for 1.0 km"]])
+    assert ex.directions_source == "estimate" and ex.legs[0].steps[0].startswith("Head ")
 
 
 # ==================== Week 9: optimization agent ==================== #

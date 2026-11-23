@@ -1,13 +1,14 @@
 // ─── LIVE TRACKING MAP ────────────────────────────────────────────────────────
 // Calm by default: every trip shows a faint route and small stop dots; the selected (or hovered) trip gets
 // numbered pins in its stop-state colours and a bold route. The static layer is rebuilt only when routes,
-// stop states or focus change; vehicles move every tick by updating existing markers.
+// stop states or focus change; vehicles move every tick by updating existing markers, animated along the road
+// geometry between ticks so a truck drives the street network instead of jumping across it.
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { escapeHtml, hubIcon, pinIcon, vehicleIcon } from '../map/markers'
 import { addBasemap } from '../map/tiles'
-import { clock } from '../../lib/geo'
+import { clock, haversineKm, type LatLng } from '../../lib/geo'
 import type { StopState, TripView } from './simulation'
 
 export const STOP_COLOR: Record<StopState, string> = {
@@ -17,6 +18,44 @@ export const STOP_COLOR: Record<StopState, string> = {
 export interface MapInsets { left: number; right: number; bottom: number; top: number }
 
 const DEFAULT_INSETS: MapInsets = { left: 0, right: 0, bottom: 0, top: 0 }
+const GLIDE_MS = 240          // just under the simulation tick (250 ms), so each glide ends before the next starts
+const SNAP_KM = 0.3           // farther than this from the driven path = a jump (scrub, reset): move instantly
+
+type Tracked = { marker: L.Marker; iconKey: string; at: LatLng; anim: number | null }
+
+/**
+ * The stretch of road from `from` to the end of `pathDone` (the vehicle's new position). pathDone is the road
+ * already driven, so the piece after the point nearest `from` is exactly the road covered since the last tick.
+ * Returns null when `from` is not on the path (time moved backwards, route changed): the caller jumps instead.
+ */
+function drivenSince(from: LatLng, pathDone: LatLng[]): LatLng[] | null {
+  let best = -1, bestKm = Infinity
+  for (let i = pathDone.length - 1, n = 0; i >= 0 && n < 4000; i--, n++) {   // newest points first; bounded
+    const km = haversineKm(from, pathDone[i])
+    if (km < bestKm) { bestKm = km; best = i }
+  }
+  if (best < 0 || bestKm > SNAP_KM) return null
+  return [from, ...pathDone.slice(best + 1)]
+}
+
+/** Moves a marker along a polyline over `ms`, at constant speed by distance. Returns the animation frame id. */
+function glide(t: Tracked, path: LatLng[], ms: number) {
+  const cum = [0]
+  for (let i = 1; i < path.length; i++) cum.push(cum[i - 1] + haversineKm(path[i - 1], path[i]))
+  const total = cum[cum.length - 1]
+  const start = performance.now()
+  const step = (now: number) => {
+    const f = Math.min(1, (now - start) / ms), d = f * total
+    let i = 1
+    while (i < cum.length - 1 && cum[i] < d) i++
+    const span = cum[i] - cum[i - 1], k = span > 0 ? (d - cum[i - 1]) / span : 1
+    const a = path[i - 1], b = path[i]
+    const p: LatLng = [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]
+    t.marker.setLatLng(p); t.at = p
+    t.anim = f < 1 ? requestAnimationFrame(step) : null
+  }
+  t.anim = requestAnimationFrame(step)
+}
 
 export default function TrackingMap({ views, colors, selectedId, hoveredId, onSelect, focusKey, insets = DEFAULT_INSETS }: {
   views: TripView[]
@@ -31,11 +70,12 @@ export default function TrackingMap({ views, colors, selectedId, hoveredId, onSe
   const mapRef = useRef<L.Map | null>(null)
   const staticLayer = useRef<L.LayerGroup | null>(null)
   const trailLayer = useRef<L.LayerGroup | null>(null)
-  const vehicles = useRef(new Map<string, { marker: L.Marker; iconKey: string }>())
+  const vehicles = useRef(new Map<string, Tracked>())
   const onSelectRef = useRef(onSelect)
   onSelectRef.current = onSelect
   const fitRef = useRef<() => void>(() => {})
   const focusId = selectedId ?? hoveredId
+  const reducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -55,10 +95,14 @@ export default function TrackingMap({ views, colors, selectedId, hoveredId, onSe
       wasHidden = hidden
     })
     ro.observe(containerRef.current)
-    return () => { ro.disconnect(); map.remove(); mapRef.current = null; vehicles.current.clear() }
+    return () => {
+      ro.disconnect(); map.remove(); mapRef.current = null
+      for (const t of vehicles.current.values()) if (t.anim !== null) cancelAnimationFrame(t.anim)
+      vehicles.current.clear()
+    }
   }, [])
 
-  const staticKey = JSON.stringify([focusId, views.map(v => [v.plan.id, v.stops.map(s => s.state + (s.late ? '!' : ''))])])
+  const staticKey = JSON.stringify([focusId, views.map(v => [v.plan.id, v.path.length, v.plan.legSource, v.stops.map(s => s.shipment.id + s.state + (s.late ? '!' : ''))])])
   useEffect(() => {
     const layer = staticLayer.current
     if (!layer) return
@@ -113,17 +157,25 @@ export default function TrackingMap({ views, colors, selectedId, hoveredId, onSe
       const existing = vehicles.current.get(v.plan.id)
       const icon = () => vehicleIcon(iconColor, v.plan.vehicle.plate_number, moving, selectedId === v.plan.id, focused)
       if (existing) {
-        existing.marker.setLatLng(v.position)
+        if (existing.anim !== null) { cancelAnimationFrame(existing.anim); existing.anim = null }
+        const moved = haversineKm(existing.at, v.position) > 0.001
+        // Glide only when someone can see it: background tabs pause animation frames, so jump instead.
+        const road = moved && !reducedMotion && !document.hidden ? drivenSince(existing.at, v.pathDone) : null
+        if (road && road.length > 1) glide(existing, road, GLIDE_MS)
+        else { existing.marker.setLatLng(v.position); existing.at = v.position }
         if (existing.iconKey !== iconKey) { existing.marker.setIcon(icon()); existing.iconKey = iconKey }
         existing.marker.setOpacity(faded ? 0.45 : 1)
       } else {
         const marker = L.marker(v.position, { icon: icon(), zIndexOffset: 1000 })
           .on('click', e => { L.DomEvent.stopPropagation(e); onSelectRef.current(v.plan.id) })
           .addTo(map)
-        vehicles.current.set(v.plan.id, { marker, iconKey })
+        vehicles.current.set(v.plan.id, { marker, iconKey, at: v.position, anim: null })
       }
     }
-    for (const [id, entry] of vehicles.current) if (!seen.has(id)) { entry.marker.remove(); vehicles.current.delete(id) }
+    for (const [id, entry] of vehicles.current) if (!seen.has(id)) {
+      if (entry.anim !== null) cancelAnimationFrame(entry.anim)
+      entry.marker.remove(); vehicles.current.delete(id)
+    }
   })
 
   fitRef.current = () => {

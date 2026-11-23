@@ -7,6 +7,8 @@ import CopilotSlidingDrawer from './components/copilot/CopilotSlidingDrawer'
 import type { RouteDispatch } from './components/routes/RoutePlannerSection'
 import AuditCompliancePanel from './components/audit/AuditCompliancePanel'
 import { applyAcceptedProposal } from './lib/proposalsApi'
+import { ACCESS_NOTE, accountFor, appAccess, profileFor } from './lib/driverAccess'
+import type { UserRole, VehicleType, VehicleStatus, DriverStatus, LicenseType, ShipmentStatus, ShipmentPriority, AuditAction, AdminSection, Vehicle, Driver, Hub, Shipment, User, AuditEntry } from './lib/types'
 
 // Week 15 (Track B): sections load on first visit, so the first screen ships without the maps, charts and planners.
 const ComplianceInspector = lazy(() => import('./components/compliance/ComplianceInspector'))
@@ -28,7 +30,6 @@ function SectionLoading() {
     </div>
   )
 }
-import type { UserRole, VehicleType, VehicleStatus, DriverStatus, LicenseType, ShipmentStatus, ShipmentPriority, AuditAction, AdminSection, Vehicle, Driver, Hub, Shipment, User, AuditEntry } from './lib/types'
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 interface CopilotMsg { id: string; sender: 'user' | 'assistant'; content: string; timestamp: string; trace?: string; proposal?: { title: string; description: string; status: 'PROPOSED' | 'APPROVED' | 'REJECTED' } }
@@ -48,12 +49,12 @@ const INIT_VEHICLES: Vehicle[] = [
   { id: 6, name: 'City Runner Van', plate_number: 'MH-43-CV-7712', vehicle_type: 'VAN', max_payload_kg: 1200, max_volume_m3: 10, fuel_efficiency_kpl: 13.5, current_status: 'AVAILABLE', assigned_hub_id: 2, fuel_pct: 88 },
 ]
 const INIT_DRIVERS: Driver[] = [
-  { id: 1, full_name: 'Rajesh Kumar', license_number: 'DL-14-2021-9988', license_type: 'COMMERCIAL', phone_number: '+91-98200-11223', status: 'ON_TRIP', max_driving_hours_per_day: 8, assigned_hub_id: 1, current_vehicle_id: 1, rating: 4.8 },
-  { id: 2, full_name: 'Vikramjit Singh', license_number: 'MH04-2015-88319', license_type: 'CLASS_A', phone_number: '+91-98700-44556', status: 'ON_TRIP', max_driving_hours_per_day: 10, assigned_hub_id: 1, current_vehicle_id: 2, rating: 4.6 },
+  { id: 1, full_name: 'Rajesh Kumar', license_number: 'DL-14-2021-9988', license_type: 'COMMERCIAL', phone_number: '+91-98200-11223', status: 'ON_TRIP', max_driving_hours_per_day: 8, assigned_hub_id: 1, current_vehicle_id: 1, rating: 4.8, user_id: 4 },
+  { id: 2, full_name: 'Vikramjit Singh', license_number: 'MH04-2015-88319', license_type: 'CLASS_A', phone_number: '+91-98700-44556', status: 'ON_TRIP', max_driving_hours_per_day: 10, assigned_hub_id: 1, current_vehicle_id: 2, rating: 4.6, user_id: 5 },
   { id: 3, full_name: 'Amit Patil', license_number: 'MH01-2020-55441', license_type: 'CLASS_B', phone_number: '+91-99600-77889', status: 'RESTING', max_driving_hours_per_day: 8, assigned_hub_id: 2, current_vehicle_id: null, rating: 4.4 },
   { id: 4, full_name: 'Suresh Reddy', license_number: 'KA01-2019-33441', license_type: 'COMMERCIAL', phone_number: '+91-98450-99887', status: 'OFF_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 3, current_vehicle_id: null, rating: 4.7 },
-  { id: 5, full_name: 'Priya Mehta', license_number: 'GJ01-2022-12345', license_type: 'CLASS_B', phone_number: '+91-97200-55678', status: 'ON_TRIP', max_driving_hours_per_day: 8, assigned_hub_id: 2, current_vehicle_id: 3, rating: 4.9 },
-  { id: 6, full_name: 'Neha Kulkarni', license_number: 'MH43-2018-77120', license_type: 'COMMERCIAL', phone_number: '+91-98190-33445', status: 'ON_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 2, current_vehicle_id: null, rating: 4.7 },
+  { id: 5, full_name: 'Priya Mehta', license_number: 'GJ01-2022-12345', license_type: 'CLASS_B', phone_number: '+91-97200-55678', status: 'ON_TRIP', max_driving_hours_per_day: 8, assigned_hub_id: 2, current_vehicle_id: 3, rating: 4.9, user_id: 6 },
+  { id: 6, full_name: 'Neha Kulkarni', license_number: 'MH43-2018-77120', license_type: 'COMMERCIAL', phone_number: '+91-98190-33445', status: 'ON_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 2, current_vehicle_id: null, rating: 4.7, user_id: 7 },
   { id: 7, full_name: 'Imran Shaikh', license_number: 'MH43-2019-55018', license_type: 'COMMERCIAL', phone_number: '+91-98330-22114', status: 'ON_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 2, current_vehicle_id: null, rating: 4.6 },
 ]
 const INIT_SHIPMENTS: Shipment[] = [
@@ -74,6 +75,9 @@ const INIT_USERS: User[] = [
   { id: 2, email: 'manager@fleetops.in', full_name: 'Kavita Sharma', role: 'FLEET_MANAGER', is_active: true },
   { id: 3, email: 'dispatch@fleetops.in', full_name: 'Manthan Nimodiya', role: 'DISPATCHER', is_active: true },
   { id: 4, email: 'rajesh@fleetops.in', full_name: 'Rajesh Kumar', role: 'DRIVER', is_active: true },
+  { id: 5, email: 'vikramjit@fleetops.in', full_name: 'Vikramjit Singh', role: 'DRIVER', is_active: true },
+  { id: 6, email: 'priya@fleetops.in', full_name: 'Priya Mehta', role: 'DRIVER', is_active: true },
+  { id: 7, email: 'neha@fleetops.in', full_name: 'Neha Kulkarni', role: 'DRIVER', is_active: true },
 ]
 const INIT_AUDIT: AuditEntry[] = [
   { id: 1, timestamp: '2026-09-22 12:41:03', actor_name: 'Abhayraj Jaiswal', action_type: 'DISPATCH_APPROVED', entity_type: 'ROUTE', entity_id: 42, details: 'Route R-42 dispatched from Mumbai Central Depot' },
@@ -305,11 +309,13 @@ function CopilotDashboard({ vehicles, drivers, shipments, hubs, audit, setSectio
 }
 
 // ─── FLEET SECTION ────────────────────────────────────────────────────────────
-function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHubs, addAudit }: {
+function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHubs, users, onManageUsers, addAudit }: {
   vehicles: Vehicle[]; setVehicles: (v: Vehicle[]) => void
   drivers: Driver[]; setDrivers: (d: Driver[]) => void
   hubs: Hub[]; setHubs: (h: Hub[]) => void
   addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
+  users: User[]
+  onManageUsers?: () => void
 }) {
   const [tab, setTab] = useState<'vehicles' | 'drivers' | 'hubs'>('vehicles')
   const [search, setSearch] = useState('')
@@ -384,16 +390,16 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
             <tbody className="divide-y divide-slate-100">
               {filtV.map(v => (
                 <tr key={v.id} className="hover:bg-slate-50 group">
-                  <td className="px-4 py-3 font-mono text-slate-400">V{v.id}</td>
+                  <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-400">V{v.id}</td>
                   <td className="px-4 py-3 font-medium text-slate-800">{v.name}</td>
-                  <td className="px-4 py-3 font-mono text-slate-600">{v.plate_number}</td>
+                  <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-600">{v.plate_number}</td>
                   <td className="px-4 py-3 text-slate-500">{v.vehicle_type}</td>
                   <td className="px-4 py-3"><Badge s={v.current_status} /></td>
-                  <td className="px-4 py-3 font-mono text-slate-600">{v.max_payload_kg}kg</td>
-                  <td className="px-4 py-3 font-mono text-slate-600">{v.fuel_efficiency_kpl} kpl</td>
+                  <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-600">{v.max_payload_kg}kg</td>
+                  <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-600">{v.fuel_efficiency_kpl} kpl</td>
                   <td className="px-4 py-3 text-slate-500">{hubs.find(h => h.id === v.assigned_hub_id)?.code ?? '—'}</td>
                   <td className="px-4 py-3 w-28"><Bar pct={v.fuel_pct} /></td>
-                  <td className="px-4 py-3"><div className="flex gap-2 opacity-0 group-hover:opacity-100">
+                  <td className="px-4 py-3"><div className="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
                     <button onClick={() => { setEditTarget(v); setVf({ name: v.name, plate_number: v.plate_number, vehicle_type: v.vehicle_type, max_payload_kg: v.max_payload_kg, max_volume_m3: v.max_volume_m3, fuel_efficiency_kpl: v.fuel_efficiency_kpl, current_status: v.current_status, assigned_hub_id: v.assigned_hub_id, fuel_pct: v.fuel_pct }); setModal('edit-v') }} className="text-blue-600 hover:text-blue-800 font-medium">Edit</button>
                     <button onClick={() => { setVehicles(vehicles.filter(x => x.id !== v.id)); addAudit({ actor_name: 'Admin', action_type: 'ASSET_DELETED', entity_type: 'VEHICLE', entity_id: v.id, details: `Vehicle ${v.plate_number} removed` }) }} className="text-red-500 hover:text-red-700 font-medium">Del</button>
                   </div></td>
@@ -404,21 +410,29 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
         )}
         {tab === 'drivers' && (
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-slate-50"><tr className="border-b border-slate-200">{['ID', 'Name', 'License', 'Type', 'Phone', 'Status', 'Rating', 'Hub', ''].map(h => <th key={h} className="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">{h}</th>)}</tr></thead>
+            <thead className="sticky top-0 bg-slate-50"><tr className="border-b border-slate-200">{['ID', 'Name', 'License', 'Type', 'Phone', 'Status', 'Rating', 'Hub', 'App login', ''].map(h => <th key={h} className="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-4 py-2.5 whitespace-nowrap">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
               {filtD.map(d => (
                 <tr key={d.id} className="hover:bg-slate-50 group">
-                  <td className="px-4 py-3 font-mono text-slate-400">D{d.id}</td>
+                  <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-400">D{d.id}</td>
                   <td className="px-4 py-3 font-medium text-slate-800">{d.full_name}</td>
-                  <td className="px-4 py-3 font-mono text-slate-600">{d.license_number}</td>
+                  <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-600">{d.license_number}</td>
                   <td className="px-4 py-3 text-slate-500">{d.license_type}</td>
                   <td className="px-4 py-3 text-slate-500">{d.phone_number}</td>
                   <td className="px-4 py-3"><Badge s={d.status} /></td>
-                  <td className="px-4 py-3 font-mono text-slate-600">★ {d.rating}</td>
+                  <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-600">★ {d.rating}</td>
                   <td className="px-4 py-3 text-slate-500">{hubs.find(h => h.id === d.assigned_hub_id)?.code ?? '—'}</td>
-                  <td className="px-4 py-3"><div className="flex gap-2 opacity-0 group-hover:opacity-100">
+                  <td className="px-4 py-3" title={ACCESS_NOTE[appAccess(d, users)]}>{(() => {
+                    const acc = accountFor(d, users)
+                    if (acc && acc.is_active) return <span className="font-mono text-slate-500">{acc.email}</span>
+                    if (acc) return <span className="font-semibold text-slate-400">Deactivated</span>
+                    return onManageUsers
+                      ? <button onClick={onManageUsers} className="font-semibold text-amber-700 hover:underline">No login · create</button>
+                      : <span className="font-semibold text-amber-700">No login</span>
+                  })()}</td>
+                  <td className="px-4 py-3"><div className="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
                     <button onClick={() => { setEditTarget(d); setDf({ full_name: d.full_name, license_number: d.license_number, license_type: d.license_type, phone_number: d.phone_number, status: d.status, max_driving_hours_per_day: d.max_driving_hours_per_day, assigned_hub_id: d.assigned_hub_id, current_vehicle_id: d.current_vehicle_id, rating: d.rating }); setModal('edit-d') }} className="text-blue-600 hover:text-blue-800 font-medium">Edit</button>
-                    <button onClick={() => setDrivers(drivers.filter(x => x.id !== d.id))} className="text-red-500 hover:text-red-700 font-medium">Del</button>
+                    <button onClick={() => { if (!accountFor(d, users) || window.confirm(`${d.full_name} has a driver login. Delete the driver profile? Their account will show "profile missing" until another profile is linked.`)) setDrivers(drivers.filter(x => x.id !== d.id)) }} className="text-red-500 hover:text-red-700 font-medium">Del</button>
                   </div></td>
                 </tr>
               ))}
@@ -431,12 +445,12 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
             <tbody className="divide-y divide-slate-100">
               {filtH.map(h => (
                 <tr key={h.id} className="hover:bg-slate-50 group">
-                  <td className="px-4 py-3 font-mono font-medium text-blue-700">{h.code}</td>
+                  <td className="px-4 py-3 whitespace-nowrap font-mono font-medium text-blue-700">{h.code}</td>
                   <td className="px-4 py-3 font-medium text-slate-800">{h.name}</td>
                   <td className="px-4 py-3 text-slate-500 max-w-xs truncate">{h.address}</td>
                   <td className="px-4 py-3 text-slate-500">{h.contact_phone}</td>
                   <td className="px-4 py-3 text-slate-500">{h.operating_hours}</td>
-                  <td className="px-4 py-3"><div className="flex gap-2 opacity-0 group-hover:opacity-100">
+                  <td className="px-4 py-3"><div className="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
                     <button onClick={() => { setEditTarget(h); setHf({ name: h.name, code: h.code, address: h.address, latitude: h.latitude, longitude: h.longitude, contact_phone: h.contact_phone, operating_hours: h.operating_hours }); setModal('edit-h') }} className="text-blue-600 hover:text-blue-800 font-medium">Edit</button>
                     <button onClick={() => setHubs(hubs.filter(x => x.id !== h.id))} className="text-red-500 hover:text-red-700 font-medium">Del</button>
                   </div></td>
@@ -884,16 +898,16 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
           <tbody className="divide-y divide-slate-100">
             {filt.map(s => (
               <tr key={s.id} className={`hover:bg-slate-50 group transition-colors ${justAdded === s.id ? 'bg-blue-50' : ''}`}>
-                <td className="px-4 py-3 font-mono font-bold text-blue-700">{s.tracking_number}</td>
+                <td className="px-4 py-3 whitespace-nowrap font-mono font-bold text-blue-700">{s.tracking_number}</td>
                 <td className="px-4 py-3 font-medium text-slate-800">{s.customer_name}</td>
                 <td className="px-4 py-3 text-slate-500 max-w-[150px] truncate">{s.destination_address}</td>
-                <td className="px-4 py-3 font-mono text-slate-600">{s.weight_kg}kg</td>
+                <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-600">{s.weight_kg}kg</td>
                 <td className="px-4 py-3"><Badge s={s.priority} /></td>
-                <td className="px-4 py-3 font-mono text-slate-500">{s.time_window_start}–{s.time_window_end}</td>
+                <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-500">{s.time_window_start}–{s.time_window_end}</td>
                 <td className="px-4 py-3"><Badge s={s.status} /></td>
                 <td className="px-4 py-3 text-slate-500">{hubs.find(h => h.id === s.hub_id)?.code ?? '—'}</td>
                 <td className="px-4 py-3">
-                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100 transition-opacity">
                     <button onClick={() => onTriggerWorkflow(s)} className="text-violet-600 hover:text-violet-800 font-bold text-[11px] whitespace-nowrap">🤖 AI Workflow</button>
                     {s.status !== 'DELIVERED' && s.status !== 'FAILED' && <button onClick={() => advanceFSM(s)} className="text-emerald-600 hover:text-emerald-800 font-medium">→</button>}
                     <button onClick={() => { setEditTarget(s); setForm({ tracking_number: s.tracking_number, customer_name: s.customer_name, destination_address: s.destination_address, weight_kg: s.weight_kg, volume_m3: s.volume_m3, time_window_start: s.time_window_start, time_window_end: s.time_window_end, priority: s.priority, status: s.status, hub_id: s.hub_id }); setModal('edit') }} className="text-blue-600 font-medium">Edit</button>
@@ -1037,7 +1051,7 @@ function AuditSection({ entries, authToken, canReport }: { entries: AuditEntry[]
         <div><p className="text-sm font-bold text-slate-800">Immutable Audit Trail</p><p className="text-xs text-slate-400">{entries.length} entries · append-only</p></div>
         <select value={filter} onChange={e => setFilter(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs outline-none text-slate-600 bg-white">
           <option value="ALL">All Types</option>
-          {['ROUTE_MODIFIED', 'STATUS_CHANGE', 'COPILOT_OVERRIDE', 'DISPATCH_APPROVED', 'ASSET_CREATED', 'ASSET_DELETED'].map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+          {['ROUTE_MODIFIED', 'STATUS_CHANGE', 'COPILOT_OVERRIDE', 'DISPATCH_APPROVED', 'ASSET_CREATED', 'ASSET_UPDATED', 'ASSET_DELETED'].map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
         </select>
       </div>
       {canReport && <AuditCompliancePanel authToken={authToken} />}
@@ -1047,11 +1061,11 @@ function AuditSection({ entries, authToken, canReport }: { entries: AuditEntry[]
           <tbody className="divide-y divide-slate-100">
             {filt.map(e => (
               <tr key={e.id} className="hover:bg-slate-50">
-                <td className="px-4 py-3 font-mono text-slate-400">#{e.id}</td>
-                <td className="px-4 py-3 font-mono text-slate-500 whitespace-nowrap">{e.timestamp}</td>
+                <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-400">#{e.id}</td>
+                <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-500 whitespace-nowrap">{e.timestamp}</td>
                 <td className="px-4 py-3 font-medium text-slate-700">{e.actor_name}</td>
                 <td className="px-4 py-3"><span style={{ color: actionColor[e.action_type] ?? '#374151' }} className="font-semibold">{e.action_type.replace(/_/g, ' ')}</span></td>
-                <td className="px-4 py-3 font-mono text-slate-500">{e.entity_type} #{e.entity_id}</td>
+                <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-500">{e.entity_type} #{e.entity_id}</td>
                 <td className="px-4 py-3 text-slate-600 max-w-xs">{e.details}</td>
               </tr>
             ))}
@@ -1063,50 +1077,228 @@ function AuditSection({ entries, authToken, canReport }: { entries: AuditEntry[]
 }
 
 // ─── USERS ────────────────────────────────────────────────────────────────────
-function UsersSection({ users, setUsers }: { users: User[]; setUsers: (u: User[]) => void }) {
-  const [modal, setModal] = useState<'add' | 'edit' | null>(null)
-  const [editTarget, setEditTarget] = useState<User | null>(null)
-  const blank: Omit<User, 'id'> = { email: '', full_name: '', role: 'DRIVER', is_active: true }
-  const [form, setForm] = useState(blank)
-  function save() {
-    if (modal === 'add') { setUsers([...users, { ...form, id: Date.now() }]) }
-    else if (modal === 'edit' && editTarget) { setUsers(users.map(u => u.id === editTarget.id ? { ...u, ...form } : u)) }
-    setModal(null); setForm(blank)
+// Login accounts and driver profiles are managed together: a DRIVER account always comes with a driver profile
+// (licence, hub, legal hours), linked by Driver.user_id, so the person who signs in to the driver app is the
+// same person the planners assign. Mirrors the backend /api/v1/users rules (see backend/app/api/v1/users.py).
+type UserForm = { email: string; full_name: string; role: UserRole; is_active: boolean
+  profileMode: 'new' | 'existing'; existingDriverId: number | null
+  license_number: string; license_type: LicenseType; phone_number: string; assigned_hub_id: number; max_driving_hours_per_day: number }
+
+function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit }: {
+  users: User[]; setUsers: (u: User[]) => void
+  drivers: Driver[]; setDrivers: (d: Driver[]) => void
+  hubs: Hub[]
+  addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
+}) {
+  const [modal, setModal] = useState<'add' | 'edit' | 'link' | null>(null)
+  const [target, setTarget] = useState<User | null>(null)
+  const [linkId, setLinkId] = useState<number | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [tried, setTried] = useState(false)   // show validation only after the first Save, not while typing
+  const blank = (): UserForm => ({ email: '', full_name: '', role: 'DRIVER', is_active: true, profileMode: 'new', existingDriverId: null,
+    license_number: '', license_type: 'COMMERCIAL', phone_number: '', assigned_hub_id: hubs[0]?.id ?? 0, max_driving_hours_per_day: 8 })
+  const [form, setForm] = useState<UserForm>(blank)
+  const set = (p: Partial<UserForm>) => setForm(f => ({ ...f, ...p }))
+
+  const unlinked = drivers.filter(d => !accountFor(d, users))
+  const activeAdmins = users.filter(u => u.role === 'ADMIN' && u.is_active).length
+  const hubCode = (id: number) => hubs.find(h => h.id === id)?.code ?? '—'
+
+  // Validation (same rules as the backend)
+  const email = form.email.trim().toLowerCase()
+  const errors: string[] = []
+  if (form.full_name.trim().length < 2) errors.push('Enter the full name')
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Enter a valid email')
+  else if (users.some(u => u.email.toLowerCase() === email && u.id !== target?.id)) errors.push('An account with this email already exists')
+  if (modal === 'add' && form.role === 'DRIVER') {
+    if (form.profileMode === 'existing') { if (form.existingDriverId == null) errors.push('Choose the driver profile to link') }
+    else {
+      if (form.license_number.trim().length < 3) errors.push('Enter the licence number')
+      else if (drivers.some(d => d.license_number.toLowerCase() === form.license_number.trim().toLowerCase())) errors.push('A driver with this licence number already exists')
+      if (form.phone_number.trim().length < 5) errors.push('Enter a phone number')
+      if (!hubs.some(h => h.id === form.assigned_hub_id)) errors.push('Choose a hub')
+      if (!(form.max_driving_hours_per_day > 0 && form.max_driving_hours_per_day <= 14)) errors.push('Daily driving limit must be 1–14 hours')
+    }
   }
+  const losesAdmin = modal === 'edit' && target?.role === 'ADMIN' && target.is_active && (form.role !== 'ADMIN' || !form.is_active)
+  if (losesAdmin && activeAdmins <= 1) errors.push('There must always be at least one active admin')
+
+  function openAdd(fromDriver?: Driver) {
+    setTarget(null)
+    setForm(fromDriver ? { ...blank(), full_name: fromDriver.full_name, profileMode: 'existing', existingDriverId: fromDriver.id } : blank())
+    setTried(false); setModal('add')
+  }
+
+  function save() {
+    setTried(true)
+    if (errors.length) return
+    if (modal === 'add') {
+      const id = Math.max(0, ...users.map(u => u.id)) + 1
+      const user: User = { id, email, full_name: form.full_name.trim(), role: form.role, is_active: form.is_active }
+      setUsers([...users, user])
+      let detail = `Created ${user.role} account ${user.email}`
+      if (user.role === 'DRIVER' && form.profileMode === 'new') {
+        const did = Math.max(0, ...drivers.map(d => d.id)) + 1
+        setDrivers([...drivers, { id: did, full_name: user.full_name, license_number: form.license_number.trim(), license_type: form.license_type,
+          phone_number: form.phone_number.trim(), status: 'OFF_DUTY', max_driving_hours_per_day: form.max_driving_hours_per_day,
+          assigned_hub_id: form.assigned_hub_id, current_vehicle_id: null, rating: 5, user_id: id }])
+        detail += ` with a new driver profile at ${hubCode(form.assigned_hub_id)}`
+      } else if (user.role === 'DRIVER' && form.existingDriverId != null) {
+        setDrivers(drivers.map(d => d.id === form.existingDriverId ? { ...d, user_id: id } : d))
+        detail += `, linked to driver ${drivers.find(d => d.id === form.existingDriverId)?.full_name}`
+      }
+      addAudit({ actor_name: 'Admin', action_type: 'ASSET_CREATED', entity_type: 'USER', entity_id: id, details: detail })
+      setNotice(user.role === 'DRIVER' ? `${user.full_name} can now sign in to the driver app and be planned on routes.` : `${user.full_name}'s account is ready.`)
+    } else if (modal === 'edit' && target) {
+      const name = form.full_name.trim()
+      setUsers(users.map(u => u.id === target.id ? { ...u, email, full_name: name, role: form.role, is_active: form.is_active } : u))
+      const profile = profileFor(target, drivers)
+      if (profile) {
+        // One person, one name; leaving the DRIVER role keeps the profile but removes app access.
+        setDrivers(drivers.map(d => d.id === profile.id ? { ...d, full_name: name, user_id: form.role === 'DRIVER' ? d.user_id : null } : d))
+      }
+      addAudit({ actor_name: 'Admin', action_type: 'ASSET_UPDATED', entity_type: 'USER', entity_id: target.id,
+        details: `Updated account ${email}${target.role !== form.role ? `: role ${target.role} → ${form.role}` : ''}${target.is_active !== form.is_active ? (form.is_active ? ', activated' : ', deactivated') : ''}` })
+    }
+    setModal(null)
+  }
+
+  function toggleActive(u: User) {
+    if (u.role === 'ADMIN' && u.is_active && activeAdmins <= 1) { setNotice('There must always be at least one active admin.'); return }
+    setUsers(users.map(x => x.id === u.id ? { ...x, is_active: !x.is_active } : x))
+    addAudit({ actor_name: 'Admin', action_type: 'STATUS_CHANGE', entity_type: 'USER', entity_id: u.id, details: `${u.is_active ? 'Deactivated' : 'Activated'} account ${u.email}` })
+    if (u.role === 'DRIVER' && u.is_active) setNotice(`${u.full_name} can no longer sign in or be assigned to routes. Their driver profile and history are kept.`)
+  }
+
+  function remove(u: User) {
+    if (!window.confirm(`Remove ${u.full_name}'s login? ${u.role === 'DRIVER' ? 'Their driver profile stays, without app access.' : ''}`)) return
+    setUsers(users.filter(x => x.id !== u.id))
+    if (u.role === 'DRIVER') setDrivers(drivers.map(d => d.user_id === u.id ? { ...d, user_id: null } : d))
+    addAudit({ actor_name: 'Admin', action_type: 'ASSET_DELETED', entity_type: 'USER', entity_id: u.id, details: `Removed account ${u.email}` })
+  }
+
+  function link() {
+    if (!target || linkId == null) return
+    const d = drivers.find(x => x.id === linkId)!
+    setDrivers(drivers.map(x => x.id === linkId ? { ...x, user_id: target.id, full_name: target.full_name } : x))
+    addAudit({ actor_name: 'Admin', action_type: 'ASSET_UPDATED', entity_type: 'DRIVER', entity_id: linkId, details: `Linked driver ${d.full_name} to ${target.email}` })
+    setModal(null)
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
-        <div><p className="text-sm font-bold text-slate-800">User Management</p><p className="text-xs text-slate-400">RBAC — Admin, Fleet Manager, Dispatcher, Driver</p></div>
-        <button onClick={() => { setForm(blank); setModal('add') }} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>Add User</button>
+        <div><p className="text-sm font-bold text-slate-800">User Management</p><p className="text-xs text-slate-400">Logins and roles. Driver accounts are linked to their driver profile.</p></div>
+        <button onClick={() => openAdd()} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">+ Add user</button>
       </div>
-      <div className="flex-1 overflow-auto">
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-slate-50 z-10"><tr className="border-b border-slate-200">{['ID', 'Name', 'Email', 'Role', 'Status', ''].map(h => <th key={h} className="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-5 py-2.5">{h}</th>)}</tr></thead>
-          <tbody className="divide-y divide-slate-100">
-            {users.map(u => (
-              <tr key={u.id} className="hover:bg-slate-50 group">
-                <td className="px-5 py-3 font-mono text-slate-400">U{u.id}</td>
-                <td className="px-5 py-3 font-medium text-slate-800">{u.full_name}</td>
-                <td className="px-5 py-3 font-mono text-slate-500">{u.email}</td>
-                <td className="px-5 py-3"><Badge s={u.role} /></td>
-                <td className="px-5 py-3"><span className={`text-xs font-semibold ${u.is_active ? 'text-emerald-600' : 'text-slate-400'}`}>{u.is_active ? '● Active' : '○ Inactive'}</span></td>
-                <td className="px-5 py-3"><div className="flex gap-3 opacity-0 group-hover:opacity-100">
-                  <button onClick={() => { setEditTarget(u); setForm({ email: u.email, full_name: u.full_name, role: u.role, is_active: u.is_active }); setModal('edit') }} className="text-blue-600 font-medium">Edit</button>
-                  <button onClick={() => setUsers(users.map(x => x.id === u.id ? { ...x, is_active: !x.is_active } : x))} className="text-amber-600 font-medium">{u.is_active ? 'Deactivate' : 'Activate'}</button>
-                  {u.role !== 'ADMIN' && <button onClick={() => setUsers(users.filter(x => x.id !== u.id))} className="text-red-500 font-medium">Remove</button>}
-                </div></td>
-              </tr>
+      {notice && (
+        <div className="mx-5 mt-3 flex items-start gap-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800" role="status">
+          <span className="flex-1">{notice}</span><button onClick={() => setNotice(null)} aria-label="Dismiss" className="text-emerald-700">✕</button>
+        </div>
+      )}
+      {unlinked.length > 0 && (
+        <div className="mx-5 mt-3 rounded-lg bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+          <p className="font-semibold">{unlinked.length} driver{unlinked.length > 1 ? 's have' : ' has'} no app login</p>
+          <p className="mt-0.5 text-amber-800">They can still be planned, but won't see their route on the phone.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {unlinked.map(d => (
+              <button key={d.id} onClick={() => openAdd(d)} className="rounded-full bg-white px-2.5 py-1 ring-1 ring-amber-200 hover:ring-amber-400">
+                {d.full_name} · {hubCode(d.assigned_hub_id)} · <span className="font-semibold text-blue-700">Create login</span>
+              </button>
             ))}
+          </div>
+        </div>
+      )}
+      <div className="flex-1 overflow-auto mt-2">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-slate-50 z-10"><tr className="border-b border-slate-200">{['Name', 'Email', 'Role', 'Driver profile', 'Status', ''].map(h => <th key={h} className="text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-5 py-2.5">{h}</th>)}</tr></thead>
+          <tbody className="divide-y divide-slate-100">
+            {users.map(u => {
+              const profile = profileFor(u, drivers)
+              return (
+                <tr key={u.id} className="hover:bg-slate-50 group">
+                  <td className="px-5 py-3 font-medium text-slate-800">{u.full_name}</td>
+                  <td className="px-5 py-3 font-mono text-slate-500">{u.email}</td>
+                  <td className="px-5 py-3"><Badge s={u.role} /></td>
+                  <td className="px-5 py-3">
+                    {u.role !== 'DRIVER' ? <span className="text-slate-300">—</span>
+                      : profile ? <div className="whitespace-nowrap"><p className="text-slate-700">{hubCode(profile.assigned_hub_id)} · {profile.status.replace(/_/g, ' ').toLowerCase()}</p><p className="font-mono text-[10px] text-slate-400">{profile.license_number}</p></div>
+                      : <span className="inline-flex items-center gap-2 whitespace-nowrap"><span className="font-semibold text-amber-700">Profile missing</span>
+                          <button onClick={() => { setTarget(u); setLinkId(unlinked[0]?.id ?? null); setModal('link') }} className="text-blue-600 font-medium">Link profile</button></span>}
+                  </td>
+                  <td className="px-5 py-3"><span className={`text-xs font-semibold ${u.is_active ? 'text-emerald-600' : 'text-slate-400'}`}>{u.is_active ? '● Active' : '○ Deactivated'}</span></td>
+                  <td className="px-5 py-3"><div className="flex gap-3 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
+                    <button onClick={() => { setTarget(u); setForm({ ...blank(), email: u.email, full_name: u.full_name, role: u.role, is_active: u.is_active }); setTried(false); setModal('edit') }} className="text-blue-600 font-medium">Edit</button>
+                    <button onClick={() => toggleActive(u)} className="text-amber-600 font-medium">{u.is_active ? 'Deactivate' : 'Activate'}</button>
+                    {u.role !== 'ADMIN' && <button onClick={() => remove(u)} className="text-red-500 font-medium">Remove</button>}
+                  </div></td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
+
       {(modal === 'add' || modal === 'edit') && (
-        <Modal title={modal === 'add' ? 'Add User' : 'Edit User'} onClose={() => setModal(null)}>
+        <Modal title={modal === 'add' ? 'Add user' : 'Edit user'} onClose={() => setModal(null)}>
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3"><Field label="Full Name"><input className={inputCls} value={form.full_name} onChange={e => setForm(p => ({ ...p, full_name: e.target.value }))} /></Field><Field label="Email"><input type="email" className={inputCls} value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></Field></div>
-            <Field label="Role"><select className={selCls} value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value as UserRole }))}>{['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'].map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}</select></Field>
-            <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.is_active} onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))} /><span className="text-sm text-slate-600">Active account</span></label>
-            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={save} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">Save</button></div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Full name"><input className={inputCls} value={form.full_name} onChange={e => set({ full_name: e.target.value })} /></Field>
+              <Field label="Email"><input type="email" className={inputCls} value={form.email} onChange={e => set({ email: e.target.value })} /></Field>
+            </div>
+            <Field label="Role"><select className={selCls} value={form.role} onChange={e => set({ role: e.target.value as UserRole })}>{(['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] as const).map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}</select></Field>
+
+            {modal === 'add' && form.role === 'DRIVER' && (
+              <div className="rounded-lg border border-slate-200 p-3 space-y-3">
+                <p className="text-xs font-semibold text-slate-700">Driver profile</p>
+                <div className="flex gap-4 text-sm text-slate-700">
+                  <label className="flex items-center gap-1.5"><input type="radio" checked={form.profileMode === 'new'} onChange={() => set({ profileMode: 'new' })} />New driver</label>
+                  <label className={`flex items-center gap-1.5 ${unlinked.length ? '' : 'opacity-40'}`}><input type="radio" disabled={!unlinked.length} checked={form.profileMode === 'existing'} onChange={() => set({ profileMode: 'existing', existingDriverId: form.existingDriverId ?? unlinked[0]?.id ?? null })} />Existing driver without a login ({unlinked.length})</label>
+                </div>
+                {form.profileMode === 'existing' ? (
+                  <Field label="Driver"><select className={selCls} value={form.existingDriverId ?? ''} onChange={e => { const d = drivers.find(x => x.id === Number(e.target.value)); set({ existingDriverId: d?.id ?? null, full_name: form.full_name || d?.full_name || '' }) }}>
+                    {unlinked.map(d => <option key={d.id} value={d.id}>{d.full_name} · {hubCode(d.assigned_hub_id)} · {d.license_number}</option>)}
+                  </select></Field>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Licence number"><input className={inputCls} value={form.license_number} onChange={e => set({ license_number: e.target.value })} /></Field>
+                      <Field label="Licence type"><select className={selCls} value={form.license_type} onChange={e => set({ license_type: e.target.value as LicenseType })}>{(['COMMERCIAL', 'CLASS_A', 'CLASS_B'] as const).map(t => <option key={t}>{t}</option>)}</select></Field>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <Field label="Phone"><input className={inputCls} value={form.phone_number} onChange={e => set({ phone_number: e.target.value })} /></Field>
+                      <Field label="Hub"><select className={selCls} value={form.assigned_hub_id} onChange={e => set({ assigned_hub_id: Number(e.target.value) })}>{hubs.map(h => <option key={h.id} value={h.id}>{h.code}</option>)}</select></Field>
+                      <Field label="Max driving h/day"><input type="number" min={1} max={14} className={inputCls} value={form.max_driving_hours_per_day} onChange={e => set({ max_driving_hours_per_day: Number(e.target.value) })} /></Field>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            {modal === 'edit' && target?.role === 'DRIVER' && form.role !== 'DRIVER' && profileFor(target, drivers) && (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Their driver profile stays (for planning and history) but will no longer have app access.</p>
+            )}
+            <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.is_active} onChange={e => set({ is_active: e.target.checked })} /><span className="text-sm text-slate-600">Active account</span></label>
+            {tried && errors.length > 0 && <ul className="text-xs text-red-600 space-y-0.5" role="alert">{errors.map(e => <li key={e}>{e}</li>)}</ul>}
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button>
+              <button onClick={save} disabled={tried && errors.length > 0} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50">Save</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {modal === 'link' && target && (
+        <Modal title={`Link a driver profile to ${target.full_name}`} onClose={() => setModal(null)}>
+          <div className="space-y-3">
+            {unlinked.length === 0 ? <p className="text-sm text-slate-600">Every driver profile already has a login. Add the driver in Fleet Assets first, then link it here.</p> : (
+              <Field label="Driver profile"><select className={selCls} value={linkId ?? ''} onChange={e => setLinkId(Number(e.target.value))}>
+                {unlinked.map(d => <option key={d.id} value={d.id}>{d.full_name} · {hubCode(d.assigned_hub_id)} · {d.license_number}</option>)}
+              </select></Field>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button>
+              <button onClick={link} disabled={linkId == null || !unlinked.length} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50">Link</button>
+            </div>
           </div>
         </Modal>
       )}
@@ -1335,12 +1527,12 @@ export default function App() {
           <Suspense fallback={<SectionLoading />}>
           {section === 'dashboard' && <CopilotCommandCenter vehicles={vehicles} drivers={drivers} shipments={shipments} hubs={hubs} audit={audit} setSection={setSection} activeRole={activeRole} authToken={authToken} />}
           {section === 'shipments' && <ShipmentsSection shipments={shipments} setShipments={setShipments} hubs={hubs} addAudit={addAudit} onTriggerWorkflow={triggerWorkflow} activeRole={activeRole} />}
-          {section === 'workflow' && <DispatchPlanner shipments={shipments} hubs={hubs} vehicles={vehicles} drivers={drivers} initialShipmentId={workflowShipment?.id ?? null} onDispatch={dispatch} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
-          {section === 'fleet' && <FleetSection vehicles={vehicles} setVehicles={setVehicles} drivers={drivers} setDrivers={setDrivers} hubs={hubs} setHubs={setHubs} addAudit={addAudit} />}
+          {section === 'workflow' && <DispatchPlanner shipments={shipments} hubs={hubs} vehicles={vehicles} drivers={drivers} users={users} initialShipmentId={workflowShipment?.id ?? null} onDispatch={dispatch} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
+          {section === 'fleet' && <FleetSection vehicles={vehicles} setVehicles={setVehicles} drivers={drivers} setDrivers={setDrivers} hubs={hubs} setHubs={setHubs} users={users} onManageUsers={activeRole === 'ADMIN' ? () => setSection('users') : undefined} addAudit={addAudit} />}
           {section === 'map' && <NetworkMapSection hubs={hubs} shipments={shipments} />}
-          {section === 'routes' && <RoutePlannerSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments}
+          {section === 'routes' && <RoutePlannerSection hubs={hubs} vehicles={vehicles} drivers={drivers} users={users} shipments={shipments}
             onAddShipments={list => setShipments(prev => [...prev, ...list])} onDispatchRoutes={dispatchRoutes} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
-          {section === 'reports' && <ReportsSection />}
+          {section === 'reports' && <ReportsSection authToken={authToken} />}
           {section === 'executive' && <ExecutiveDashboard authToken={authToken} shipments={shipments} vehicles={vehicles} />}
           {/* Kept mounted so the simulation clock and reported events survive page switches */}
           <div className={section === 'tracking' ? 'h-full' : 'hidden'}>
@@ -1363,7 +1555,7 @@ export default function App() {
           </div>
           {section === 'compliance' && <ComplianceInspector />}
           {section === 'audit' && <AuditSection entries={audit} authToken={authToken} canReport={activeRole === 'ADMIN' || activeRole === 'FLEET_MANAGER'} />}
-          {section === 'users' && <UsersSection users={users} setUsers={setUsers} />}
+          {section === 'users' && <UsersSection users={users} setUsers={setUsers} drivers={drivers} setDrivers={setDrivers} hubs={hubs} addAudit={addAudit} />}
           </Suspense>
           </ErrorBoundary>
         </main>

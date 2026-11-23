@@ -6,7 +6,8 @@
 // Integrates Track A's VRPTW solver stop sequencing with Track B's In-Transit FSM lifecycle.
 import React, { useEffect, useMemo, useState } from 'react'
 import type { AuditEntry, Driver, Hub, Shipment, ShipmentStatus, UserRole, Vehicle } from '../../lib/types'
-import { clock, estimateLeg, legsAlong, toMinutes, type LatLng } from '../../lib/geo'
+import { clock, estimateLeg, toMinutes, type LatLng } from '../../lib/geo'
+import { roadRoute } from '../../lib/roads'
 import { optimizeRoutes } from '../../lib/routesApi'
 import { emptyEvents, feedFor, viewAt, type FeedItem, type StopView, type TripEvents, type TripPlan, type TripState, type TripView } from './simulation'
 import TrackingMap, { type MapInsets, STOP_COLOR } from './TrackingMap'
@@ -136,7 +137,7 @@ export default function LiveTrackingSection({
         t = { ...t, stops: [...t.stops].sort((a, b) => rank(a) - rank(b)) }
       } catch { /* keep nearest-neighbour order */ }
       const pts: LatLng[] = [[t.hub.latitude, t.hub.longitude], ...t.stops.map(s => [s.latitude!, s.longitude!] as LatLng), [t.hub.latitude, t.hub.longitude]]
-      const { legs, source } = await legsAlong(pts, t.vehicle.vehicle_type)
+      const { legs, source } = await roadRoute(pts, t.vehicle.vehicle_type)
       const depart = Math.min(...t.stops.map(s => toMinutes(s.dispatch_time ?? DEFAULT_DEPART)))
       return { id: `trip-${t.vehicle.id}`, vehicle: t.vehicle, driver: t.driver, hub: t.hub, stops: t.stops, legs, departMin: depart, legSource: source }
     })).then(p => { if (!cancelled) setPlans(p) })

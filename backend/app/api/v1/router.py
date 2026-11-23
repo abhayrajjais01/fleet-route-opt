@@ -10,6 +10,7 @@ from app.api.v1.reports import router as reports_router
 from app.api.v1.copilot import router as copilot_router
 from app.api.v1.transit import router as transit_router
 from app.api.v1.analytics import router as analytics_router
+from app.api.v1.users import router as users_router
 
 api_router = APIRouter()
 
@@ -33,3 +34,4 @@ api_router.include_router(audit_router, prefix="/audit", tags=["Immutable Audit 
 api_router.include_router(copilot_router, prefix="/copilot", tags=["LangGraph AI Copilot"])
 api_router.include_router(transit_router, prefix="/transit", tags=["In-Transit FSM & Telemetry Tracking"])
 api_router.include_router(analytics_router, prefix="/analytics", tags=["Executive KPI Analytics"])
+api_router.include_router(users_router, prefix="/users", tags=["User Management"])

@@ -8,6 +8,10 @@ import app.models  # Register all models with Base.metadata
 from app.main import app as fastapi_app
 from app.core.database import Base, get_db
 from app.core.http_security import rate_limiter
+from app.core.config import settings
+
+# Tests never call the public routing server; road-routing tests opt in with a fake OSRM response.
+settings.ROAD_ROUTING = "estimate"
 
 # Isolated In-Memory SQLite Engine for Pytest Suites
 TEST_DATABASE_URL = "sqlite:///:memory:"

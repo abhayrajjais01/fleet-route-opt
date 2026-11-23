@@ -5,6 +5,8 @@
 // event always gives the same answer. Replace with live GPS + the backend FSM once Track B ships it.
 import type { Driver, Hub, Shipment, Vehicle } from '../../lib/types'
 import { toMinutes, type LatLng, type Leg } from '../../lib/geo'
+import { pathUpTo, pointAlong } from '../../lib/roads'
+import { baseCovered, factorAt, travelTime } from '../../lib/traffic'
 
 export const SERVICE_MINUTES = 10
 
@@ -14,9 +16,9 @@ export interface TripPlan {
   driver: Driver | null
   hub: Hub
   stops: Shipment[]        // in visiting order
-  legs: Leg[]              // stops.length + 1 legs (last one returns to the hub)
+  legs: (Leg & { path?: LatLng[] })[]  // stops.length + 1 legs (last one returns to the hub); path = road geometry
   departMin: number        // minutes after midnight
-  legSource: 'api' | 'estimate'
+  legSource: 'road' | 'api' | 'estimate'
 }
 
 export interface TripEvents {
@@ -34,6 +36,7 @@ interface Interval {
   end: number
   leg?: number              // drive: leg index
   from?: number; to?: number // drive: fraction of the leg covered at start/end
+  base?: number             // drive: the whole leg's midday drive minutes (traffic applied by clock time)
   stop?: number             // wait/service: stop index
   at?: LatLng               // stationary position
 }
@@ -66,68 +69,79 @@ const pointsOf = (p: TripPlan): LatLng[] => [
   [p.hub.latitude, p.hub.longitude],
 ]
 
-function baseTimeline(plan: TripPlan): Interval[] {
+/** Road geometry of leg i, or the straight line between its end points when no road path is known. */
+const legPath = (plan: TripPlan, pts: LatLng[], i: number): LatLng[] => plan.legs[i]?.path ?? [pts[i], pts[i + 1]]
+
+/** Fraction of its leg a drive interval has covered at time t (rush-hour aware, so not linear in time). */
+function fractionAt(iv: Interval, t: number): number {
+  if (!(iv.base! > 0)) return iv.to!
+  const until = Math.min(Math.max(t, iv.start), iv.end)
+  return Math.min(iv.to!, iv.from! + baseCovered(iv.start, until) / iv.base!)
+}
+
+function positionIn(iv: Interval, t: number, plan: TripPlan, pts: LatLng[]): LatLng {
+  if (iv.kind !== 'drive') return iv.at!
+  return pointAlong(legPath(plan, pts, iv.leg!), fractionAt(iv, t)).at
+}
+
+/**
+ * Builds the trip timeline forwards: drive each leg at the traffic speed for the time of day, wait for the
+ * window, serve the stop. A reported delay becomes a hold at that moment, and whatever follows is re-timed
+ * from the new clock time (a leg pushed into the evening peak gets slower), not just shifted.
+ */
+export function buildTimeline(plan: TripPlan, events: TripEvents): Interval[] {
   const pts = pointsOf(plan)
   const out: Interval[] = []
   let t = plan.departMin
+  // Delays reported before departure don't move the trip (same as the backend, which re-times from "now").
+  const delays = [...events.delays].filter(d => d.minutes > 0 && d.at >= plan.departMin).sort((a, b) => a.at - b.at)
+  let di = 0
+  /** The next delay that starts before `until`; one reported during a hold starts when the hold ends. */
+  const nextDelay = (until: number) => (di < delays.length && delays[di].at < until ? { at: Math.max(delays[di].at, t), minutes: delays[di].minutes } : null)
+  const hold = (at: number, minutes: number, where: LatLng) => { out.push({ kind: 'hold', start: at, end: at + minutes, at: where }); t = at + minutes; di++ }
+
   plan.legs.forEach((leg, i) => {
-    out.push({ kind: 'drive', start: t, end: t + leg.minutes, leg: i, from: 0, to: 1 })
-    t += leg.minutes
+    const base = leg.minutes
+    let f = 0
+    for (;;) {
+      const end = t + travelTime(base * (1 - f), t)
+      const d = nextDelay(end)
+      if (!d) { out.push({ kind: 'drive', start: t, end, leg: i, from: f, to: 1, base }); t = end; break }
+      const reached = base > 0 ? Math.min(1, f + baseCovered(t, d.at) / base) : 1
+      if (d.at > t) out.push({ kind: 'drive', start: t, end: d.at, leg: i, from: f, to: reached, base })
+      hold(d.at, d.minutes, pointAlong(legPath(plan, pts, i), reached).at)
+      f = reached
+    }
     const stop = plan.stops[i]
     if (!stop) return
-    const windowOpen = toMinutes(stop.time_window_start)
-    if (t < windowOpen) {
-      out.push({ kind: 'wait', start: t, end: windowOpen, stop: i, at: pts[i + 1] })
-      t = windowOpen
+    const at = pts[i + 1]
+    const open = toMinutes(stop.time_window_start)
+    while (t < open) {
+      const d = nextDelay(open)
+      if (!d) { out.push({ kind: 'wait', start: t, end: open, stop: i, at }); t = open; break }
+      if (d.at > t) out.push({ kind: 'wait', start: t, end: d.at, stop: i, at })
+      hold(d.at, d.minutes, at)
     }
-    out.push({ kind: 'service', start: t, end: t + SERVICE_MINUTES, stop: i, at: pts[i + 1] })
-    t += SERVICE_MINUTES
+    let remaining = SERVICE_MINUTES
+    while (remaining > 0) {
+      const d = nextDelay(t + remaining)
+      if (!d) { out.push({ kind: 'service', start: t, end: t + remaining, stop: i, at }); t += remaining; break }
+      if (d.at > t) { out.push({ kind: 'service', start: t, end: d.at, stop: i, at }); remaining -= d.at - t }
+      hold(d.at, d.minutes, at)
+    }
   })
-  return out
-}
 
-function positionIn(iv: Interval, t: number, pts: LatLng[]): LatLng {
-  if (iv.kind !== 'drive') return iv.at!
-  const span = iv.end - iv.start
-  const f = iv.from! + (iv.to! - iv.from!) * (span > 0 ? Math.min(1, Math.max(0, (t - iv.start) / span)) : 1)
-  const a = pts[iv.leg!], b = pts[iv.leg! + 1]
-  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]
-}
-
-/** Inserts a stationary hold of `minutes` at time `at`, shifting everything after it. */
-function insertHold(timeline: Interval[], at: number, minutes: number, pts: LatLng[]): Interval[] {
-  const idx = timeline.findIndex(iv => at >= iv.start && at < iv.end)
-  if (idx < 0) return timeline
-  const iv = timeline[idx]
-  const here = positionIn(iv, at, pts)
-  const before: Interval[] = []
-  const after: Interval[] = []
-  if (iv.kind === 'drive') {
-    const f = iv.from! + (iv.to! - iv.from!) * ((at - iv.start) / (iv.end - iv.start))
-    before.push({ ...iv, end: at, to: f })
-    after.push({ ...iv, start: at + minutes, end: iv.end + minutes, from: f })
-  } else {
-    before.push({ ...iv, end: at })
-    after.push({ ...iv, start: at + minutes, end: iv.end + minutes })
-  }
-  const shifted = timeline.slice(idx + 1).map(x => ({ ...x, start: x.start + minutes, end: x.end + minutes }))
-  return [...timeline.slice(0, idx), ...before, { kind: 'hold', start: at, end: at + minutes, at: here }, ...after, ...shifted]
-}
-
-export function buildTimeline(plan: TripPlan, events: TripEvents): Interval[] {
-  const pts = pointsOf(plan)
-  let tl = baseTimeline(plan)
-  for (const d of [...events.delays].sort((a, b) => a.at - b.at)) tl = insertHold(tl, d.at, d.minutes, pts)
   if (events.blockedAt !== null) {
-    const idx = tl.findIndex(iv => events.blockedAt! < iv.end)
+    const b = events.blockedAt
+    const idx = out.findIndex(iv => b < iv.end)
     if (idx >= 0) {
-      const iv = tl[idx]
-      const here = positionIn(iv, Math.max(iv.start, events.blockedAt), pts)
-      const head = events.blockedAt > iv.start ? [{ ...iv, end: events.blockedAt, ...(iv.kind === 'drive' ? { to: iv.from! + (iv.to! - iv.from!) * ((events.blockedAt - iv.start) / (iv.end - iv.start)) } : {}) }] : []
-      tl = [...tl.slice(0, idx), ...head, { kind: 'hold', start: events.blockedAt, end: Infinity, at: here }]
+      const iv = out[idx]
+      const here = positionIn(iv, Math.max(iv.start, b), plan, pts)
+      const head = b > iv.start ? [{ ...iv, end: b, ...(iv.kind === 'drive' ? { to: fractionAt(iv, b) } : {}) }] : []
+      return [...out.slice(0, idx), ...head, { kind: 'hold', start: b, end: Infinity, at: here }]
     }
   }
-  return tl
+  return out
 }
 
 export function viewAt(plan: TripPlan, events: TripEvents, t: number): TripView {
@@ -138,24 +152,23 @@ export function viewAt(plan: TripPlan, events: TripEvents, t: number): TripView 
 
   let kmDone = 0, driveMinutes = 0, speedKmh = 0, heading = 0
   let position: LatLng = pts[0]
-  let legIdx = -1
+  let legIdx = -1, legFrac = 0
   for (const iv of tl) {
     if (t < iv.start) break
     const until = Math.min(t, iv.end)
     if (iv.kind === 'drive') {
       legIdx = Math.max(legIdx, iv.leg!)
+      legFrac = fractionAt(iv, until)
       const leg = plan.legs[iv.leg!]
-      const frac = iv.end > iv.start ? (until - iv.start) / (iv.end - iv.start) : 1
-      kmDone += leg.km * (iv.to! - iv.from!) * frac
+      kmDone += leg.km * (legFrac - iv.from!)
       driveMinutes += until - iv.start
       if (t < iv.end) {
-        const a = pts[iv.leg!], b = pts[iv.leg! + 1]
-        heading = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI
-        // ±8% wobble so the readout looks like live telemetry; deterministic in t
-        speedKmh = (leg.km / (leg.minutes / 60)) * (1 + 0.08 * Math.sin(t * 1.7))
+        heading = pointAlong(legPath(plan, pts, iv.leg!), legFrac).heading
+        // Midday speed slowed by the traffic in force now; ±8% wobble so the readout looks like live telemetry.
+        speedKmh = leg.minutes > 0 ? (leg.km / (leg.minutes / 60)) / factorAt(t) * (1 + 0.08 * Math.sin(t * 1.7)) : 0
       }
     }
-    position = positionIn(iv, until, pts)
+    position = positionIn(iv, until, plan, pts)
   }
 
   const stops: StopView[] = plan.stops.map((shipment, i) => {
@@ -189,8 +202,9 @@ export function viewAt(plan: TripPlan, events: TripEvents, t: number): TripView 
     delayMinutes: events.delays.reduce((s, d) => s + d.minutes, 0),
     nextStop: next,
     atRisk: stops.filter(s => s.late && s.state !== 'DELIVERED').length,
-    path: pts,
-    pathDone: [...pts.slice(0, legIdx + 1), position],
+    path: plan.legs.flatMap((_, i) => legPath(plan, pts, i)),
+    pathDone: legIdx < 0 ? [pts[0]]
+      : [...plan.legs.slice(0, legIdx).flatMap((_, i) => legPath(plan, pts, i)), ...pathUpTo(legPath(plan, pts, legIdx), legFrac)],
   }
 }
 

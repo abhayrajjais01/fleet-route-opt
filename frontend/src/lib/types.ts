@@ -6,10 +6,10 @@ export type DriverStatus = 'ON_DUTY' | 'OFF_DUTY' | 'ON_TRIP' | 'RESTING'
 export type LicenseType = 'CLASS_A' | 'CLASS_B' | 'COMMERCIAL'
 export type ShipmentStatus = 'UNASSIGNED' | 'CLUSTERED' | 'ASSIGNED' | 'IN_TRANSIT' | 'ARRIVED' | 'DELIVERED' | 'FAILED'
 export type ShipmentPriority = 'LOW' | 'STANDARD' | 'HIGH' | 'EXPRESS'
-export type AuditAction = 'ROUTE_MODIFIED' | 'STATUS_CHANGE' | 'COPILOT_OVERRIDE' | 'DISPATCH_APPROVED' | 'ASSET_CREATED' | 'ASSET_DELETED'
+export type AuditAction = 'ROUTE_MODIFIED' | 'STATUS_CHANGE' | 'COPILOT_OVERRIDE' | 'DISPATCH_APPROVED' | 'ASSET_CREATED' | 'ASSET_UPDATED' | 'ASSET_DELETED'
 export type AdminSection = 'dashboard' | 'fleet' | 'shipments' | 'workflow' | 'routes' | 'map' | 'tracking' | 'reports' | 'executive' | 'compliance' | 'audit' | 'users'
 export interface Vehicle { id: number; name: string; plate_number: string; vehicle_type: VehicleType; max_payload_kg: number; max_volume_m3: number; fuel_efficiency_kpl: number; current_status: VehicleStatus; assigned_hub_id: number; fuel_pct: number }
-export interface Driver { id: number; full_name: string; license_number: string; license_type: LicenseType; phone_number: string; status: DriverStatus; max_driving_hours_per_day: number; assigned_hub_id: number; current_vehicle_id: number | null; rating: number }
+export interface Driver { id: number; full_name: string; license_number: string; license_type: LicenseType; phone_number: string; status: DriverStatus; max_driving_hours_per_day: number; assigned_hub_id: number; current_vehicle_id: number | null; rating: number; user_id?: number | null }
 export interface Hub { id: number; name: string; code: string; address: string; latitude: number; longitude: number; contact_phone: string; operating_hours: string }
 export interface Shipment { id: number; tracking_number: string; customer_name: string; destination_address: string; weight_kg: number; volume_m3: number; time_window_start: string; time_window_end: string; priority: ShipmentPriority; status: ShipmentStatus; hub_id: number; latitude?: number; longitude?: number; assigned_vehicle_id?: number | null; dispatch_time?: string; route_sequence?: number | null }
 export interface User { id: number; email: string; full_name: string; role: UserRole; is_active: boolean }

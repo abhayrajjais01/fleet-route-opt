@@ -22,6 +22,7 @@ from functools import lru_cache
 from typing import List, Tuple
 
 from app.services.analytics.metrics import StopRecord, TripRecord
+from app.services.optimizer import osrm_client
 from app.services.optimizer.distance_matrix import build_distance_matrix
 from app.services.optimizer.eta_engine import recalculate
 from app.services.optimizer.vrptw_solver import Stop, VehicleSpec, solve
@@ -77,6 +78,13 @@ def _day_orders(rng: random.Random, hub: DemoHub, day: str) -> List[Tuple[Stop, 
 
 
 def simulate_day(day: date) -> List[TripRecord]:
+    # Replays use the offline distance model: hundreds of solves must stay fast, reproducible and off the
+    # routing server.
+    with osrm_client.offline():
+        return _simulate_day(day)
+
+
+def _simulate_day(day: date) -> List[TripRecord]:
     key = day.isoformat()
     rng = random.Random(day.toordinal())
     trips: List[TripRecord] = []
@@ -116,6 +124,12 @@ def simulate_day(day: date) -> List[TripRecord]:
                 stops=records,
             ))
     return trips
+
+
+def history(days: int = 30) -> Tuple[TripRecord, ...]:
+    """Trips for the `days` days ending yesterday. The end date is part of the cache key, so the window rolls over
+    at midnight on a long-running server instead of serving yesterday's cached history forever."""
+    return simulated_history(days, date.today() - timedelta(days=1))
 
 
 @lru_cache(maxsize=32)

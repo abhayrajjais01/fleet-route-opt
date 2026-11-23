@@ -1,13 +1,15 @@
 // ─── DRIVER ROUTE MAP (mobile cockpit) ────────────────────────────────────────
 // The driver follows the route the dispatcher approved, so the map shows exactly that plan:
-// depot → numbered stops in sequence → depot. Completed legs fade, the leg to the current stop is
+// depot → numbered stops in sequence → depot, drawn along the real roads. Completed legs fade, the leg to the current stop is
 // highlighted, and the truck sits at its last known point (depot, last finished stop, or the stop it
 // checked in at). Real GPS is opt-in ("my location"), never requested on load.
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { escapeHtml, hubIcon, pinIcon, vehicleIcon } from '../map/markers'
 import { addBasemap } from '../map/tiles'
+import { roadRoute } from '../../lib/roads'
+import type { LatLng } from '../../lib/geo'
 
 export interface DriverMapStop {
   id: number
@@ -40,6 +42,16 @@ export default function DriverRouteMap({ depot, stops, currentId, selectedId, pl
   const fittedShape = useRef('')       // route geometry the view was last fitted to
   const lastPath = useRef<[number, number][]>([])
   const lastSelected = useRef<number | null>(null)
+  const [road, setRoad] = useState<{ key: string; legs: LatLng[][] } | null>(null)
+
+  // Waypoints in driving order; each leg is drawn along the road once the road path arrives.
+  const waypoints: LatLng[] = [...(depot ? [[depot.lat, depot.lon] as LatLng] : []), ...stops.map(s => [s.lat, s.lon] as LatLng), ...(depot ? [[depot.lat, depot.lon] as LatLng] : [])]
+  const wpKey = JSON.stringify(waypoints)
+  useEffect(() => {
+    let live = true
+    roadRoute(waypoints).then(r => { if (live) setRoad({ key: wpKey, legs: r.legs.map(l => l.path) }) })
+    return () => { live = false }
+  }, [wpKey])
 
   // Fit once layout has settled (setTimeout, not rAF, so it also runs in background tabs); called whenever the route's shape changes (not on status updates).
   function fitRoute(force = false) {
@@ -69,27 +81,27 @@ export default function DriverRouteMap({ depot, stops, currentId, selectedId, pl
     return () => { ro.disconnect(); map.remove(); mapRef.current = null; fittedShape.current = ''; lastSelected.current = null }
   }, [])
 
-  const key = JSON.stringify([depot, stops.map(s => [s.id, s.status, s.lat, s.lon]), currentId, selectedId, userPos])
+  const roadLegs = road?.key === wpKey ? road.legs : null
+  const key = JSON.stringify([depot, stops.map(s => [s.id, s.status, s.lat, s.lon]), currentId, selectedId, userPos, !!roadLegs])
   useEffect(() => {
     const map = mapRef.current, g = layer.current
     if (!map || !g) return
     g.clearLayers()
     const pts = (s: DriverMapStop) => [s.lat, s.lon] as [number, number]
-    const path: [number, number][] = [...(depot ? [[depot.lat, depot.lon] as [number, number]] : []), ...stops.map(pts), ...(depot ? [[depot.lat, depot.lon] as [number, number]] : [])]
+    // Leg k runs from waypoint k to k+1, along the road when known, else straight.
+    const leg = (k: number): LatLng[] => roadLegs?.[k] ?? [waypoints[k], waypoints[k + 1]]
+    const legCount = Math.max(0, waypoints.length - 1)
+    const path: LatLng[] = Array.from({ length: legCount }, (_, k) => leg(k)).flat()
     const curIdx = stops.findIndex(s => s.id === currentId)
-    lastPath.current = path
+    lastPath.current = path.length ? path : waypoints
 
     // Whole planned route, then the finished part faded and the leg to the current stop highlighted.
     if (path.length > 1) {
       L.polyline(path, { color: '#fff', weight: 7, opacity: 0.9, interactive: false }).addTo(g)
       L.polyline(path, { color: CURRENT, weight: 3.5, opacity: 0.55, lineCap: 'round', interactive: false }).addTo(g)
-      const offset = depot ? 1 : 0
-      if (curIdx > -1) {
-        const done = path.slice(0, curIdx + offset)
-        if (done.length > 1) L.polyline(done, { color: '#94a3b8', weight: 4, opacity: 0.9, lineCap: 'round', interactive: false }).addTo(g)
-        const legFrom = path[curIdx + offset - 1] ?? path[0]
-        L.polyline([legFrom, pts(stops[curIdx])], { color: CURRENT, weight: 5, opacity: 1, dashArray: '8 8', lineCap: 'round', interactive: false }).addTo(g)
-      }
+      const toCurrent = curIdx > -1 ? curIdx + (depot ? 1 : 0) - 1 : -1   // index of the leg that ends at the current stop
+      if (toCurrent > 0) L.polyline(Array.from({ length: toCurrent }, (_, k) => leg(k)).flat(), { color: '#94a3b8', weight: 4, opacity: 0.9, lineCap: 'round', interactive: false }).addTo(g)
+      if (toCurrent >= 0) L.polyline(leg(toCurrent), { color: CURRENT, weight: 5, opacity: 1, dashArray: '8 8', lineCap: 'round', interactive: false }).addTo(g)
     }
 
     if (depot) L.marker([depot.lat, depot.lon], { icon: hubIcon(depot.code, false), zIndexOffset: 500, interactive: false }).addTo(g)

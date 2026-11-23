@@ -31,6 +31,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from app.services.optimizer.distance_matrix import build_distance_matrix
+from app.services.optimizer.traffic import travel_time
 
 TIME_WEIGHT = 0.3  # km-equivalent cost per route minute (driver time); 1 h idle ≈ 18 km of driving
 
@@ -86,6 +87,7 @@ class Solution:
     baseline_distance_km: float   # every stop as its own round trip
     compute_ms: float
     stats: Dict[str, int] = field(default_factory=dict)
+    distance_source: str = "estimate"   # "osrm" when planned on real road distances
 
 
 class _Problem:
@@ -96,7 +98,9 @@ class _Problem:
         self.vehicles = list(vehicles)
         self.depart = depart_min
         points = [hub] + [(s.lat, s.lon) for s in stops]
-        self.dist = np.asarray(build_distance_matrix(points, "VAN").distance_km)
+        matrix = build_distance_matrix(points, "VAN")
+        self.dist = np.asarray(matrix.distance_km)
+        self.source = matrix.source
         self._dur: Dict[str, np.ndarray] = {}
         self._points = points
 
@@ -118,14 +122,14 @@ class _Problem:
         t, prev, visits = float(self.depart), 0, []
         for node in route:
             s = self.stops[node - 1]
-            arrival = t + d[prev, node]
+            arrival = t + travel_time(d[prev, node], t)
             if arrival > s.window_close:
                 return None
             start = max(arrival, s.window_open)
             t = start + s.service_min
             visits.append(Visit(s.id, arrival, start, t, start - arrival))
             prev = node
-        back = t + d[prev, 0]
+        back = t + travel_time(d[prev, 0], t)
         if back - self.depart > max_shift:
             return None
         return visits, back
@@ -144,8 +148,11 @@ class _Problem:
 def _clarke_wright(p: _Problem, nodes: List[int], cap: VehicleSpec) -> List[List[int]]:
     routes: Dict[int, List[int]] = {i: [i] for i in nodes}   # route id = first node it was created for
     where = {i: i for i in nodes}                            # node -> route id
+    # Road distances can be asymmetric (one-way streets); savings use the two-way average, while route cost and
+    # feasibility (2-opt, schedule) always use the true directional distances.
+    d = (p.dist + p.dist.T) / 2.0
     savings = sorted(
-        ((p.dist[0, i] + p.dist[0, j] - p.dist[i, j], i, j) for a, i in enumerate(nodes) for j in nodes[a + 1:]),
+        ((d[0, i] + d[0, j] - d[i, j], i, j) for a, i in enumerate(nodes) for j in nodes[a + 1:]),
         key=lambda x: (-x[0], x[1], x[2]),
     )
     for s, i, j in savings:
@@ -269,4 +276,5 @@ def solve(hub: Tuple[float, float], stops: Sequence[Stop], vehicles: Sequence[Ve
         baseline_distance_km=round(_separate_trips_km(p, served), 3),
         compute_ms=round((time.perf_counter() - started) * 1000, 2),
         stats={"stops": len(stops), "vehicles": len(vehicles), "routes": len(routes), "unassigned": len(unassigned)},
+        distance_source=p.source,
     )

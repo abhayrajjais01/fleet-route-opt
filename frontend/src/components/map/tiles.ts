@@ -1,6 +1,7 @@
 // ─── BASEMAP ──────────────────────────────────────────────────────────────────
-// Standard OpenStreetMap tiles (free, no API key), muted with a CSS filter (.fleet-basemap in index.css)
-// so routes and markers carry the colour rather than the streets.
+// Standard OpenStreetMap tiles (free, no API key) - the same road data the road router follows, so drawn routes
+// line up with the streets underneath. A light CSS filter (.fleet-basemap in index.css) softens the colours so
+// routes and markers stand out while road names stay readable.
 import L from 'leaflet'
 
 export function addBasemap(map: L.Map) {
