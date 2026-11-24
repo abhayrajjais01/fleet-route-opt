@@ -7,6 +7,8 @@ import CopilotSlidingDrawer from './components/copilot/CopilotSlidingDrawer'
 import type { RouteDispatch } from './components/routes/RoutePlannerSection'
 import AuditCompliancePanel from './components/audit/AuditCompliancePanel'
 import { applyAcceptedProposal } from './lib/proposalsApi'
+import LoginPage from './components/auth/LoginPage'
+import { activate, initials, restore, type Session } from './lib/session'
 import { ACCESS_NOTE, accountFor, appAccess, profileFor } from './lib/driverAccess'
 import type { UserRole, VehicleType, VehicleStatus, DriverStatus, LicenseType, ShipmentStatus, ShipmentPriority, AuditAction, AdminSection, Vehicle, Driver, Hub, Shipment, User, AuditEntry } from './lib/types'
 
@@ -1322,9 +1324,49 @@ const ALL_NAV: { id: AdminSection; label: string; group: 'Operations' | 'Assets 
   { id: 'users', label: 'Users', group: 'Governance', path: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', roles: ['ADMIN'] },
 ]
 
+// Where each role lands, and where it is sent back to if it reaches a section it may not use.
+function homeSection(role: UserRole): AdminSection {
+  return role === 'DRIVER' ? 'tracking' : (ALL_NAV.find(n => n.roles.includes(role))?.id ?? 'dashboard')
+}
+
+// ─── ROOT: login page, then the workspace for a signed-in account or demo mode ───────────────
 export default function App() {
-  const [activeRole, setActiveRole] = useState<UserRole>('ADMIN')
-  const [section, setSection] = useState<AdminSection>('dashboard')
+  // undefined while the stored session is being checked; null at the login page.
+  const [session, setSession] = useState<Session | null | undefined>(undefined)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    restore().then(({ session: s, expired }) => {
+      if (expired) setNotice('Your session has expired. Please sign in again.')
+      setSession(activate(s))
+    })
+  }, [])
+
+  if (session === undefined) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-slate-50" role="status" aria-live="polite">
+        <span className="w-5 h-5 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" aria-hidden />
+        <span className="sr-only">Loading…</span>
+      </div>
+    )
+  }
+  if (session === null) {
+    return <LoginPage notice={notice} onSession={s => { setNotice(null); setSession(activate(s)) }} />
+  }
+  const key = session.mode === 'user' ? `user:${session.user.id}` : 'demo'
+  return <Workspace key={key} session={session} onSignOut={() => { activate(null); setSession(null) }} />
+}
+
+function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+  const isDemo = session.mode === 'demo'
+  const initialRole: UserRole = session.mode === 'user' ? session.user.role : session.startRole
+  // Signed in, the role is the account's and cannot be switched; demo mode can switch between every profile.
+  const [activeRole, setActiveRole] = useState<UserRole>(initialRole)
+  const [section, setSection] = useState<AdminSection>(() => homeSection(initialRole))
+  useEffect(() => {
+    if (!ALL_NAV.find(n => n.id === section)?.roles.includes(activeRole)) setSection(homeSection(activeRole))
+  }, [section, activeRole])
+  const [accountOpen, setAccountOpen] = useState(false)
   // Week 15 (Track B): below 1024 px the sidebar is an overlay drawer, closed by default and after each navigation.
   const narrowQuery = '(max-width: 1023px)'
   const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia(narrowQuery).matches)
@@ -1407,8 +1449,11 @@ export default function App() {
     DRIVER: { name: 'Rajesh Kumar', email: 'rajesh@fleetops.in', initials: 'RK', badgeColor: 'bg-emerald-600 text-white' },
   }
 
-  const currentUser = roleUserNames[activeRole]
+  const currentUser = session.mode === 'user'
+    ? { name: session.user.full_name, email: session.user.email, initials: initials(session.user.full_name), badgeColor: roleUserNames[activeRole].badgeColor }
+    : roleUserNames[activeRole]
   const switchRole = (r: UserRole) => {
+    if (!isDemo) return
     setActiveRole(r)
     if (r === 'DRIVER') setSection('tracking')
     else if (!ALL_NAV.find(n => n.id === section)?.roles.includes(r)) setSection(ALL_NAV.find(n => n.roles.includes(r))!.id)
@@ -1496,28 +1541,57 @@ export default function App() {
               <span className="hidden sm:inline">AI Copilot</span>
             </button>
           )}
-          <select aria-label="Switch role" value={activeRole} onChange={e => switchRole(e.target.value as UserRole)}
-            className="md:hidden bg-slate-100 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-700 outline-none">
-            {(['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] as UserRole[]).map(r => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
-          </select>
-          <div className="hidden md:flex items-center bg-slate-100 p-0.5 rounded-lg" role="group" aria-label="Switch role">
-            {(['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] as UserRole[]).map((r) => (
-              <button
-                key={r}
-                aria-pressed={activeRole === r}
-                onClick={() => switchRole(r)}
-                className={`px-2.5 py-1 text-[10px] font-bold rounded-md whitespace-nowrap transition ${activeRole === r ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-800'}`}
-              >
-                {r.replace('_', ' ')}
-              </button>
-            ))}
-          </div>
-          <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-200">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ${currentUser.badgeColor}`}>{currentUser.initials}</div>
-            <div className="hidden xl:block leading-tight whitespace-nowrap">
-              <p className="text-xs font-semibold text-slate-800">{currentUser.name}</p>
-              <p className="text-[10px] text-slate-400">{activeRole.replace('_', ' ').toLowerCase()}</p>
-            </div>
+          {isDemo && (
+            <>
+              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 ring-1 ring-amber-200"
+                title="Demo mode: sample data, every profile available">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden />Demo
+              </span>
+              <select aria-label="Switch role" value={activeRole} onChange={e => switchRole(e.target.value as UserRole)}
+                className="md:hidden bg-slate-100 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-700 outline-none">
+                {(['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] as UserRole[]).map(r => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
+              </select>
+              <div className="hidden md:flex items-center bg-slate-100 p-0.5 rounded-lg" role="group" aria-label="Switch role">
+                {(['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] as UserRole[]).map((r) => (
+                  <button
+                    key={r}
+                    aria-pressed={activeRole === r}
+                    onClick={() => switchRole(r)}
+                    className={`px-2.5 py-1 text-[10px] font-bold rounded-md whitespace-nowrap transition ${activeRole === r ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    {r.replace('_', ' ')}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+          <div className="relative sm:pl-3 sm:border-l border-slate-200">
+            <button onClick={() => setAccountOpen(o => !o)} aria-haspopup="menu" aria-expanded={accountOpen} aria-label="Account"
+              className="flex items-center gap-2 rounded-lg p-0.5 pr-1 hover:bg-slate-100">
+              <span className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold ${currentUser.badgeColor}`}>{currentUser.initials}</span>
+              <span className="hidden xl:block leading-tight whitespace-nowrap text-left">
+                <span className="block text-xs font-semibold text-slate-800">{currentUser.name}</span>
+                <span className="block text-[10px] text-slate-400">{activeRole.replace('_', ' ').toLowerCase()}{isDemo ? ' · demo' : ''}</span>
+              </span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="hidden sm:block w-3.5 h-3.5 text-slate-400" aria-hidden><path d="M6 9l6 6 6-6" /></svg>
+            </button>
+            {accountOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setAccountOpen(false)} aria-hidden />
+                <div role="menu" className="absolute right-0 top-full mt-2 z-50 w-64 rounded-xl bg-white p-1.5 shadow-xl ring-1 ring-slate-200">
+                  <div className="px-2.5 py-2">
+                    <p className="text-sm font-semibold text-slate-800 truncate">{currentUser.name}</p>
+                    <p className="text-xs text-slate-500 truncate">{isDemo ? 'Demo mode · sample data' : currentUser.email}</p>
+                    <p className="mt-1 text-[11px] text-slate-400">{isDemo ? 'Switch profiles from the bar above.' : `Signed in as ${activeRole.replace('_', ' ').toLowerCase()}. You see the sections this role is assigned.`}</p>
+                  </div>
+                  <div className="my-1 h-px bg-slate-100" />
+                  <button role="menuitem" onClick={() => { setAccountOpen(false); onSignOut() }}
+                    className="w-full rounded-lg px-2.5 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
+                    {isDemo ? 'Exit demo mode' : 'Sign out'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </header>
 
