@@ -14,6 +14,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from tests.conftest import SIGNATURE
 from app.main import app
 from app.core.database import Base, get_db
 from app.core.security import hash_password, create_access_token
@@ -188,7 +189,7 @@ def test_driver_offline_sync_arrive_and_deliver(client, driver_env):
                 "action_type": "DELIVER",
                 "shipment_id": s1_id,
                 "client_timestamp": "2026-11-11T10:20:00Z",
-                "payload": {"recipient_name": "Sanjay Mehta", "signature_text": "OTP-9988"},
+                "payload": {"recipient_name": "Sanjay Mehta", "signature": SIGNATURE},
             },
         ]
     }

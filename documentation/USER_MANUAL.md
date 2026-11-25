@@ -42,6 +42,20 @@ The platform opens on a **login page** with two ways in:
   data. *Exit demo mode* is in the account menu. A deployment can hide demo mode by building the frontend with
   `VITE_DEMO_MODE=false` (`docker-compose.yml` → `frontend.build.args`).
 
+### Passwords
+
+- **Change password**: account menu (top right). You stay signed in here; every other device is signed out.
+- **Forgot password?** on the login page asks your administrator. They see *Reset requested* on **Users**, choose
+  **Reset password**, and give you the temporary password shown to them once.
+- A temporary password (new account or reset) must be replaced when you sign in, before anything else opens.
+
+### Saved plans
+
+Orders and dispatches are saved on the server. Everyone sees the same plan (refreshed every 10 seconds), and a page
+refresh loses nothing. If a colleague changes the same shipment, vehicle or driver first, your change is refused with
+the reason, nothing is saved, and the latest plan loads. *Not connected* at the top means you are looking at the
+sample plan and changes are not saved. Demo mode saves to the same server, through the demo accounts.
+
 ### Demo accounts
 
 | Role | Email | Password |
@@ -91,7 +105,10 @@ If no driver is free for a spare vehicle, its stops go back to *Unassigned* and 
 
 The driver view opens on **My stops**: the next stop first, with the customer, time window and a *Navigate* link.
 
-- **Depart** → **Arrive** → **Deliver** (recipient name and signature) or **Failed** (pick a reason).
+- **Depart** → **Arrive** → **Deliver** (who received it, plus their signature or delivery code) or **Failed** (pick a reason).
+- **Proof of delivery** is required: the recipient signs on the screen, or gives you the 6-digit code they got from
+  dispatch (Shipments → *Delivery code*). Five wrong codes lock it until dispatch issues a new one. Offline, take a
+  signature: a code can only be checked when you reconnect.
 - **Report delay** with minutes and a reason; downstream ETAs shift for the dispatcher.
 - **Offline**: actions taken without signal are queued on the phone and sent when the connection returns. Anything
   the server rejects stays in the queue with the reason.

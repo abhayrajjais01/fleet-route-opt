@@ -28,6 +28,7 @@ class ManagedUserCreate(UserCreate):
     role=DRIVER needs exactly one of: `driver` (create a new linked profile) or `driver_id` (link an existing
     profile that has no login yet). Other roles take neither.
     """
+    password: str = Field(..., min_length=8, max_length=128, description="Temporary: must be changed at the first sign-in")
     driver: Optional[DriverProfileIn] = None
     driver_id: Optional[int] = None
 
@@ -48,6 +49,10 @@ class ManagedUserUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+class TemporaryPassword(BaseModel):
+    temporary_password: str = Field(..., description="Shown once. Must be changed at the next sign-in.")
+
+
 class DriverLinkRequest(BaseModel):
     driver_id: Optional[int] = Field(None, description="Driver profile to link; null unlinks the current one")
 
@@ -61,4 +66,5 @@ class LinkedDriver(BaseModel):
 
 class ManagedUserResponse(UserResponse):
     driver: Optional[LinkedDriver] = None
+    reset_requested: bool = Field(False, description="The account holder asked for a password reset")
     profile_missing: bool = Field(False, description="DRIVER account without a driver profile: cannot be planned")

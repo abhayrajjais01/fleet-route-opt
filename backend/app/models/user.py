@@ -6,7 +6,9 @@ specifying the 4 platform privilege levels: ADMIN, FLEET_MANAGER, DISPATCHER, DR
 """
 
 import enum
-from sqlalchemy import Column, String, Boolean, Enum as SQLEnum
+from sqlalchemy import Boolean, Column, DateTime, Enum as SQLEnum, Integer, String
+from sqlalchemy.sql import false
+
 from app.core.database import Base
 from app.models.base import TimestampMixin
 
@@ -31,6 +33,12 @@ class User(Base, TimestampMixin):
     full_name = Column(String(255), nullable=False)
     role = Column(SQLEnum(UserRole), default=UserRole.DISPATCHER, nullable=False, index=True)
     is_active = Column(Boolean, default=True, nullable=False)
+
+    # Passwords. A temporary password (set by an admin) must be changed before anything else is allowed. Tokens carry
+    # token_version, so changing or resetting a password ends every older session.
+    must_change_password = Column(Boolean, default=False, server_default=false(), nullable=False)
+    token_version = Column(Integer, default=0, server_default="0", nullable=False)
+    reset_requested_at = Column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email} role={self.role}>"

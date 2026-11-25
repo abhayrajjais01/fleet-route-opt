@@ -16,7 +16,7 @@ Each stage asserts what the next one depends on, so a regression anywhere fails 
 """
 
 from app.models.user import UserRole
-from tests.conftest import auth_headers
+from tests.conftest import SIGNATURE, auth_headers
 
 API = "/api/v1"
 HUB = {"name": "Kurla Regression Hub", "code": "HUB-E2E-01", "address": "LBS Marg, Kurla West, Mumbai",
@@ -139,7 +139,7 @@ def test_full_operating_day(client):
         dep = client.post(f"{API}/transit/shipments/{sid}/depart", headers=dispatcher, json={"vehicle_id": vehicles[0]["id"], "notes": "Left Kurla hub"})
         assert dep.status_code == 200, dep.text
     assert client.post(f"{API}/transit/shipments/{delivered_id}/arrive", headers=driver, json={"latitude": 19.066, "longitude": 72.868}).status_code == 200
-    done = client.post(f"{API}/transit/shipments/{delivered_id}/deliver", headers=driver, json={"recipient_name": "Store Manager", "signature_text": "SM"})
+    done = client.post(f"{API}/transit/shipments/{delivered_id}/deliver", headers=driver, json={"recipient_name": "Store Manager", "signature": SIGNATURE})
     assert done.status_code == 200 and done.json()["current_status"] == "DELIVERED", done.text
     fail = client.post(f"{API}/transit/shipments/{failed_id}/fail", headers=driver, json={"reason_code": "CONSIGNEE_UNAVAILABLE", "notes": "Branch closed for audit"})
     assert fail.status_code == 200, fail.text

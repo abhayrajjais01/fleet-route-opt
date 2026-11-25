@@ -75,6 +75,14 @@ class Shipment(Base, TimestampMixin):
     # Assigned vehicle foreign key (nullable when UNASSIGNED)
     assigned_vehicle_id = Column(Integer, ForeignKey("vehicles.id", ondelete="SET NULL"), nullable=True, index=True)
 
+    # The saved plan: planned departure (HH:MM) and position on the vehicle's route (0-based)
+    dispatch_time = Column(String(5), nullable=True)
+    route_sequence = Column(Integer, nullable=True)
+
+    # Customer delivery code: derived from this nonce (services/delivery_proof.py), never stored in readable form
+    delivery_code_nonce = Column(String(32), nullable=True)
+    delivery_code_attempts = Column(Integer, default=0, server_default="0", nullable=False)
+
     # SQL Constraints
     __table_args__ = (
         CheckConstraint("latitude >= -90.0 AND latitude <= 90.0", name="chk_shipment_lat"),

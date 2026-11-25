@@ -43,7 +43,7 @@ const ICONS = {
 export default function DispatchPlanner({ shipments, hubs, vehicles, drivers, users, initialShipmentId, onDispatch, addAudit, onOpenTracking }: {
   shipments: Shipment[]; hubs: Hub[]; vehicles: Vehicle[]; drivers: Driver[]; users: User[]
   initialShipmentId: number | null
-  onDispatch: (d: DispatchDecision) => void
+  onDispatch: (d: DispatchDecision) => Promise<string | null>
   addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
   onOpenTracking: () => void
 }) {
@@ -92,7 +92,7 @@ export default function DispatchPlanner({ shipments, hubs, vehicles, drivers, us
 
 function PlanView({ shipment, hubs, vehicles, drivers, users, onDispatch, addAudit, onOpenTracking }: {
   shipment: Shipment; hubs: Hub[]; vehicles: Vehicle[]; drivers: Driver[]; users: User[]
-  onDispatch: (d: DispatchDecision) => void
+  onDispatch: (d: DispatchDecision) => Promise<string | null>
   addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
   onOpenTracking: () => void
 }) {
@@ -111,6 +111,8 @@ function PlanView({ shipment, hubs, vehicles, drivers, users, onDispatch, addAud
   const [routeLegs, setRouteLegs] = useState<Leg[] | null>(null)
   const [policies, setPolicies] = useState<Partial<Record<PolicyKey, PolicyCitation | null>>>({})
   const [justDispatched, setJustDispatched] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!hasCoords || !hubs.length) return
@@ -208,9 +210,12 @@ function PlanView({ shipment, hubs, vehicles, drivers, users, onDispatch, addAud
   const overall = worst(checks.map(c => c.verdict))
   const canDispatch = !locked && hasCoords && !!vehicle && !!driver && overall !== 'fail'
 
-  function approve() {
-    if (!vehicle || !driver) return
-    onDispatch({ shipmentId: shipment.id, vehicleId: vehicle.id, driverId: driver.id, departure })
+  async function approve() {
+    if (!vehicle || !driver || saving) return
+    setSaving(true); setSaveError(null)
+    const problem = await onDispatch({ shipmentId: shipment.id, vehicleId: vehicle.id, driverId: driver.id, departure })
+    setSaving(false)
+    if (problem) { setSaveError(problem); return }
     addAudit({ actor_name: 'Dispatcher', action_type: 'DISPATCH_APPROVED', entity_type: 'SHIPMENT', entity_id: shipment.id,
       details: `${shipment.tracking_number} dispatched on ${vehicle.plate_number} with ${driver.full_name}, departs ${departure}, ETA ${clock(eta)}` })
     setJustDispatched(true)
@@ -331,8 +336,9 @@ function PlanView({ shipment, hubs, vehicles, drivers, users, onDispatch, addAud
                 <span>{routeLegs ? `${fmtDur(tripMinutes)} driving` : ''}</span>
                 <span>{vehicle && routeLegs ? `${(tripKm / vehicle.fuel_efficiency_kpl).toFixed(1)} L fuel` : ''}</span>
               </div>
-              <button onClick={approve} disabled={!canDispatch} className="w-full py-3 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed">
-                {overall === 'fail' ? 'Fix the failed checks to dispatch' : 'Approve & dispatch'}
+              {saveError && <p role="alert" className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{saveError}</p>}
+              <button onClick={approve} disabled={!canDispatch || saving} className="w-full py-3 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed">
+                {saving ? 'Saving…' : overall === 'fail' ? 'Fix the failed checks to dispatch' : 'Approve & dispatch'}
               </button>
             </>
           )}

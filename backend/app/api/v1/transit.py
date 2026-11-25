@@ -14,15 +14,19 @@ Exposes RESTful endpoints for driver actions:
 
 from typing import Dict, List
 from fastapi import APIRouter, Depends, status
+from pydantic import ValidationError
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user, require_roles
 from app.models.user import User, UserRole
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
+import json
 from fastapi import HTTPException
+from app.models.delivery import DeliveryProof
 from app.models.fleet import Driver, Vehicle, Hub
 from app.models.shipment import Shipment, ShipmentStatus
 from app.schemas.transit import (
@@ -36,6 +40,7 @@ from app.schemas.transit import (
     TripFsmProgressResponse,
     DriverMobileManifestResponse,
     DriverStopManifestItem,
+    DeliveryProofResponse,
     DriverOfflineSyncRequest,
     DriverOfflineSyncResponse,
     DriverOfflineSyncResultItem,
@@ -119,7 +124,8 @@ def mark_shipment_delivered(
         shipment_id=shipment_id,
         recipient_name=payload.recipient_name,
         actor=current_user,
-        signature_text=payload.signature_text,
+        delivery_code=payload.delivery_code,
+        signature=payload.signature,
         notes=payload.notes,
     )
 
@@ -274,15 +280,15 @@ def get_driver_mobile_manifest(
             db.query(Shipment)
             .filter(
                 Shipment.assigned_vehicle_id == vehicle.id,
-                Shipment.status.in_([
-                    ShipmentStatus.ASSIGNED,
-                    ShipmentStatus.IN_TRANSIT,
-                    ShipmentStatus.ARRIVED,
-                    ShipmentStatus.DELIVERED,
-                    ShipmentStatus.FAILED,
-                ]),
+                # Open stops, plus what was closed in the last day (earlier days' deliveries stay out of today's list)
+                or_(
+                    Shipment.status.in_([ShipmentStatus.ASSIGNED, ShipmentStatus.IN_TRANSIT, ShipmentStatus.ARRIVED]),
+                    and_(Shipment.status.in_([ShipmentStatus.DELIVERED, ShipmentStatus.FAILED]),
+                         Shipment.updated_at >= datetime.now(timezone.utc) - timedelta(days=1)),
+                ),
             )
-            .order_by(Shipment.time_window_start.asc(), Shipment.id.asc())
+            # The dispatcher's approved order; stops without one fall back to their time window
+            .order_by(Shipment.route_sequence.is_(None), Shipment.route_sequence, Shipment.time_window_start, Shipment.id)
             .all()
         )
 
@@ -343,6 +349,34 @@ def get_driver_mobile_manifest(
     )
 
 
+def _reason(err: Exception) -> str:
+    """What the driver reads next to a rejected action."""
+    if isinstance(err, HTTPException):
+        return str(err.detail)
+    if isinstance(err, ValidationError):
+        return "; ".join(str(e["msg"]).removeprefix("Value error, ") for e in err.errors())
+    return str(err)
+
+
+@router.get(
+    "/shipments/{shipment_id}/proof",
+    response_model=DeliveryProofResponse,
+    summary="Proof of delivery",
+    description="How the handover was proven, who received it and who recorded it. 404 when the shipment has no proof.",
+)
+def get_delivery_proof(
+    shipment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.FLEET_MANAGER, UserRole.DISPATCHER])),
+) -> DeliveryProofResponse:
+    proof = db.query(DeliveryProof).filter(DeliveryProof.shipment_id == shipment_id).first()
+    if not proof:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No proof of delivery is recorded for this shipment.")
+    return DeliveryProofResponse(shipment_id=proof.shipment_id, method=proof.method, recipient_name=proof.recipient_name,
+                                 captured_by_name=proof.captured_by_name, created_at=proof.created_at,
+                                 signature=json.loads(proof.signature) if proof.signature else None)
+
+
 @router.post(
     "/driver/offline-sync",
     response_model=DriverOfflineSyncResponse,
@@ -360,7 +394,21 @@ def sync_driver_offline_actions(
 
     for action in sync_req.actions:
         try:
-            if action.action_type == DriverOfflineActionType.ARRIVE:
+            if action.action_type == DriverOfflineActionType.DEPART:
+                res = TransitFSMService.depart_shipment(
+                    db=db, shipment_id=action.shipment_id, actor=current_user, notes="Offline queued departure")
+                results.append(
+                    DriverOfflineSyncResultItem(
+                        action_id=action.action_id,
+                        shipment_id=action.shipment_id,
+                        action_type=action.action_type.value,
+                        success=True,
+                        new_status=res.current_status,
+                    )
+                )
+                applied_count += 1
+
+            elif action.action_type == DriverOfflineActionType.ARRIVE:
                 lat = action.payload.get("latitude")
                 lng = action.payload.get("longitude")
                 notes = action.payload.get("notes", "Offline queued check-in")
@@ -384,16 +432,16 @@ def sync_driver_offline_actions(
                 applied_count += 1
 
             elif action.action_type == DriverOfflineActionType.DELIVER:
-                recipient = action.payload.get("recipient_name", "Authorized Consignee")
-                sig = action.payload.get("signature_text", "OFFLINE-SIG")
-                notes = action.payload.get("notes", "Offline confirmed delivery")
+                # Same rules as the live endpoint: a queued delivery without real proof is rejected, not waved through.
+                proof = TransitDeliverRequest.model_validate({"notes": "Confirmed offline", **action.payload})
                 res = TransitFSMService.deliver_shipment(
                     db=db,
                     shipment_id=action.shipment_id,
                     actor=current_user,
-                    recipient_name=recipient,
-                    signature_text=sig,
-                    notes=notes,
+                    recipient_name=proof.recipient_name,
+                    delivery_code=proof.delivery_code,
+                    signature=proof.signature,
+                    notes=proof.notes,
                 )
                 results.append(
                     DriverOfflineSyncResultItem(
@@ -455,7 +503,7 @@ def sync_driver_offline_actions(
                     shipment_id=action.shipment_id,
                     action_type=action.action_type.value,
                     success=False,
-                    error=str(err),
+                    error=_reason(err),
                 )
             )
             failed_count += 1

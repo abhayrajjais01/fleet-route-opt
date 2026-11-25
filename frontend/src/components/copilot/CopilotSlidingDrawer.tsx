@@ -15,7 +15,7 @@ interface CopilotSlidingDrawerProps {
   /** Live plan used to build re-route proposals (Week 11). */
   fleet?: { shipments: Shipment[]; vehicles: Vehicle[]; drivers: Driver[]; hubs: Hub[] }
   /** Called when the dispatcher accepts a proposal; applies it to the live plan. */
-  onApplyProposal?: (card: ProposalCardData, now: string) => string | void
+  onApplyProposal?: (card: ProposalCardData, now: string) => Promise<string | void>
   /** Render the built-in floating launcher. Off when the host page provides its own (e.g. a header button). */
   showTrigger?: boolean
 }
@@ -126,8 +126,10 @@ export default function CopilotSlidingDrawer({
   }
 
   async function decideProposal(msgId: string, card: ProposalCardData, decision: 'ACCEPT' | 'REJECT', now: string) {
+    // The plan is saved before the proposal is marked accepted: if saving is refused (someone changed the plan first),
+    // this throws, the card shows why, and it stays open.
+    const note = decision === 'ACCEPT' ? await onApplyProposal?.(card, now) : undefined
     const updated = await proposalsApi.decide(card.card_id, decision, authToken)
-    const note = decision === 'ACCEPT' ? onApplyProposal?.(updated, now) : undefined
     setMessages(prev => prev.map(m => (m.id === msgId ? { ...m, proposal: updated, applyNote: note || undefined } : m)))
   }
 

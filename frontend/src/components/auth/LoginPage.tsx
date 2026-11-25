@@ -2,7 +2,7 @@
 // Sign in with an account (the workspace then shows only what that account's role may use), or explore the
 // whole platform in demo mode, where every profile can be switched to.
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { DEMO_MODE_ENABLED, SignInError, signIn, startDemo, type Session } from '../../lib/session'
+import { DEMO_MODE_ENABLED, requestReset, SignInError, signIn, startDemo, type Session } from '../../lib/session'
 import type { UserRole } from '../../lib/types'
 
 const DEMO_PROFILES: { role: UserRole; title: string; sees: string; accent: string }[] = [
@@ -24,19 +24,29 @@ export default function LoginPage({ onSession, notice }: { onSession: (s: Sessio
   const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [resetNote, setResetNote] = useState<string | null>(null)
   const emailRef = useRef<HTMLInputElement>(null)
   useEffect(() => { emailRef.current?.focus() }, [])
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     if (!email.trim() || !password) { setError('Enter your email and password.'); return }
-    setBusy(true); setError(null)
+    setBusy(true); setError(null); setResetNote(null)
     try {
       onSession(await signIn(email, password))
     } catch (err) {
       setError(err instanceof SignInError ? err.message : 'Sign-in failed. Please try again.')
       setBusy(false)
     }
+  }
+
+  async function forgot() {
+    setResetNote(null)
+    if (!email.trim()) { setError('Enter your email above, then choose Forgot password.'); emailRef.current?.focus(); return }
+    setBusy(true); setError(null)
+    try { setResetNote(await requestReset(email)) } catch (err) {
+      setError(err instanceof SignInError ? err.message : 'Please try again.')
+    } finally { setBusy(false) }
   }
 
   return (
@@ -87,7 +97,10 @@ export default function LoginPage({ onSession, notice }: { onSession: (s: Sessio
                 className="mt-1.5 w-full rounded-lg bg-white px-3 py-2.5 text-sm ring-1 ring-slate-300 outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-60" />
             </div>
             <div>
-              <label htmlFor="login-password" className="block text-sm font-medium text-slate-700">Password</label>
+              <div className="flex items-baseline justify-between">
+                <label htmlFor="login-password" className="block text-sm font-medium text-slate-700">Password</label>
+                <button type="button" onClick={forgot} disabled={busy} className="text-xs font-medium text-violet-700 hover:text-violet-900">Forgot password?</button>
+              </div>
               <div className="relative mt-1.5">
                 <input id="login-password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password}
                   onChange={e => setPassword(e.target.value)} disabled={busy}
@@ -99,6 +112,7 @@ export default function LoginPage({ onSession, notice }: { onSession: (s: Sessio
               </div>
             </div>
             <p aria-live="polite" className={`text-sm text-red-700 ${error ? '' : 'sr-only'}`}>{error ?? ''}</p>
+            {resetNote && <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{resetNote} They will give you a temporary password.</p>}
             <button type="submit" disabled={busy}
               className="w-full rounded-lg bg-slate-900 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 flex items-center justify-center gap-2">
               {busy && <span aria-hidden className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />}

@@ -112,6 +112,9 @@ export function buildDisruptionRequest(message: string, shipments: Shipment[], v
 }
 
 // ─── Applying an accepted proposal to the live plan ─────────────────────────
+/** The parts of a proposal that change the plan (copilot cards and Live Tracking recoveries share them). */
+export interface AppliableProposal { tool_call: ProposalCard['tool_call']; routes_after: Record<string, { stop_id: string }[]>; unassigned: Record<string, string> }
+
 export interface AppliedProposal {
   shipments: Shipment[]
   vehicles: Vehicle[]
@@ -127,7 +130,7 @@ export interface AppliedProposal {
  *  - a spare vehicle is dispatched only with a driver: the one already linked to it, else a free ON_DUTY
  *    driver from its hub. With no free driver it stays AVAILABLE and its stops go back to the planning queue.
  */
-export function applyAcceptedProposal(card: ProposalCard, shipments: Shipment[], vehicles: Vehicle[], drivers: Driver[], now: string): AppliedProposal {
+export function applyAcceptedProposal(card: AppliableProposal, shipments: Shipment[], vehicles: Vehicle[], drivers: Driver[], now: string): AppliedProposal {
   const findVehicle = (key: string) => vehicles.find(v => v.plate_number === key || String(v.id) === key)
   const broken = card.tool_call.name === 'reassign_stops' ? findVehicle(String(card.tool_call.arguments.vehicle_id)) : undefined
 
@@ -165,6 +168,7 @@ export function applyAcceptedProposal(card: ProposalCard, shipments: Shipment[],
   shipments.forEach(s => { if (s.assigned_vehicle_id && s.dispatch_time) departureOf.set(s.assigned_vehicle_id, s.dispatch_time) })
 
   const nextShipments = shipments.map(s => {
+    if (s.status === 'DELIVERED' || s.status === 'FAILED') return s      // closed: the proposal lists it, but it stays as it is
     const p = placement.get(s.id)
     if (unassigned.has(s.id) || heldStops.has(s.id)) return { ...s, status: 'UNASSIGNED' as const, assigned_vehicle_id: null, route_sequence: null }
     if (!p) return s

@@ -109,13 +109,22 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
             return None
 
 
-def get_current_user(
+def issue_token(user: User) -> str:
+    """Access token for a user. `tv` ties it to the current password: changing the password ends older sessions."""
+    return create_access_token({"sub": user.email, "role": user.role.value, "tv": user.token_version or 0})
+
+
+PASSWORD_CHANGE_REQUIRED = "Change your temporary password before continuing."
+
+
+def get_signed_in_user(
     token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> User:
     """
-    FastAPI Dependency: Resolves and validates the current active User object from the JWT Bearer token.
-    Raises 401 Unauthorized if token is missing, invalid, or expired.
+    FastAPI Dependency: Resolves and validates the active User object from the JWT Bearer token, including accounts
+    that still have to replace a temporary password. Only for the profile and change-password endpoints.
+    Raises 401 Unauthorized if token is missing, invalid, expired, or older than the last password change.
     Raises 403 Forbidden if user account is deactivated.
     """
     credentials_exception = HTTPException(
@@ -137,11 +146,23 @@ def get_current_user(
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise credentials_exception
+    if payload.get("tv", 0) != (user.token_version or 0):
+        raise credentials_exception
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is inactive"
         )
+    return user
+
+
+def get_current_user(user: User = Depends(get_signed_in_user)) -> User:
+    """
+    FastAPI Dependency: The signed-in user, for every ordinary endpoint.
+    Raises 403 Forbidden until a temporary password has been replaced.
+    """
+    if user.must_change_password:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=PASSWORD_CHANGE_REQUIRED)
     return user
 
 
@@ -153,7 +174,7 @@ def get_optional_user(
     if not token:
         return None
     try:
-        return get_current_user(token, db)
+        return get_current_user(get_signed_in_user(token, db))
     except HTTPException:
         return None
 

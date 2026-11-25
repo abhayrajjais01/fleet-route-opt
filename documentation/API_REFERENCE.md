@@ -33,6 +33,7 @@ The interactive version is at **`/docs`** (Swagger UI) and **`/redoc`** on any r
 - [LangGraph AI Copilot](#langgraph-ai-copilot)
 - [In-Transit FSM & Telemetry Tracking](#in-transit-fsm--telemetry-tracking)
 - [Executive KPI Analytics](#executive-kpi-analytics)
+- [User Management](#user-management)
 
 ## Root
 
@@ -184,7 +185,7 @@ Update driver
 
 - **Roles**: ADMIN, FLEET_MANAGER
 - **Parameters**: `driver_id` (path, integer, required)
-- **Body**: application/json `DriverUpdate`: `full_name`, `license_type`, `phone_number`, `status`, `max_driving_hours_per_day`, `assigned_hub_id`, `current_vehicle_id` (`*` = required)
+- **Body**: application/json `DriverUpdate`: `full_name`, `license_type`, `phone_number`, `status`, `max_driving_hours_per_day`, `hazmat_endorsed`, `assigned_hub_id`, `current_vehicle_id` (`*` = required)
 - **Responses**: 200, 422
 
 ### `DELETE /api/v1/fleet/drivers/{driver_id}`
@@ -256,6 +257,14 @@ Compute distance & duration matrix
 - **Body**: application/json `DistanceMatrixRequest`: `points`*, `vehicle_type` (`*` = required)
 - **Responses**: 200, 422
 
+### `POST /api/v1/routes/road-path`
+
+Road geometry, distance and time for a stop sequence
+
+- **Roles**: public
+- **Body**: application/json `RoadPathRequest`: `points`*, `vehicle_type` (`*` = required)
+- **Responses**: 200, 422
+
 ### `POST /api/v1/routes/optimize`
 
 Solve VRPTW for a batch of stops
@@ -296,6 +305,22 @@ Explain a route in plain language
 - **Body**: application/json `ExplainRequest`: `hub`*, `vehicle`*, `stops`*, `departure`, `hub_name`, `separate_trips_km` (`*` = required)
 - **Responses**: 200, 422
 
+### `POST /api/v1/routes/manifest.pdf`
+
+Printable route manifest (driver stop sheet)
+
+- **Roles**: signed in
+- **Body**: application/json `ManifestRequest`: `hub`*, `vehicle`*, `stops`*, `departure`, `hub_name`, `separate_trips_km`, `service_date` (`*` = required)
+- **Responses**: 200, 422
+
+### `POST /api/v1/routes/receipt.pdf`
+
+Customer delivery receipt (proof of delivery)
+
+- **Roles**: signed in
+- **Body**: application/json `ReceiptRequest`: `tracking_number`*, `customer_name`*, `address`, `service_date`, `delivered_at`*, `recipient`*, `verified_by`, `weight_kg`*, `vehicle`*, `driver`, `hub`*, `in_full`, `notes` (`*` = required)
+- **Responses**: 200, 422
+
 ### `POST /api/v1/routes/disruption`
 
 Turn a disruption report into a re-route proposal
@@ -312,7 +337,7 @@ OTIF, transit, efficiency, fuel and cost KPIs with CSV and PDF exports.
 
 Operational KPIs with breakdowns
 
-- **Roles**: public
+- **Roles**: ADMIN, FLEET_MANAGER, DISPATCHER
 - **Parameters**: `days` (query, integer, optional): Number of past days; `hub` (query, string, optional): Hub code, e.g. HUB-MUM-01; `vehicle_type` (query, string, optional): VAN, EV, BOX_TRUCK or SEMI_TRUCK; `driver` (query, string, optional): Driver full name; `fuel_price` (query, number, optional): Fuel price per litre (₹); `driver_cost` (query, number, optional): Driver cost per hour (₹)
 - **Responses**: 200, 422
 
@@ -320,15 +345,23 @@ Operational KPIs with breakdowns
 
 CSV export of every delivery attempt
 
-- **Roles**: public
+- **Roles**: ADMIN, FLEET_MANAGER, DISPATCHER
 - **Parameters**: `days` (query, integer, optional): Number of past days; `hub` (query, string, optional): Hub code, e.g. HUB-MUM-01; `vehicle_type` (query, string, optional): VAN, EV, BOX_TRUCK or SEMI_TRUCK; `driver` (query, string, optional): Driver full name
+- **Responses**: 200, 422
+
+### `GET /api/v1/reports/export.xlsx`
+
+Excel export: deliveries, KPIs and per-hub sheets
+
+- **Roles**: ADMIN, FLEET_MANAGER, DISPATCHER
+- **Parameters**: `days` (query, integer, optional): Number of past days; `hub` (query, string, optional): Hub code, e.g. HUB-MUM-01; `vehicle_type` (query, string, optional): VAN, EV, BOX_TRUCK or SEMI_TRUCK; `driver` (query, string, optional): Driver full name; `fuel_price` (query, number, optional): Fuel price per litre (₹); `driver_cost` (query, number, optional): Driver cost per hour (₹)
 - **Responses**: 200, 422
 
 ### `GET /api/v1/reports/summary.pdf`
 
 Printable executive trip summary
 
-- **Roles**: public
+- **Roles**: ADMIN, FLEET_MANAGER, DISPATCHER
 - **Parameters**: `days` (query, integer, optional): Number of past days; `hub` (query, string, optional): Hub code, e.g. HUB-MUM-01; `vehicle_type` (query, string, optional): VAN, EV, BOX_TRUCK or SEMI_TRUCK; `driver` (query, string, optional): Driver full name; `fuel_price` (query, number, optional): Fuel price per litre (₹); `driver_cost` (query, number, optional): Driver cost per hour (₹)
 - **Responses**: 200, 422
 
@@ -365,6 +398,22 @@ Refresh Access Token
 
 - **Roles**: signed in
 - **Responses**: 200
+
+### `POST /api/v1/auth/change-password`
+
+Change Your Password
+
+- **Roles**: signed in
+- **Body**: application/json `ChangePasswordRequest`: `current_password`*, `new_password`* (`*` = required)
+- **Responses**: 200, 422
+
+### `POST /api/v1/auth/forgot-password`
+
+Ask for a Password Reset
+
+- **Roles**: public
+- **Body**: application/json `ForgotPasswordRequest`: `email`* (`*` = required)
+- **Responses**: 202, 422
 
 ### `POST /api/v1/auth/seed-demo-users`
 
@@ -415,6 +464,31 @@ Create Shipment
 - **Roles**: ADMIN, FLEET_MANAGER, DISPATCHER
 - **Body**: application/json `ShipmentCreate`: `tracking_number`*, `customer_name`*, `destination_address`*, `latitude`*, `longitude`*, `weight_kg`*, `volume_m3`*, `time_window_start`, `time_window_end`, `priority`, `hazard_class`, `status`, `hub_id`*, `assigned_vehicle_id` (`*` = required)
 - **Responses**: 201, 422
+
+### `POST /api/v1/shipments/plan`
+
+Save a dispatch or re-route
+
+- **Roles**: ADMIN, FLEET_MANAGER, DISPATCHER
+- **Body**: application/json `PlanChange`: `reason`*, `shipments`*, `vehicles`, `drivers` (`*` = required)
+- **Responses**: 200, 422
+
+### `POST /api/v1/shipments/{shipment_id}/delivery-code`
+
+Show or reissue the customer's delivery code
+
+- **Roles**: ADMIN, FLEET_MANAGER, DISPATCHER
+- **Parameters**: `shipment_id` (path, integer, required); `reissue` (query, boolean, optional): Replace the code and clear failed attempts
+- **Responses**: 200, 422
+
+### `PATCH /api/v1/shipments/{shipment_id}`
+
+Edit order details
+
+- **Roles**: ADMIN, FLEET_MANAGER, DISPATCHER
+- **Parameters**: `shipment_id` (path, integer, required)
+- **Body**: application/json `ShipmentUpdate`: `tracking_number`, `hub_id`, `hazard_class`, `customer_name`, `destination_address`, `latitude`, `longitude`, `weight_kg`, `volume_m3`, `time_window_start`, `time_window_end`, `priority` (`*` = required)
+- **Responses**: 200, 422
 
 ### `GET /api/v1/shipments/{shipment_id}`
 
@@ -579,7 +653,7 @@ Confirm successful parcel delivery handover
 
 - **Roles**: ADMIN, FLEET_MANAGER, DISPATCHER, DRIVER
 - **Parameters**: `shipment_id` (path, integer, required)
-- **Body**: application/json `TransitDeliverRequest`: `recipient_name`*, `signature_text`, `notes` (`*` = required)
+- **Body**: application/json `TransitDeliverRequest`: `recipient_name`*, `delivery_code`, `signature`, `notes` (`*` = required)
 - **Responses**: 200, 422
 
 ### `POST /api/v1/transit/shipments/{shipment_id}/fail`
@@ -632,6 +706,14 @@ Get Mobile Driver Daily Manifest (US-008, Week 9)
 - **Parameters**: `driver_id` (query, integer, optional)
 - **Responses**: 200, 422
 
+### `GET /api/v1/transit/shipments/{shipment_id}/proof`
+
+Proof of delivery
+
+- **Roles**: ADMIN, FLEET_MANAGER, DISPATCHER
+- **Parameters**: `shipment_id` (path, integer, required)
+- **Responses**: 200, 422
+
 ### `POST /api/v1/transit/driver/offline-sync`
 
 Batch Synchronize Driver Offline Actions (US-008, Week 9)
@@ -666,5 +748,55 @@ Printable executive KPI summary
 - **Parameters**: `date_from` (query, string, optional): First day (YYYY-MM-DD); default 30 days before date_to; `date_to` (query, string, optional): Last day (YYYY-MM-DD); default yesterday; `hub` (query, string, optional): Hub code, e.g. HUB-MUM-01; `vehicle_type` (query, string, optional): VAN, EV, BOX_TRUCK or SEMI_TRUCK; `driver` (query, string, optional): Driver full name, e.g. Rajesh Kumar; `priority` (query, string, optional): EXPRESS, HIGH, STANDARD or LOW
 - **Responses**: 200, 422
 
+## User Management
+
+### `GET /api/v1/users`
+
+List accounts with their driver profiles
+
+- **Roles**: ADMIN
+- **Responses**: 200
+
+### `POST /api/v1/users`
+
+Create an account
+
+- **Roles**: ADMIN
+- **Body**: application/json `ManagedUserCreate`: `email`*, `full_name`*, `role`, `is_active`, `password`*, `driver`, `driver_id` (`*` = required)
+- **Responses**: 201, 422
+
+### `GET /api/v1/users/unlinked-drivers`
+
+Driver profiles without a login
+
+- **Roles**: ADMIN
+- **Responses**: 200
+
+### `PATCH /api/v1/users/{user_id}`
+
+Rename, change role, activate or deactivate
+
+- **Roles**: ADMIN
+- **Parameters**: `user_id` (path, integer, required)
+- **Body**: application/json `ManagedUserUpdate`: `full_name`, `role`, `is_active` (`*` = required)
+- **Responses**: 200, 422
+
+### `POST /api/v1/users/{user_id}/reset-password`
+
+Issue a temporary password
+
+- **Roles**: ADMIN
+- **Parameters**: `user_id` (path, integer, required)
+- **Responses**: 200, 422
+
+### `PUT /api/v1/users/{user_id}/driver`
+
+Link or unlink a driver profile
+
+- **Roles**: ADMIN
+- **Parameters**: `user_id` (path, integer, required)
+- **Body**: application/json `DriverLinkRequest`: `driver_id` (`*` = required)
+- **Responses**: 200, 422
+
 ---
-74 endpoints.
+90 endpoints.

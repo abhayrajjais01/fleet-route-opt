@@ -302,7 +302,7 @@ def test_coverage_catches_unlogged_transition_of_an_audited_shipment(client):
                                       "last_logged_status": "UNASSIGNED"}]
 
     # Once the change goes through the API it is logged, and coverage passes again.
-    assert client.patch(f"{API}/shipments/{s['id']}/status", headers=h, json={"status": "DELIVERED", "notes": "handed over"}).status_code == 200
+    assert client.patch(f"{API}/shipments/{s['id']}/status", headers=h, json={"status": "ARRIVED", "notes": "at the gate"}).status_code == 200
     assert client.get(f"{API}/audit/report", headers=h).json()["checks"]["coverage"]["ok"]
 
 

@@ -50,6 +50,11 @@ export async function checkApiHealth(): Promise<boolean> {
   }
 }
 
+/** The server answered, and said no. A TypeError from fetch means it never answered. */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) { super(message) }
+}
+
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_V1}${path}`, {
     ...init,
@@ -58,7 +63,7 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   if (!res.ok) {
     const body = await res.json().catch(() => null)
     const detail = Array.isArray(body?.detail) ? body.detail.map((d: { msg: string }) => d.msg).join('; ') : body?.detail
-    throw new Error(detail || `Request failed with status ${res.status}`)
+    throw new ApiError(detail || `Request failed with status ${res.status}`, res.status)
   }
-  return res.json() as Promise<T>
+  return (res.status === 204 ? undefined : await res.json()) as T
 }
