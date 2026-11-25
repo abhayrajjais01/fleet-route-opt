@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.services.optimizer.distance_matrix import build_distance_matrix
+from app.services.optimizer.hazmat import segregation_conflict
 from app.services.optimizer.traffic import travel_time
 from app.services.optimizer.vrptw_solver import Stop, VehicleSpec
 
@@ -122,6 +123,9 @@ def recalculate(
         violations.append(f"Over payload: {kg:g} kg on a {vehicle.capacity_kg:g} kg vehicle")
     if m3 > vehicle.capacity_m3 + 1e-9:
         violations.append(f"Over volume: {m3:g} m³ on a {vehicle.capacity_m3:g} m³ vehicle")
+    conflict = segregation_conflict(s.hazard_class for s in stops)
+    if conflict:
+        violations.append(conflict)
 
     results: List[StopEta] = []
     t = float(depart_min)

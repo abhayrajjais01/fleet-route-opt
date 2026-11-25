@@ -31,6 +31,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from app.services.optimizer.distance_matrix import build_distance_matrix
+from app.services.optimizer.hazmat import segregation_conflict
 from app.services.optimizer.traffic import travel_time
 
 TIME_WEIGHT = 0.3  # km-equivalent cost per route minute (driver time); 1 h idle ≈ 18 km of driving
@@ -46,6 +47,7 @@ class Stop:
     window_open: int        # minutes after midnight
     window_close: int
     service_min: int = 10
+    hazard_class: Optional[str] = None   # UN class, e.g. "3"; None for ordinary cargo
 
 
 @dataclass(frozen=True)
@@ -142,7 +144,12 @@ class _Problem:
 
     def fits(self, route: Sequence[int], v: VehicleSpec) -> bool:
         kg, m3 = self.load(route)
-        return kg <= v.capacity_kg + 1e-9 and m3 <= v.capacity_m3 + 1e-9 and self.schedule(route, v.vehicle_type, v.max_shift_min) is not None
+        if kg > v.capacity_kg + 1e-9 or m3 > v.capacity_m3 + 1e-9:
+            return False
+        # SOP-HZ-001 §5: incompatible hazard classes never share a vehicle (hard constraint).
+        if segregation_conflict(self.stops[i - 1].hazard_class for i in route):
+            return False
+        return self.schedule(route, v.vehicle_type, v.max_shift_min) is not None
 
 
 def _clarke_wright(p: _Problem, nodes: List[int], cap: VehicleSpec) -> List[List[int]]:
@@ -254,7 +261,11 @@ def solve(hub: Tuple[float, float], stops: Sequence[Stop], vehicles: Sequence[Ve
                     free.remove(v)
                     assigned.append((v, [node]))
                     continue
-            unassigned[stops[node - 1].id] = "no vehicle left with capacity and time to serve it"
+            stop = stops[node - 1]
+            blocked_by_hazmat = stop.hazard_class and any(
+                segregation_conflict([stop.hazard_class, *(stops[i - 1].hazard_class for i in r)]) for _, r in assigned)
+            unassigned[stop.id] = ("every vehicle with room already carries an incompatible hazard class (SOP-HZ-001 §5)"
+                                   if blocked_by_hazmat else "no vehicle left with capacity and time to serve it")
 
     # 3. 2-opt polish and final schedule.
     routes: List[Route] = []

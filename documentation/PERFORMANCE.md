@@ -10,6 +10,44 @@ Two benchmark scripts, both run from `backend/`, both in CI:
 `tests/test_performance.py` and `tests/test_copilot_performance.py` run short versions on every test run, so a
 regression past the PRD targets fails the build.
 
+## Route optimisation, routing and RAG (Track A)
+
+`cd backend && python -m scripts.benchmark` (offline distance model, so the numbers are reproducible; a solve on the
+road network adds one cached OSRM table call, about 0.3–0.6 s on the public server). Measured Nov 2026 on an Apple
+M-series laptop, Python 3.14.
+
+| Benchmark | Median | p95 | Target | Result |
+|---|---|---|---|---|
+| VRPTW solve, 50 stops / 5 vehicles | 4.8 ms | 4.9 ms | < 5 s | PASS |
+| Distance matrix 250 × 250 (cold / cached) | 1.0 / 0.1 ms | 1.1 / 0.1 ms | < 500 ms | PASS |
+| RAG vector search (100 queries) | 0.1 ms | 0.1 ms | < 100 ms | PASS |
+| Downstream ETA recalculation, 12 stops | < 0.1 ms | < 0.1 ms | < 50 ms | PASS |
+| Optimization agent: breakdown re-route | 5.6 ms | 5.7 ms | < 3 s | PASS |
+| Optimization agent: 30 min delay | 26.6 ms | 36.6 ms | < 3 s | PASS |
+
+**Solver scalability and memory** (peak Python heap per cold solve, `tracemalloc`):
+
+| Stops / vehicles | Median | p95 | Peak memory | Routes | Unrouted |
+|---|---|---|---|---|---|
+| 10 / 2 | 0.5 ms | 0.5 ms | 0.01 MB | 2 | 0 |
+| 25 / 3 | 1.7 ms | 1.7 ms | 0.07 MB | 3 | 0 |
+| 50 / 5 | 4.9 ms | 4.9 ms | 0.28 MB | 5 | 0 |
+| 100 / 9 | 10.2 ms | 10.4 ms | 1.52 MB | 9 | 0 |
+| 200 / 18 (stress) | 35.2 ms | 41.1 ms | 6.49 MB | 16 | 0 |
+
+Memory grows with the n × n distance matrix (quadratic), so 1,000 stops would need roughly 150 MB per solve.
+
+**RAG retrieval accuracy** (Recall@k = right SOP section in the top k; MRR = mean reciprocal rank):
+
+| Question set | R@1 | R@3 | MRR |
+|---|---|---|---|
+| Development (30 questions, tuning allowed) | 1.000 | 1.000 | 1.000 |
+| Validation (41 natural-language questions, tuning allowed) | 0.829 | 0.951 | 0.890 |
+| Test (40 questions written before tuning, never tuned on) | 0.800 | 0.925 | 0.870 |
+
+The test set was written by the same team that tuned the retriever, so treat it as an upper estimate; questions
+logged from real users are the next benchmark.
+
 ## Copilot latency (target: < 3 s per request)
 
 Deterministic planner, Windows laptop, Python 3.14, 30 runs per row, Nov 20 2026:

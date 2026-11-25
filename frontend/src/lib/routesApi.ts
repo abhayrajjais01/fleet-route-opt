@@ -75,6 +75,7 @@ export interface RouteExplanation {
   legs?: { to: string; km: number; minutes: number; arrive: string; steps: string[] }[]
   directions_source?: 'osrm' | 'estimate'
   distance_source?: 'osrm' | 'estimate'
+  customer_messages?: { stop_id: string; name: string; window_from: string; window_to: string; on_time: boolean; text: string }[]
 }
 export interface FleetRouteIn { vehicle: RouteVehicle; stops: RouteStopIn[]; departure: string; completed?: Record<string, string> }
 export interface DisruptionProposal {

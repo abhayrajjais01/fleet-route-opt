@@ -2,6 +2,7 @@
 exports.py - CSV Audit Export & PDF Executive Summary (US-007, Week 14 · Track A)
 
   stops_csv()   one row per delivery attempt: the raw data behind every KPI, for operational audits
+  stops_xlsx()  the same rows as an Excel workbook, plus KPI and per-hub sheets
   summary_pdf() a one-to-two page executive trip summary (KPIs, per-hub table, worst late deliveries)
 
 Both take the same filtered TripRecords the metrics API uses, so an export always matches what the
@@ -38,19 +39,35 @@ def _safe_cell(value):
     return value
 
 
+def _stop_rows(trips: Iterable[TripRecord]) -> List[List]:
+    rows = []
+    for t in trips:
+        for s in t.stops:
+            late = round(max(0.0, s.arrival - s.window_close), 1) if s.arrival is not None else ""
+            rows.append([t.date, t.trip_id, t.hub, t.vehicle_id, t.vehicle_type, t.driver, s.shipment_id, s.customer, s.priority,
+                         s.weight_kg, _hhmm(s.window_close), _hhmm(s.arrival), late,
+                         s.delivered, s.in_full, s.on_time, s.otif, t.distance_km, t.duration_min])
+    return rows
+
+
 def stops_csv(trips: Iterable[TripRecord]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(CSV_COLUMNS)
-    for t in trips:
-        for s in t.stops:
-            late = max(0.0, (s.arrival or 0) - s.window_close) if s.arrival is not None else ""
-            w.writerow([_safe_cell(v) for v in [
-                t.date, t.trip_id, t.hub, t.vehicle_id, t.vehicle_type, t.driver, s.shipment_id, s.customer, s.priority,
-                s.weight_kg, _hhmm(s.window_close), _hhmm(s.arrival), round(late, 1) if late != "" else "",
-                s.delivered, s.in_full, s.on_time, s.otif, t.distance_km, t.duration_min,
-            ]])
+    for row in _stop_rows(trips):
+        w.writerow([_safe_cell(v) for v in row])
     return buf.getvalue()
+
+
+def stops_xlsx(trips: Sequence[TripRecord], fuel_price_per_l: float, driver_cost_per_hour: float) -> bytes:
+    """Excel workbook: every delivery attempt, the KPIs with their definitions, and the per-hub breakdown."""
+    from app.services.analytics.xlsx import workbook
+    m = compute_metrics(trips, fuel_price_per_l, driver_cost_per_hour)
+    by_hub = breakdown(trips, lambda t: t.hub, fuel_price_per_l=fuel_price_per_l, driver_cost_per_hour=driver_cost_per_hour)
+    kpi_rows = [["metric", "value"]] + [[k, v] for k, v in m.as_dict().items()]
+    hub_cols = ["trips", "stops", "otif_pct", "on_time_pct", "total_km", "total_cost", "co2_kg", "overtime_hours", "saving_vs_separate"]
+    hub_rows = [["hub", *hub_cols]] + [[h, *(getattr(x, c) for c in hub_cols)] for h, x in by_hub.items()]
+    return workbook([("Deliveries", [CSV_COLUMNS, *_stop_rows(trips)]), ("KPIs", kpi_rows), ("By hub", hub_rows)])
 
 
 def summary_pdf(trips: Sequence[TripRecord], title_filters: str, fuel_price_per_l: float, driver_cost_per_hour: float) -> bytes:
@@ -99,6 +116,10 @@ def summary_pdf(trips: Sequence[TripRecord], title_filters: str, fuel_price_per_
         ["Fuel burn", f"{m.fuel_l_per_100km} L/100 km", f"{m.fuel_l:,.0f} L in total"],
         ["Cost per ton-km", f"Rs {m.cost_per_ton_km}", f"fuel Rs {fuel_price_per_l:g}/L + driver Rs {driver_cost_per_hour:g}/h"],
         ["Fleet utilisation", f"{m.fleet_utilisation_pct}%", "load / payload"],
+        ["Operating cost", f"Rs {m.total_cost:,.0f}", f"energy Rs {m.energy_cost:,.0f} + drivers Rs {m.driver_cost:,.0f}"],
+        ["Driver overtime", f"{m.overtime_hours:,.1f} h", f"Rs {m.overtime_cost:,.0f} extra (2x rate after 8 h, MTW Act s.27)"],
+        ["CO2 emitted", f"{m.co2_kg:,.0f} kg", f"{m.co2_kg_per_100km} kg/100 km (diesel 2.68 kg/L, EV grid 0.716 kg/kWh)"],
+        ["Saved by consolidation", f"Rs {m.saving_vs_separate:,.0f}", f"and {m.co2_saved_kg:,.0f} kg CO2 vs one trip per customer"],
     ]
     story += [Paragraph("Key performance indicators", styles["Heading2"]), table(kpis, [55 * mm, 35 * mm, 80 * mm]), Spacer(1, 6 * mm)]
 

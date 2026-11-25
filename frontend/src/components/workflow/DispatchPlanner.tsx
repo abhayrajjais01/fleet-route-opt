@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AuditEntry, Driver, Hub, Shipment, User, Vehicle } from '../../lib/types'
 import { ACCESS_NOTE, appAccess } from '../../lib/driverAccess'
+import { endorsementProblem } from '../../lib/hazmat'
 import { clock, estimateLeg, toMinutes, type Leg } from '../../lib/geo'
 import { roadRoute } from '../../lib/roads'
 import { travelTime } from '../../lib/traffic'
@@ -170,7 +171,8 @@ function PlanView({ shipment, hubs, vehicles, drivers, users, onDispatch, addAud
     else if (tripMinutes > d.max_driving_hours_per_day * 60 * 0.8) { verdict = 'warn'; note = 'Uses most of today\'s driving hours' }
     // App access: a deactivated account blocks; no login is allowed but flagged (route must be shared another way).
     const access = appAccess(d, users)
-    if (access === 'deactivated') { verdict = 'fail'; note = ACCESS_NOTE.deactivated }
+    if (endorsementProblem(d, [shipment])) { verdict = 'fail'; note = `Class ${shipment.hazard_class} hazmat needs an endorsed driver (SOP-HZ-001 §2)` }
+    else if (access === 'deactivated') { verdict = 'fail'; note = ACCESS_NOTE.deactivated }
     else if (access === 'none' && verdict !== 'fail') { note = verdict === 'warn' ? `${note} · no app login` : `No app login · ${note}`; verdict = 'warn' }
     return { d, verdict, note }
   })

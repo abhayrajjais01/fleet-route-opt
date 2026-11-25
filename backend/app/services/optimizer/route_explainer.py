@@ -4,6 +4,8 @@ route_explainer.py - RAG-Grounded Route Explanations & Driver Instructions (Week
 Turns a planned route into three pieces of plain language:
   1. dispatch rationale - a short executive summary of why the route looks the way it does
   2. stop reasons       - why each stop sits where it does in the sequence
+  4. customer messages   - a short, ready-to-send note per stop with an arrival window (not an exact minute), so
+                           customers are told something the plan can actually keep
   3. driver instructions - stop-by-stop legs with distance, drive time and arrival, plus turn-by-turn directions
                            with real street names from the road network (compass heading when it is unavailable)
 
@@ -50,6 +52,31 @@ class LegGuide:
 
 
 @dataclass
+class CustomerMessage:
+    stop_id: str
+    name: str
+    window_from: str        # arrival window promised to the customer
+    window_to: str
+    on_time: bool
+    text: str
+
+
+ARRIVAL_WINDOW_MIN = 30     # customers are given a 30-minute arrival window around the ETA
+
+
+def arrival_window(eta: float, window_open: float, window_close: float) -> Tuple[float, float]:
+    """
+    A 30-minute window starting at the ETA rounded down to the quarter hour, kept inside the customer's booked slot
+    when the plan arrives on time (so we never promise outside what they booked).
+    """
+    start = math.floor(max(eta, window_open) / 15) * 15
+    end = start + ARRIVAL_WINDOW_MIN
+    if eta <= window_close and end > window_close:
+        start, end = max(window_open, window_close - ARRIVAL_WINDOW_MIN), window_close
+    return start, end
+
+
+@dataclass
 class Explanation:
     summary: str
     stop_reasons: List[Tuple[str, str]]
@@ -57,6 +84,7 @@ class Explanation:
     citations: List[Citation] = field(default_factory=list)
     legs: List[LegGuide] = field(default_factory=list)
     directions_source: str = "estimate"   # "osrm" = real street names, "estimate" = compass headings
+    customer_messages: List[CustomerMessage] = field(default_factory=list)
 
 
 COMPASS = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"]
@@ -106,6 +134,8 @@ def explain_route(
     separate_trips_km: Optional[float] = None,
     directions: Optional[List[List[str]]] = None,
     distance_source: str = "estimate",
+    company: str = "FleetOps",
+    driver_name: Optional[str] = None,
 ) -> Explanation:
     """directions: turn-by-turn lines per leg (hub -> stop 1 -> ... -> hub) from road_router.road_directions."""
     by_id = {s.id: s for s in stops}
@@ -194,8 +224,25 @@ def explain_route(
     if any(info.get(s.id) and info[s.id].priority == "EXPRESS" for s in stops):
         queries.append("express priority shipments same day delivery")
     citations = _policy_citations(queries)
+    # 4. Customer-facing messages: plain language, an arrival window rather than a minute, no internal jargon.
+    messages: List[CustomerMessage] = []
+    for e in etas:
+        s = by_id[e.stop_id]
+        start, end = arrival_window(e.arrival, s.window_open, s.window_close)
+        on_time = e.minutes_late <= 0
+        who = f" {driver_name.split()[0]} will be your driver" if driver_name else ""
+        if on_time:
+            text = (f"Hello {name(s.id)}, your {company} delivery is on its way today. Expected arrival: {clock(start)}–{clock(end)}, "
+                    f"within your booked slot of {clock(s.window_open)}–{clock(s.window_close)}.{who and ' ' + who.strip() + '.'} "
+                    f"Please keep the delivery OTP ready.")
+        else:
+            text = (f"Hello {name(s.id)}, we're sorry: your {company} delivery is running late today. New expected arrival: "
+                    f"{clock(start)}–{clock(end)}, after your booked slot of {clock(s.window_open)}–{clock(s.window_close)}. "
+                    f"Reply to this message if you'd like to reschedule.")
+        messages.append(CustomerMessage(s.id, name(s.id), clock(start), clock(end), on_time, text))
+
     return Explanation(summary=summary, stop_reasons=reasons, driver_instructions=instructions, citations=citations,
-                       legs=legs, directions_source="osrm" if have_roads else "estimate")
+                       legs=legs, directions_source="osrm" if have_roads else "estimate", customer_messages=messages)
 
 
 def _main_road(steps: Sequence[str]) -> str:

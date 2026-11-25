@@ -8,11 +8,12 @@ import React, { useEffect, useMemo, useState } from 'react'
 import type { AuditEntry, Driver, Hub, Shipment, ShipmentStatus, UserRole, Vehicle } from '../../lib/types'
 import { clock, estimateLeg, toMinutes, type LatLng } from '../../lib/geo'
 import { roadRoute } from '../../lib/roads'
-import { optimizeRoutes } from '../../lib/routesApi'
+import { optimizeRoutes, routeOpsApi, type DisruptionProposal, type FleetRouteIn, type RouteVehicle } from '../../lib/routesApi'
 import { emptyEvents, feedFor, viewAt, type FeedItem, type StopView, type TripEvents, type TripPlan, type TripState, type TripView } from './simulation'
 import TrackingMap, { type MapInsets, STOP_COLOR } from './TrackingMap'
 import { FsmProgressBar } from './FsmProgressBar'
-import SlaAlerts from './SlaAlerts'
+import SlaAlerts, { type FixKind } from './SlaAlerts'
+import { downloadFile } from '../../lib/download'
 import {
   arriveAtStop,
   deliverShipment,
@@ -99,6 +100,9 @@ export default function LiveTrackingSection({
   const [failNotes, setFailNotes] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  // Proof of delivery captured in this session (who signed, when), used on the customer's receipt.
+  const [pod, setPod] = useState<Record<number, { recipient: string; at: string }>>({})
+  const [fix, setFix] = useState<{ planId: string; plate: string; loading: boolean; proposal?: DisruptionProposal; error?: string } | null>(null)
 
   const tripInputs = useMemo(() => {
     const byVehicle = new Map<number, Shipment[]>()
@@ -114,7 +118,8 @@ export default function LiveTrackingSection({
       return [{ vehicle, hub, stops: orderStops(hub, stops), driver: drivers.find(d => d.current_vehicle_id === vehicleId) ?? null }]
     })
   }, [shipments, vehicles, drivers, hubs])
-  const inputsKey = JSON.stringify(tripInputs.map(t => [t.vehicle.id, t.stops.map(s => s.id), t.driver?.id]))
+  // Includes the approved visiting order (route_sequence) so an approved re-sequence rebuilds the trip.
+  const inputsKey = JSON.stringify(tripInputs.map(t => [t.vehicle.id, t.stops.map(s => [s.id, s.route_sequence ?? null]), t.driver?.id]))
 
   useEffect(() => {
     let cancelled = false
@@ -242,6 +247,7 @@ export default function LiveTrackingSection({
     if (setShipments) {
       setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'DELIVERED' } : sh))
     }
+    setPod(prev => ({ ...prev, [s.shipment.id]: { recipient, at: clock(simMin) } }))
 
     addAudit({
       actor_name: actor,
@@ -296,6 +302,70 @@ export default function LiveTrackingSection({
     top: 0,
   }), [isDriver, selected])
 
+  // ── Week 14: customer delivery receipt (proof of delivery) ─────────────────────────────────────────────────
+  async function downloadReceipt(v: TripView, s: StopView) {
+    const p = pod[s.shipment.id]
+    try {
+      await downloadFile('/routes/receipt.pdf', authToken ?? null, {
+        tracking_number: s.shipment.tracking_number, customer_name: s.shipment.customer_name, address: s.shipment.destination_address,
+        delivered_at: p?.at ?? clock(s.serviceEnd), recipient: p?.recipient ?? s.shipment.customer_name,
+        verified_by: p ? 'Signature captured by the driver' : 'Delivery confirmed in the driver app', weight_kg: s.shipment.weight_kg,
+        vehicle: v.plan.vehicle.plate_number, driver: v.plan.driver?.full_name ?? null, hub: v.plan.hub.name,
+      }, `receipt-${s.shipment.tracking_number}.pdf`)
+    } catch (e) { setActionError(e instanceof TypeError ? 'Receipts need the backend to be running.' : (e as Error).message) }
+  }
+
+  // ── Week 12: recovery suggestions from the Optimization Agent ──────────────────────────────────────────────
+  const toRouteVehicle = (v: Vehicle, d: Driver | null): RouteVehicle => ({ id: String(v.id), label: v.plate_number, capacity_kg: v.max_payload_kg,
+    capacity_m3: v.max_volume_m3, vehicle_type: v.vehicle_type, max_shift_hours: Math.min(14, d?.max_driving_hours_per_day ?? 10), ...(d ? { driver_name: d.full_name } : {}) })
+  /** The live situation at one hub, in the shape the agent's API takes (delivered stops marked completed). */
+  function fleetAtHub(hubId: number): FleetRouteIn[] {
+    return views.filter(v => v.plan.hub.id === hubId).map(v => ({
+      vehicle: toRouteVehicle(v.plan.vehicle, v.plan.driver),
+      stops: v.plan.stops.map(s => ({ id: String(s.id), latitude: s.latitude!, longitude: s.longitude!, weight_kg: s.weight_kg, volume_m3: s.volume_m3,
+        window_start: s.time_window_start, window_end: s.time_window_end, name: s.customer_name, address: s.destination_address, priority: s.priority })),
+      departure: clock(v.plan.departMin),
+      completed: Object.fromEntries(v.stops.filter(s => s.state === 'DELIVERED').map(s => [String(s.shipment.id), clock(s.serviceEnd)])),
+    }))
+  }
+  async function suggestFix(planId: string, kind: FixKind) {
+    const v = views.find(x => x.plan.id === planId)
+    if (!v) return
+    const plate = v.plan.vehicle.plate_number
+    // A reported delay is re-sequenced around; a late plan with no delay is re-routed; a blocked truck hands its stops on.
+    const message = kind === 'blocked' ? `${plate} broke down` : v.delayMinutes > 0 ? `${plate} delayed ${Math.round(v.delayMinutes)} min` : `reroute ${plate}`
+    setFix({ planId, plate, loading: true })
+    const busy = new Set(views.map(x => x.plan.vehicle.id))
+    const spares = vehicles.filter(x => x.assigned_hub_id === v.plan.hub.id && x.current_status === 'AVAILABLE' && !busy.has(x.id)).map(x => toRouteVehicle(x, null))
+    try {
+      const proposal = await routeOpsApi.disruption(message, { id: `hub-${v.plan.hub.id}`, latitude: v.plan.hub.latitude, longitude: v.plan.hub.longitude },
+        fleetAtHub(v.plan.hub.id), spares, clock(simMin))
+      setFix({ planId, plate, loading: false, proposal })
+    } catch (e) {
+      setFix({ planId, plate, loading: false, error: e instanceof TypeError ? 'The Optimization Agent needs the backend to be running.' : (e as Error).message })
+    }
+  }
+  /** Applies an approved proposal to the live plan: new vehicle for moved stops, new visiting order everywhere. */
+  function approveFix() {
+    const p = fix?.proposal
+    if (!p || !setShipments) return
+    const byPlate = new Map(vehicles.map(v => [v.plate_number, v.id]))
+    const order = new Map<number, number>()
+    for (const stops of Object.values(p.routes_after)) stops.forEach((s, i) => order.set(Number(s.stop_id), i + 1))
+    const moves = new Map(p.changes.filter(c => c.from_vehicle !== c.to_vehicle).map(c => [Number(c.stop_id), c.to_vehicle]))
+    setShipments(prev => prev.map(s => {
+      if (moves.has(s.id)) {
+        const to = moves.get(s.id)
+        return to ? { ...s, assigned_vehicle_id: byPlate.get(to) ?? s.assigned_vehicle_id, status: 'ASSIGNED' as ShipmentStatus, route_sequence: order.get(s.id) ?? null }
+          : { ...s, assigned_vehicle_id: null, status: 'UNASSIGNED' as ShipmentStatus, route_sequence: null }
+      }
+      return order.has(s.id) ? { ...s, route_sequence: order.get(s.id)! } : s
+    }))
+    addAudit({ actor_name: 'Dispatcher', action_type: 'COPILOT_OVERRIDE', entity_type: 'VEHICLE', entity_id: vehicles.find(v => v.plate_number === fix!.plate)?.id ?? 0,
+      details: `Approved agent recovery for ${fix!.plate} (${p.tool_call.name}): ${p.summary}` })
+    setFix(null)
+  }
+
   return (
     <div className="relative w-full h-full overflow-hidden bg-slate-900 select-none">
       {/* ── Background map ── */}
@@ -308,7 +378,8 @@ export default function LiveTrackingSection({
         focusKey={plans.map(p => p.id).join()}
         insets={insets}
       />
-      <SlaAlerts views={visible} />
+      <SlaAlerts views={visible} onSuggest={!isDriver ? suggestFix : undefined} />
+      {fix && <FixModal fix={fix} onClose={() => setFix(null)} onApprove={approveFix} />}
 
       {/* ── Floating trip list (dispatchers only) ── */}
       {!isDriver && (
@@ -397,6 +468,7 @@ export default function LiveTrackingSection({
           actions={actions}
           actionError={actionError}
           onClearError={() => setActionError(null)}
+          onReceipt={isDriver ? undefined : s => downloadReceipt(selected, s)}
           onClose={() => setSelectedId(null)}
         />
       )}
@@ -565,7 +637,8 @@ type Actions = {
   breakdown: (t: TripView) => void
 }
 
-function TripDrawer({ trip, color, simMin, actions, actionError, onClearError, onClose }: {
+function TripDrawer({ trip, color, simMin, actions, actionError, onClearError, onClose, onReceipt }: {
+  onReceipt?: (s: StopView) => void
   trip: TripView; color: string; simMin: number; actions: Actions; actionError?: string | null; onClearError?: () => void; onClose: () => void
 }) {
   const [tab, setTab] = useState<'overview' | 'stops' | 'activity'>('overview')
@@ -614,7 +687,7 @@ function TripDrawer({ trip, color, simMin, actions, actionError, onClearError, o
         {tab === 'stops' && (
           <ol className="space-y-4">
             <Row dot={color} title={`Depart from ${p.hub.name}`} time={clock(p.departMin)} sub="Depot origin" />
-            {trip.stops.map(s => <StopRow key={s.shipment.id} s={s} />)}
+            {trip.stops.map(s => <StopRow key={s.shipment.id} s={s} onReceipt={onReceipt} />)}
             <Row dot={color} title={`Return to ${p.hub.name}`} time={Number.isFinite(trip.endMin) ? clock(trip.endMin) : '—'} sub="Trip completion" last />
           </ol>
         )}
@@ -803,7 +876,7 @@ function mapStopStateToStatus(st: string): ShipmentStatus {
   }
 }
 
-function StopRow({ s }: { s: StopView }) {
+function StopRow({ s, onReceipt }: { s: StopView; onReceipt?: (s: StopView) => void }) {
   return (
     <Row dot={STOP_COLOR[s.state]} title={s.shipment.customer_name} time={Number.isFinite(s.eta) ? clock(s.eta) : '—'} sub={`${STOP_LABEL[s.state]} · window ${s.shipment.time_window_start}–${s.shipment.time_window_end}`}>
       <div className="mt-1 flex items-center justify-between gap-2">
@@ -812,8 +885,62 @@ function StopRow({ s }: { s: StopView }) {
             {s.state === 'DELIVERED' ? `Delivered ${fmtDur(s.lateBy)} late` : `Expected ${fmtDur(s.lateBy)} late`}
           </p>
         ) : <span />}
+        {s.state === 'DELIVERED' && onReceipt && (
+          <button onClick={() => onReceipt(s)} className="text-xs font-medium text-violet-700 hover:text-violet-900">Receipt</button>
+        )}
         <FsmProgressBar compact status={mapStopStateToStatus(s.state)} />
       </div>
     </Row>
+  )
+}
+
+
+/** The agent's recovery proposal, for the dispatcher to approve or dismiss. Nothing changes until approved. */
+function FixModal({ fix, onClose, onApprove }: {
+  fix: { plate: string; loading: boolean; proposal?: DisruptionProposal; error?: string }
+  onClose: () => void
+  onApprove: () => void
+}) {
+  const p = fix.proposal
+  const moved = p?.changes.filter(c => c.from_vehicle !== c.to_vehicle) ?? []
+  const retimed = p?.changes.filter(c => c.from_vehicle === c.to_vehicle && c.old_eta !== c.new_eta) ?? []
+  return (
+    <div className="absolute inset-0 z-[600] flex items-center justify-center bg-slate-900/30 p-4" role="dialog" aria-modal="true" aria-label={`Recovery plan for ${fix.plate}`}>
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/5 p-5 max-h-[85vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-3">
+          <div><p className="text-xs font-medium text-violet-700">Optimization Agent · suggestion</p><p className="text-base font-semibold text-slate-900">Recovery plan for {fix.plate}</p></div>
+          <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-700">✕</button>
+        </div>
+        {fix.loading && <p className="mt-4 text-sm text-slate-500">Working out the best recovery…</p>}
+        {fix.error && <p className="mt-4 text-sm text-red-600">{fix.error}</p>}
+        {p && (
+          <>
+            <p className="mt-3 text-sm text-slate-700">{p.summary}</p>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-center">
+              <div className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-lg font-semibold text-slate-900 tabular-nums">{Math.round(p.late_minutes_before)} min</p><p className="text-xs text-slate-500">late now</p></div>
+              <div className="rounded-xl bg-emerald-50 px-3 py-2"><p className="text-lg font-semibold text-emerald-700 tabular-nums">{Math.round(p.late_minutes_after)} min</p><p className="text-xs text-slate-500">late after the fix</p></div>
+            </div>
+            {moved.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-medium text-slate-500">Stops moved to another vehicle</p>
+                <ul className="mt-1 space-y-1 text-sm text-slate-700">{moved.map(c => <li key={c.stop_id}>{c.name}: {c.from_vehicle} → <b>{c.to_vehicle ?? 'unassigned'}</b>{c.new_eta ? ` · ETA ${c.new_eta}` : ''}</li>)}</ul>
+              </div>
+            )}
+            {retimed.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-medium text-slate-500">New ETAs</p>
+                <ul className="mt-1 space-y-1 text-sm text-slate-700">{retimed.map(c => <li key={c.stop_id}>{c.name}: {c.old_eta ?? '—'} → <b>{c.new_eta ?? '—'}</b></li>)}</ul>
+              </div>
+            )}
+            {Object.keys(p.unassigned).length > 0 && <p className="mt-3 text-xs text-amber-700">Could not place: {Object.entries(p.unassigned).map(([id, why]) => `${id} (${why})`).join(', ')}</p>}
+            {p.violations.length > 0 && <p className="mt-2 text-xs text-red-600">{p.violations.join(' · ')}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg ring-1 ring-slate-200 text-slate-700">Dismiss</button>
+              <button onClick={onApprove} className="px-4 py-2 text-sm rounded-lg bg-violet-600 text-white font-semibold hover:bg-violet-700">Approve</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   )
 }

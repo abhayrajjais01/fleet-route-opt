@@ -126,3 +126,45 @@ def test_pdf_export(client, auth):
     res = client.get("/api/v1/reports/summary.pdf", params={"days": 7}, headers=auth)
     assert res.status_code == 200 and res.headers["content-type"] == "application/pdf"
     assert res.content.startswith(b"%PDF") and len(res.content) > 1500
+
+
+# ---------- Week 13 cost engine: overtime, EV energy, CO2, savings ----------
+def test_overtime_is_paid_at_twice_the_rate_after_eight_hours():
+    m = compute_metrics([trip(minutes=600, km=100, separate=100, kpl=10)], fuel_price_per_l=100, driver_cost_per_hour=250)
+    assert m.overtime_hours == 2.0
+    assert m.driver_cost == 8 * 250 + 2 * 2 * 250        # 3000
+    assert m.overtime_cost == 2 * 250                     # the extra over ordinary pay
+    assert m.energy_cost == 100 / 10 * 100                # 1000 for diesel
+    assert m.total_cost == m.driver_cost + m.energy_cost
+
+
+def test_evs_use_electricity_not_diesel():
+    m = compute_metrics([trip(vtype="EV", km=100, separate=100, minutes=240, kpl=18)], electricity_per_kwh=9)
+    assert m.fuel_l == 0.0
+    assert m.energy_cost == round(100 * 0.17 * 9)
+    assert m.co2_kg == round(100 * 0.17 * 0.716, 1)
+
+
+def test_co2_and_savings_versus_separate_trips():
+    m = compute_metrics([trip(km=50, separate=100, minutes=240, kpl=10)], fuel_price_per_l=100, driver_cost_per_hour=250)
+    assert m.co2_kg == round(5 * 2.68, 1)                 # 5 L of diesel
+    assert m.co2_saved_kg == round(5 * 2.68, 1)           # separate trips would burn twice as much
+    # Baseline: 100 km (10 L = 1000) and 480 min (2000) = 3000; actual: 500 + 1000 = 1500
+    assert m.saving_vs_separate == 1500
+
+
+def test_excel_export_is_a_valid_workbook(client, auth):
+    import zipfile
+    res = client.get("/api/v1/reports/export.xlsx", params={"days": 7}, headers=auth)
+    assert res.status_code == 200 and "spreadsheetml" in res.headers["content-type"]
+    z = zipfile.ZipFile(io.BytesIO(res.content))
+    assert {"xl/workbook.xml", "xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml", "xl/worksheets/sheet3.xml"} <= set(z.namelist())
+    assert "Deliveries" in z.read("xl/workbook.xml").decode() and "otif_pct" in z.read("xl/worksheets/sheet2.xml").decode()
+
+
+def test_xlsx_cells_cannot_become_formulas():
+    import zipfile
+    from app.services.analytics.xlsx import workbook
+    data = workbook([("S", [["name"], ["=HYPERLINK(\"x\")"], [42]])])
+    xml = zipfile.ZipFile(io.BytesIO(data)).read("xl/worksheets/sheet1.xml").decode()
+    assert "'=HYPERLINK" in xml and "<v>42</v>" in xml and "<f>" not in xml

@@ -50,6 +50,7 @@ The platform opens on a **login page** with two ways in:
 | Fleet manager | `manager@fleetopt.io` | `password123` |
 | Dispatcher | `dispatcher@fleetopt.io` | `password123` |
 | Driver | `driver@fleetopt.io` (Rajesh Kumar) | `password123` |
+| Driver | `vikramjit@fleetopt.io`, `priya@fleetopt.io`, `neha@fleetopt.io` | `password123` |
 
 Sign in with any of these to see that role's view. In demo mode the role switcher at the top right (a dropdown on
 phones) changes the view instantly. These accounts exist only on demo installs; production deployments do not
@@ -67,9 +68,11 @@ backend, distance engine and compliance knowledge base are reachable.
 |---|---|---|
 | See the day at a glance | **AI Command** | Live counts, shipments, and a copilot console. Click a test prompt or type a request. |
 | Add or import orders | **Shipments** | *+ New shipment*, or upload a CSV / JSON batch. Rows with errors are listed and skipped; the rest import. |
-| Plan one order at a time | **Dispatch Planner** | Review the order, pick a vehicle and driver, dispatch. |
-| Plan the whole day | **Route Planner** | *Optimize* builds routes for every vehicle (VRPTW: capacities, time windows, shift limits). Drag stops to reorder; the timing updates. *Approve & dispatch* sends the routes. |
-| Watch the routes | **Live Tracking** | Vehicles on the map, ETAs per stop, SLA alerts for stops at risk. |
+| Plan one order at a time | **Dispatch Planner** | Review the order, pick a vehicle and driver, dispatch. Distances are by road and drive times include rush hours at the chosen departure. |
+| Plan the whole day | **Route Planner** | Tick the orders, vehicles and **drivers** to use (off-duty drivers can be ticked to call them in). *Optimize* builds routes on the real road network (VRPTW: capacities, time windows, shift limits, rush-hour traffic, hazmat segregation). Drag stops to reorder; the timing updates. The summary shows operating cost, CO₂ and the saving against one trip per customer. *Approve & dispatch* sends the routes. |
+| Explain a route | **Route Planner → Explain route** | *Stop by stop* (why the order), *Driver instructions* (turn-by-turn with street names) and *Customer messages* (a ready-to-send note per stop with a 30-minute arrival window; *Copy* puts it on the clipboard). |
+| Print a driver's stop sheet | **Route Planner → Print manifest** | A PDF with each stop's slot, planned ETA, weight, hazard class and a proof-of-delivery box, plus directions. |
+| Watch the routes | **Live Tracking** | Vehicles drive the real roads, ETAs per stop, SLA alerts for stops at risk. On an alert, *Suggest a fix* asks the Optimization Agent for a recovery (re-sequence around a delay, or move a broken-down truck's stops); review it and *Approve* to apply it. Delivered stops have a *Receipt* (PDF proof of delivery). |
 | Ask a compliance question | **Compliance** | Search the SOP knowledge base; every answer quotes its source. |
 
 ### Handling a disruption with the copilot
@@ -94,15 +97,15 @@ The driver view opens on **My stops**: the next stop first, with the customer, t
   the server rejects stays in the queue with the reason.
 - **Shared phones**: saved stops and queued actions belong to the account that created them. Another driver signing in
   on the same phone never sees or sends them. If the app says *No driver profile linked*, an admin must link the account.
-- **Map** shows the route; the toggle in the header switches between stops and map.
+- **Map** shows the day's route along the roads, the current stop and (if you allow it) your location.
 
 ## 4. Fleet manager
 
 | Task | Where |
 |---|---|
-| Vehicles, drivers and hubs | **Fleet Assets** (create and edit; through the API, deleting is admin-only) |
+| Vehicles, drivers and hubs | **Fleet Assets**: saved to the server, so every user sees the same fleet (create and edit; deleting is admin-only). The *App login* column shows which drivers can use the driver app. |
 | Executive KPIs | **Executive KPIs** (below) |
-| Operational reports | **Reports**: OTIF, transit time, fuel, cost per tonne-km, with CSV / PDF export |
+| Operational reports | **Reports**: OTIF, transit time, fuel, cost per tonne-km, driver overtime (2× after 8 h), CO₂ and the saving from consolidation, with CSV, Excel and PDF export |
 | Audit trail and compliance report | **Audit Log** (below) |
 
 ### Executive KPIs
@@ -126,8 +129,12 @@ served them.
 
 Everything above, plus:
 
-- **Users**: manage accounts and roles. On the API, only an admin can create dispatcher, fleet-manager or admin
-  accounts (`POST /api/v1/auth/register` with an admin's token); people who sign up on their own get a driver account.
+- **Users**: manage accounts and roles. A **driver account is always linked to a driver profile** (licence, hub,
+  daily hours): *Add user* with role Driver either creates the profile or links an existing driver who has no
+  login yet (the banner lists them, with *Create login*). Set a temporary password the person changes later.
+  Deactivating a driver stops them signing in and from being assigned; their profile and history stay. Accounts are
+  never deleted, so the audit log keeps every actor (API: `/api/v1/users`, admin only).
+  People who sign up on their own get a driver account.
 - **Deleting** hubs, vehicles and drivers (API: admin only).
 - **Audit Log → Compliance report**: three checks over the server's audit log, each *Pass*, *Review* or *Fail*:
   - *No missing entries*: entries are numbered without gaps. On PostgreSQL a gap can also come from an aborted

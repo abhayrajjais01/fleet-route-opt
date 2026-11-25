@@ -67,6 +67,7 @@ class OptimizeStop(GeoPoint):
     window_start: str = Field("09:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     window_end: str = Field("17:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     service_min: int = Field(10, ge=0, le=120)
+    hazard_class: Optional[str] = Field(None, max_length=10, pattern=r"^[1-9](\.[1-6])?$", description="UN hazard class, e.g. '3' or '5.1'")
 
 
 class OptimizeVehicle(BaseModel):
@@ -236,6 +237,35 @@ class LegGuideResponse(BaseModel):
     steps: List[str] = Field(..., description="Turn-by-turn directions for this leg")
 
 
+class ManifestRequest(ExplainRequest):
+    service_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$", description="Defaults to today")
+
+
+class ReceiptRequest(BaseModel):
+    tracking_number: str = Field(..., min_length=1, max_length=50)
+    customer_name: str = Field(..., min_length=1, max_length=255)
+    address: str = Field("", max_length=500)
+    service_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    delivered_at: str = Field(..., pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    recipient: str = Field(..., min_length=1, max_length=255)
+    verified_by: str = Field("OTP", max_length=50)
+    weight_kg: float = Field(..., ge=0)
+    vehicle: str = Field(..., max_length=64)
+    driver: Optional[str] = Field(None, max_length=255)
+    hub: str = Field(..., max_length=255)
+    in_full: bool = True
+    notes: str = Field("", max_length=500)
+
+
+class CustomerMessageResponse(BaseModel):
+    stop_id: str
+    name: str
+    window_from: str
+    window_to: str
+    on_time: bool
+    text: str
+
+
 class ExplainResponse(BaseModel):
     summary: str
     stop_reasons: List[Dict[str, str]]
@@ -245,6 +275,7 @@ class ExplainResponse(BaseModel):
     legs: List[LegGuideResponse] = Field(default_factory=list)
     directions_source: str = Field("estimate", description="'osrm' = real street names, 'estimate' = compass headings")
     distance_source: str = Field("estimate", description="'osrm' = road network distances, 'estimate' = haversine model")
+    customer_messages: List[CustomerMessageResponse] = Field(default_factory=list, description="Ready-to-send arrival notes, one per stop")
 
 
 # ---------------- Optimization agent (Week 9) ---------------- #

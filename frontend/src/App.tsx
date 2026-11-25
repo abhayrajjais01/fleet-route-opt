@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, lazy, Suspense } from 'react'
+import { useState, useRef, useEffect, useMemo, lazy, Suspense } from 'react'
 import { API_BASE, checkApiHealth, fetchAuthToken } from './lib/api'
 import { CopilotCommandCenter } from './components/copilot/CopilotCommandCenter'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -9,7 +9,8 @@ import AuditCompliancePanel from './components/audit/AuditCompliancePanel'
 import { applyAcceptedProposal } from './lib/proposalsApi'
 import LoginPage from './components/auth/LoginPage'
 import { activate, initials, restore, type Session } from './lib/session'
-import { ACCESS_NOTE, accountFor, appAccess, profileFor } from './lib/driverAccess'
+import { ACCESS_NOTE, accountEmail, accountFor, appAccess, profileFor } from './lib/driverAccess'
+import { fleetApi, type Extras, type NewUser, type Roster } from './lib/fleetApi'
 import type { UserRole, VehicleType, VehicleStatus, DriverStatus, LicenseType, ShipmentStatus, ShipmentPriority, AuditAction, AdminSection, Vehicle, Driver, Hub, Shipment, User, AuditEntry } from './lib/types'
 
 // Week 15 (Track B): sections load on first visit, so the first screen ships without the maps, charts and planners.
@@ -51,18 +52,18 @@ const INIT_VEHICLES: Vehicle[] = [
   { id: 6, name: 'City Runner Van', plate_number: 'MH-43-CV-7712', vehicle_type: 'VAN', max_payload_kg: 1200, max_volume_m3: 10, fuel_efficiency_kpl: 13.5, current_status: 'AVAILABLE', assigned_hub_id: 2, fuel_pct: 88 },
 ]
 const INIT_DRIVERS: Driver[] = [
-  { id: 1, full_name: 'Rajesh Kumar', license_number: 'DL-14-2021-9988', license_type: 'COMMERCIAL', phone_number: '+91-98200-11223', status: 'ON_TRIP', max_driving_hours_per_day: 8, assigned_hub_id: 1, current_vehicle_id: 1, rating: 4.8, user_id: 4 },
+  { id: 1, full_name: 'Rajesh Kumar', license_number: 'DL-14-2021-9988', license_type: 'COMMERCIAL', phone_number: '+91-98200-11223', status: 'ON_TRIP', max_driving_hours_per_day: 8, assigned_hub_id: 1, current_vehicle_id: 1, rating: 4.8, user_id: 4, hazmat_endorsed: true },
   { id: 2, full_name: 'Vikramjit Singh', license_number: 'MH04-2015-88319', license_type: 'CLASS_A', phone_number: '+91-98700-44556', status: 'ON_TRIP', max_driving_hours_per_day: 10, assigned_hub_id: 1, current_vehicle_id: 2, rating: 4.6, user_id: 5 },
   { id: 3, full_name: 'Amit Patil', license_number: 'MH01-2020-55441', license_type: 'CLASS_B', phone_number: '+91-99600-77889', status: 'RESTING', max_driving_hours_per_day: 8, assigned_hub_id: 2, current_vehicle_id: null, rating: 4.4 },
-  { id: 4, full_name: 'Suresh Reddy', license_number: 'KA01-2019-33441', license_type: 'COMMERCIAL', phone_number: '+91-98450-99887', status: 'OFF_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 3, current_vehicle_id: null, rating: 4.7 },
+  { id: 4, full_name: 'Suresh Reddy', license_number: 'KA01-2019-33441', license_type: 'COMMERCIAL', phone_number: '+91-98450-99887', status: 'OFF_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 3, current_vehicle_id: null, rating: 4.7, hazmat_endorsed: true },
   { id: 5, full_name: 'Priya Mehta', license_number: 'GJ01-2022-12345', license_type: 'CLASS_B', phone_number: '+91-97200-55678', status: 'ON_TRIP', max_driving_hours_per_day: 8, assigned_hub_id: 2, current_vehicle_id: 3, rating: 4.9, user_id: 6 },
-  { id: 6, full_name: 'Neha Kulkarni', license_number: 'MH43-2018-77120', license_type: 'COMMERCIAL', phone_number: '+91-98190-33445', status: 'ON_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 2, current_vehicle_id: null, rating: 4.7, user_id: 7 },
+  { id: 6, full_name: 'Neha Kulkarni', license_number: 'MH43-2018-77120', license_type: 'COMMERCIAL', phone_number: '+91-98190-33445', status: 'ON_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 2, current_vehicle_id: null, rating: 4.7, user_id: 7, hazmat_endorsed: true },
   { id: 7, full_name: 'Imran Shaikh', license_number: 'MH43-2019-55018', license_type: 'COMMERCIAL', phone_number: '+91-98330-22114', status: 'ON_DUTY', max_driving_hours_per_day: 9, assigned_hub_id: 2, current_vehicle_id: null, rating: 4.6 },
 ]
 const INIT_SHIPMENTS: Shipment[] = [
   { id: 1, tracking_number: 'SHP-001-MUM', customer_name: 'Reliance Industries', destination_address: 'BKC, Mumbai', weight_kg: 450, volume_m3: 3.2, time_window_start: '09:00', time_window_end: '12:00', priority: 'HIGH', status: 'IN_TRANSIT', hub_id: 1, latitude: 19.066, longitude: 72.865, assigned_vehicle_id: 2 },
   { id: 2, tracking_number: 'SHP-002-MUM', customer_name: 'TCS Logistics', destination_address: 'Powai, Mumbai', weight_kg: 180, volume_m3: 1.5, time_window_start: '10:00', time_window_end: '14:00', priority: 'STANDARD', status: 'ASSIGNED', hub_id: 1, latitude: 19.1176, longitude: 72.906, assigned_vehicle_id: 1 },
-  { id: 3, tracking_number: 'SHP-003-NV', customer_name: 'Flipkart Supply Chain', destination_address: 'Belapur, Navi Mumbai', weight_kg: 920, volume_m3: 7.8, time_window_start: '08:00', time_window_end: '11:00', priority: 'EXPRESS', status: 'UNASSIGNED', hub_id: 2, latitude: 19.0235, longitude: 73.04 },
+  { id: 3, tracking_number: 'SHP-003-NV', customer_name: 'Flipkart Supply Chain', destination_address: 'Belapur, Navi Mumbai', weight_kg: 920, volume_m3: 7.8, time_window_start: '08:00', time_window_end: '11:00', priority: 'EXPRESS', status: 'UNASSIGNED', hub_id: 2, latitude: 19.0235, longitude: 73.04, hazard_class: '3' },
   { id: 4, tracking_number: 'SHP-004-PNQ', customer_name: 'Amazon India', destination_address: 'Kothrud, Pune', weight_kg: 640, volume_m3: 5.1, time_window_start: '11:00', time_window_end: '15:00', priority: 'STANDARD', status: 'DELIVERED', hub_id: 3, latitude: 18.5074, longitude: 73.8077 },
   { id: 5, tracking_number: 'SHP-005-MUM', customer_name: 'HDFC Bank', destination_address: 'Nariman Point, Mumbai', weight_kg: 120, volume_m3: 0.8, time_window_start: '09:30', time_window_end: '11:00', priority: 'EXPRESS', status: 'IN_TRANSIT', hub_id: 1, latitude: 18.9256, longitude: 72.8242, assigned_vehicle_id: 2 },
   { id: 6, tracking_number: 'SHP-006-NV', customer_name: 'Reliance Retail', destination_address: 'Nerul, Navi Mumbai', weight_kg: 260, volume_m3: 1.9, time_window_start: '09:00', time_window_end: '12:00', priority: 'STANDARD', status: 'IN_TRANSIT', hub_id: 2, latitude: 19.033, longitude: 73.0297, assigned_vehicle_id: 3 },
@@ -311,15 +312,37 @@ function CopilotDashboard({ vehicles, drivers, shipments, hubs, audit, setSectio
 }
 
 // ─── FLEET SECTION ────────────────────────────────────────────────────────────
-function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHubs, users, onManageUsers, addAudit }: {
+/** Save fleet records: to the backend when the workspace is online, otherwise in this browser only. */
+interface FleetActions {
+  online: boolean
+  saveHub(h: Omit<Hub, 'id'>, id?: number): Promise<void>
+  deleteHub(id: number): Promise<void>
+  saveVehicle(v: Omit<Vehicle, 'id'>, id?: number): Promise<void>
+  deleteVehicle(id: number): Promise<void>
+  saveDriver(d: Omit<Driver, 'id'>, id?: number): Promise<void>
+  deleteDriver(id: number): Promise<void>
+  createUser(u: NewUser): Promise<void>
+  updateUser(id: number, patch: { full_name?: string; role?: UserRole; is_active?: boolean }): Promise<void>
+  linkDriver(userId: number, driverId: number | null): Promise<void>
+}
+
+function FleetSection({ vehicles, drivers, hubs, users, onManageUsers, addAudit, fleet }: {
   vehicles: Vehicle[]; setVehicles: (v: Vehicle[]) => void
   drivers: Driver[]; setDrivers: (d: Driver[]) => void
   hubs: Hub[]; setHubs: (h: Hub[]) => void
   addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
   users: User[]
   onManageUsers?: () => void
+  fleet: FleetActions
 }) {
   const [tab, setTab] = useState<'vehicles' | 'drivers' | 'hubs'>('vehicles')
+  const [saving, setSaving] = useState(false)
+  const [fleetError, setFleetError] = useState<string | null>(null)
+  /** Runs a save/delete, showing the server's reason if it is refused; closes the form only on success. */
+  async function run(task: () => Promise<void>, after?: () => void) {
+    setSaving(true); setFleetError(null)
+    try { await task(); after?.() } catch (e) { setFleetError((e as Error).message) } finally { setSaving(false) }
+  }
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState<'add-v' | 'edit-v' | 'add-d' | 'edit-d' | 'add-h' | 'edit-h' | null>(null)
   const [editTarget, setEditTarget] = useState<any>(null)
@@ -337,25 +360,31 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
   const filtH = hubs.filter(h => h.name.toLowerCase().includes(q) || h.code.toLowerCase().includes(q))
 
   function saveVehicle() {
-    if (modal === 'add-v') { const nv = { ...vf, id: Date.now() }; setVehicles([...vehicles, nv]); addAudit({ actor_name: 'Admin', action_type: 'ASSET_CREATED', entity_type: 'VEHICLE', entity_id: nv.id, details: `Vehicle registered: ${nv.plate_number}` }) }
-    else if (modal === 'edit-v') { setVehicles(vehicles.map(v => v.id === editTarget.id ? { ...v, ...vf } : v)) }
-    setModal(null); setVf(blankV)
+    const id = modal === 'edit-v' ? editTarget.id : undefined
+    run(() => fleet.saveVehicle(vf, id), () => {
+      if (!id) addAudit({ actor_name: 'Admin', action_type: 'ASSET_CREATED', entity_type: 'VEHICLE', entity_id: 0, details: `Vehicle registered: ${vf.plate_number}` })
+      setModal(null); setVf(blankV)
+    })
   }
   function saveDriver() {
-    if (modal === 'add-d') { setDrivers([...drivers, { ...df, id: Date.now() }]) }
-    else if (modal === 'edit-d') { setDrivers(drivers.map(d => d.id === editTarget.id ? { ...d, ...df } : d)) }
-    setModal(null); setDf(blankD)
+    const id = modal === 'edit-d' ? editTarget.id : undefined
+    const current = id ? drivers.find(d => d.id === id) : undefined
+    run(() => fleet.saveDriver({ ...current, ...df }, id), () => {
+      if (!id) addAudit({ actor_name: 'Admin', action_type: 'ASSET_CREATED', entity_type: 'DRIVER', entity_id: 0, details: `Driver registered: ${df.full_name} at ${hubs.find(h => h.id === df.assigned_hub_id)?.code ?? ''}` })
+      setModal(null); setDf(blankD)
+    })
   }
   function saveHub() {
-    if (modal === 'add-h') { setHubs([...hubs, { ...hf, id: Date.now() }]) }
-    else if (modal === 'edit-h') { setHubs(hubs.map(h => h.id === editTarget.id ? { ...h, ...hf } : h)) }
-    setModal(null); setHf(blankH)
+    const id = modal === 'edit-h' ? editTarget.id : undefined
+    run(() => fleet.saveHub(hf, id), () => { setModal(null); setHf(blankH) })
   }
 
   const tabCls = (t: string) => `px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${tab === t ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {!modal && fleetError && <p role="alert" className="mx-5 mt-4 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{fleetError}</p>}
+      {!fleet.online && <p className="mx-5 mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Offline: showing built-in demo data. Changes stay in this browser and are not shared.</p>}
       <div className="grid grid-cols-4 gap-3 p-5 pb-0 flex-shrink-0">
         {[
           { label: 'Total Vehicles', value: vehicles.length, sub: `${vehicles.filter(v => v.current_status === 'AVAILABLE').length} available`, color: '#2563eb' },
@@ -403,7 +432,7 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
                   <td className="px-4 py-3 w-28"><Bar pct={v.fuel_pct} /></td>
                   <td className="px-4 py-3"><div className="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
                     <button onClick={() => { setEditTarget(v); setVf({ name: v.name, plate_number: v.plate_number, vehicle_type: v.vehicle_type, max_payload_kg: v.max_payload_kg, max_volume_m3: v.max_volume_m3, fuel_efficiency_kpl: v.fuel_efficiency_kpl, current_status: v.current_status, assigned_hub_id: v.assigned_hub_id, fuel_pct: v.fuel_pct }); setModal('edit-v') }} className="text-blue-600 hover:text-blue-800 font-medium">Edit</button>
-                    <button onClick={() => { setVehicles(vehicles.filter(x => x.id !== v.id)); addAudit({ actor_name: 'Admin', action_type: 'ASSET_DELETED', entity_type: 'VEHICLE', entity_id: v.id, details: `Vehicle ${v.plate_number} removed` }) }} className="text-red-500 hover:text-red-700 font-medium">Del</button>
+                    <button disabled={saving} onClick={() => { if (window.confirm(`Delete vehicle ${v.plate_number}?`)) run(() => fleet.deleteVehicle(v.id), () => addAudit({ actor_name: 'Admin', action_type: 'ASSET_DELETED', entity_type: 'VEHICLE', entity_id: v.id, details: `Vehicle ${v.plate_number} removed` })) }} className="text-red-500 hover:text-red-700 font-medium">Del</button>
                   </div></td>
                 </tr>
               ))}
@@ -425,16 +454,16 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
                   <td className="px-4 py-3 whitespace-nowrap font-mono text-slate-600">★ {d.rating}</td>
                   <td className="px-4 py-3 text-slate-500">{hubs.find(h => h.id === d.assigned_hub_id)?.code ?? '—'}</td>
                   <td className="px-4 py-3" title={ACCESS_NOTE[appAccess(d, users)]}>{(() => {
-                    const acc = accountFor(d, users)
-                    if (acc && acc.is_active) return <span className="font-mono text-slate-500">{acc.email}</span>
-                    if (acc) return <span className="font-semibold text-slate-400">Deactivated</span>
+                    const access = appAccess(d, users)
+                    if (access === 'active') return <span className="font-mono text-slate-500">{accountEmail(d, users)}</span>
+                    if (access === 'deactivated') return <span className="font-semibold text-slate-400">Deactivated</span>
                     return onManageUsers
                       ? <button onClick={onManageUsers} className="font-semibold text-amber-700 hover:underline">No login · create</button>
                       : <span className="font-semibold text-amber-700">No login</span>
                   })()}</td>
                   <td className="px-4 py-3"><div className="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
                     <button onClick={() => { setEditTarget(d); setDf({ full_name: d.full_name, license_number: d.license_number, license_type: d.license_type, phone_number: d.phone_number, status: d.status, max_driving_hours_per_day: d.max_driving_hours_per_day, assigned_hub_id: d.assigned_hub_id, current_vehicle_id: d.current_vehicle_id, rating: d.rating }); setModal('edit-d') }} className="text-blue-600 hover:text-blue-800 font-medium">Edit</button>
-                    <button onClick={() => { if (!accountFor(d, users) || window.confirm(`${d.full_name} has a driver login. Delete the driver profile? Their account will show "profile missing" until another profile is linked.`)) setDrivers(drivers.filter(x => x.id !== d.id)) }} className="text-red-500 hover:text-red-700 font-medium">Del</button>
+                    <button disabled={saving} onClick={() => { if (window.confirm(appAccess(d, users) !== 'none' ? `${d.full_name} has a driver login. Delete the driver profile? Their account will show "profile missing" until another profile is linked.` : `Delete driver ${d.full_name}?`)) run(() => fleet.deleteDriver(d.id)) }} className="text-red-500 hover:text-red-700 font-medium">Del</button>
                   </div></td>
                 </tr>
               ))}
@@ -454,7 +483,7 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
                   <td className="px-4 py-3 text-slate-500">{h.operating_hours}</td>
                   <td className="px-4 py-3"><div className="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
                     <button onClick={() => { setEditTarget(h); setHf({ name: h.name, code: h.code, address: h.address, latitude: h.latitude, longitude: h.longitude, contact_phone: h.contact_phone, operating_hours: h.operating_hours }); setModal('edit-h') }} className="text-blue-600 hover:text-blue-800 font-medium">Edit</button>
-                    <button onClick={() => setHubs(hubs.filter(x => x.id !== h.id))} className="text-red-500 hover:text-red-700 font-medium">Del</button>
+                    <button disabled={saving} onClick={() => { if (window.confirm(`Delete hub ${h.code}? Its vehicles and drivers are deleted too.`)) run(() => fleet.deleteHub(h.id)) }} className="text-red-500 hover:text-red-700 font-medium">Del</button>
                   </div></td>
                 </tr>
               ))}
@@ -473,7 +502,8 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
             </div>
             <div className="grid grid-cols-3 gap-3"><Field label="Payload (kg)"><input type="number" className={inputCls} value={vf.max_payload_kg} onChange={e => setVf(p => ({ ...p, max_payload_kg: +e.target.value }))} /></Field><Field label="Volume (m³)"><input type="number" className={inputCls} value={vf.max_volume_m3} onChange={e => setVf(p => ({ ...p, max_volume_m3: +e.target.value }))} /></Field><Field label="Fuel Eff."><input type="number" className={inputCls} value={vf.fuel_efficiency_kpl} onChange={e => setVf(p => ({ ...p, fuel_efficiency_kpl: +e.target.value }))} /></Field></div>
             <Field label="Hub"><select className={selCls} value={vf.assigned_hub_id} onChange={e => setVf(p => ({ ...p, assigned_hub_id: +e.target.value }))}>{hubs.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select></Field>
-            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={saveVehicle} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">Save</button></div>
+            {fleetError && <p role="alert" className="text-xs text-red-600">{fleetError}</p>}
+            <div className="flex justify-end gap-2 pt-2"><button onClick={() => { setModal(null); setFleetError(null) }} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={saveVehicle} disabled={saving} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button></div>
           </div>
         </Modal>
       )}
@@ -485,7 +515,8 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
               <Field label="License Type"><select className={selCls} value={df.license_type} onChange={e => setDf(p => ({ ...p, license_type: e.target.value as LicenseType }))}>{['CLASS_A', 'CLASS_B', 'COMMERCIAL'].map(t => <option key={t} value={t}>{t}</option>)}</select></Field></div>
             <div className="grid grid-cols-2 gap-3"><Field label="Status"><select className={selCls} value={df.status} onChange={e => setDf(p => ({ ...p, status: e.target.value as DriverStatus }))}>{['ON_DUTY', 'OFF_DUTY', 'ON_TRIP', 'RESTING'].map(s => <option key={s} value={s}>{s}</option>)}</select></Field><Field label="Max Hours/Day"><input type="number" className={inputCls} value={df.max_driving_hours_per_day} onChange={e => setDf(p => ({ ...p, max_driving_hours_per_day: +e.target.value }))} /></Field></div>
             <Field label="Hub"><select className={selCls} value={df.assigned_hub_id} onChange={e => setDf(p => ({ ...p, assigned_hub_id: +e.target.value }))}>{hubs.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select></Field>
-            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={saveDriver} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">Save</button></div>
+            {fleetError && <p role="alert" className="text-xs text-red-600">{fleetError}</p>}
+            <div className="flex justify-end gap-2 pt-2"><button onClick={() => { setModal(null); setFleetError(null) }} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={saveDriver} disabled={saving} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button></div>
           </div>
         </Modal>
       )}
@@ -496,7 +527,8 @@ function FleetSection({ vehicles, setVehicles, drivers, setDrivers, hubs, setHub
             <Field label="Address"><input className={inputCls} value={hf.address} onChange={e => setHf(p => ({ ...p, address: e.target.value }))} /></Field>
             <div className="grid grid-cols-2 gap-3"><Field label="Latitude"><input type="number" className={inputCls} value={hf.latitude} onChange={e => setHf(p => ({ ...p, latitude: +e.target.value }))} /></Field><Field label="Longitude"><input type="number" className={inputCls} value={hf.longitude} onChange={e => setHf(p => ({ ...p, longitude: +e.target.value }))} /></Field></div>
             <div className="grid grid-cols-2 gap-3"><Field label="Phone"><input className={inputCls} value={hf.contact_phone} onChange={e => setHf(p => ({ ...p, contact_phone: e.target.value }))} /></Field><Field label="Hours"><input className={inputCls} value={hf.operating_hours} onChange={e => setHf(p => ({ ...p, operating_hours: e.target.value }))} /></Field></div>
-            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={saveHub} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">Save</button></div>
+            {fleetError && <p role="alert" className="text-xs text-red-600">{fleetError}</p>}
+            <div className="flex justify-end gap-2 pt-2"><button onClick={() => { setModal(null); setFleetError(null) }} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={saveHub} disabled={saving} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button></div>
           </div>
         </Modal>
       )}
@@ -1082,11 +1114,12 @@ function AuditSection({ entries, authToken, canReport }: { entries: AuditEntry[]
 // Login accounts and driver profiles are managed together: a DRIVER account always comes with a driver profile
 // (licence, hub, legal hours), linked by Driver.user_id, so the person who signs in to the driver app is the
 // same person the planners assign. Mirrors the backend /api/v1/users rules (see backend/app/api/v1/users.py).
-type UserForm = { email: string; full_name: string; role: UserRole; is_active: boolean
+type UserForm = { email: string; full_name: string; role: UserRole; is_active: boolean; password: string
   profileMode: 'new' | 'existing'; existingDriverId: number | null
   license_number: string; license_type: LicenseType; phone_number: string; assigned_hub_id: number; max_driving_hours_per_day: number }
 
-function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit }: {
+function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit, fleet }: {
+  fleet: FleetActions
   users: User[]; setUsers: (u: User[]) => void
   drivers: Driver[]; setDrivers: (d: Driver[]) => void
   hubs: Hub[]
@@ -1097,7 +1130,14 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit }: 
   const [linkId, setLinkId] = useState<number | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [tried, setTried] = useState(false)   // show validation only after the first Save, not while typing
-  const blank = (): UserForm => ({ email: '', full_name: '', role: 'DRIVER', is_active: true, profileMode: 'new', existingDriverId: null,
+  const [busy, setBusy] = useState(false)
+  const [serverError, setServerError] = useState<string | null>(null)
+  const online = fleet.online   // online: accounts are created and changed on the server for everyone
+  async function attempt(task: () => Promise<void>): Promise<boolean> {
+    setBusy(true); setServerError(null)
+    try { await task(); return true } catch (e) { setServerError((e as Error).message); return false } finally { setBusy(false) }
+  }
+  const blank = (): UserForm => ({ email: '', full_name: '', role: 'DRIVER', is_active: true, password: '', profileMode: 'new', existingDriverId: null,
     license_number: '', license_type: 'COMMERCIAL', phone_number: '', assigned_hub_id: hubs[0]?.id ?? 0, max_driving_hours_per_day: 8 })
   const [form, setForm] = useState<UserForm>(blank)
   const set = (p: Partial<UserForm>) => setForm(f => ({ ...f, ...p }))
@@ -1112,6 +1152,7 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit }: 
   if (form.full_name.trim().length < 2) errors.push('Enter the full name')
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Enter a valid email')
   else if (users.some(u => u.email.toLowerCase() === email && u.id !== target?.id)) errors.push('An account with this email already exists')
+  if (online && modal === 'add' && form.password.length < 8) errors.push('Set a temporary password of at least 8 characters')
   if (modal === 'add' && form.role === 'DRIVER') {
     if (form.profileMode === 'existing') { if (form.existingDriverId == null) errors.push('Choose the driver profile to link') }
     else {
@@ -1128,12 +1169,27 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit }: 
   function openAdd(fromDriver?: Driver) {
     setTarget(null)
     setForm(fromDriver ? { ...blank(), full_name: fromDriver.full_name, profileMode: 'existing', existingDriverId: fromDriver.id } : blank())
-    setTried(false); setModal('add')
+    setTried(false); setServerError(null); setModal('add')
   }
 
-  function save() {
+  async function save() {
     setTried(true)
     if (errors.length) return
+    if (online) {
+      const ok = modal === 'add'
+        ? await attempt(() => fleet.createUser({ email, password: form.password, full_name: form.full_name.trim(), role: form.role, is_active: form.is_active,
+            ...(form.role !== 'DRIVER' ? {} : form.profileMode === 'existing' ? { driver_id: form.existingDriverId! }
+              : { driver: { license_number: form.license_number.trim(), license_type: form.license_type, phone_number: form.phone_number.trim(),
+                  assigned_hub_id: form.assigned_hub_id, max_driving_hours_per_day: form.max_driving_hours_per_day } }) }))
+        : await attempt(() => fleet.updateUser(target!.id, { full_name: form.full_name.trim(), role: form.role, is_active: form.is_active }))
+      if (ok) {
+        addAudit({ actor_name: 'Admin', action_type: modal === 'add' ? 'ASSET_CREATED' : 'ASSET_UPDATED', entity_type: 'USER', entity_id: target?.id ?? 0,
+          details: modal === 'add' ? `Created ${form.role} account ${email}` : `Updated account ${email}` })
+        if (modal === 'add') setNotice(form.role === 'DRIVER' ? `${form.full_name.trim()} can now sign in to the driver app and be planned on routes.` : `${form.full_name.trim()}'s account is ready.`)
+        setModal(null)
+      }
+      return
+    }
     if (modal === 'add') {
       const id = Math.max(0, ...users.map(u => u.id)) + 1
       const user: User = { id, email, full_name: form.full_name.trim(), role: form.role, is_active: form.is_active }
@@ -1165,9 +1221,10 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit }: 
     setModal(null)
   }
 
-  function toggleActive(u: User) {
+  async function toggleActive(u: User) {
     if (u.role === 'ADMIN' && u.is_active && activeAdmins <= 1) { setNotice('There must always be at least one active admin.'); return }
-    setUsers(users.map(x => x.id === u.id ? { ...x, is_active: !x.is_active } : x))
+    if (online) { if (!(await attempt(() => fleet.updateUser(u.id, { is_active: !u.is_active })))) return }
+    else setUsers(users.map(x => x.id === u.id ? { ...x, is_active: !x.is_active } : x))
     addAudit({ actor_name: 'Admin', action_type: 'STATUS_CHANGE', entity_type: 'USER', entity_id: u.id, details: `${u.is_active ? 'Deactivated' : 'Activated'} account ${u.email}` })
     if (u.role === 'DRIVER' && u.is_active) setNotice(`${u.full_name} can no longer sign in or be assigned to routes. Their driver profile and history are kept.`)
   }
@@ -1179,10 +1236,11 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit }: 
     addAudit({ actor_name: 'Admin', action_type: 'ASSET_DELETED', entity_type: 'USER', entity_id: u.id, details: `Removed account ${u.email}` })
   }
 
-  function link() {
+  async function link() {
     if (!target || linkId == null) return
     const d = drivers.find(x => x.id === linkId)!
-    setDrivers(drivers.map(x => x.id === linkId ? { ...x, user_id: target.id, full_name: target.full_name } : x))
+    if (online) { if (!(await attempt(() => fleet.linkDriver(target.id, linkId)))) return }
+    else setDrivers(drivers.map(x => x.id === linkId ? { ...x, user_id: target.id, full_name: target.full_name } : x))
     addAudit({ actor_name: 'Admin', action_type: 'ASSET_UPDATED', entity_type: 'DRIVER', entity_id: linkId, details: `Linked driver ${d.full_name} to ${target.email}` })
     setModal(null)
   }
@@ -1193,6 +1251,8 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit }: 
         <div><p className="text-sm font-bold text-slate-800">User Management</p><p className="text-xs text-slate-400">Logins and roles. Driver accounts are linked to their driver profile.</p></div>
         <button onClick={() => openAdd()} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">+ Add user</button>
       </div>
+      {!modal && serverError && <p role="alert" className="mx-5 mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{serverError}</p>}
+      {!online && <p className="mx-5 mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Offline: these accounts are demo data in this browser. Nobody can sign in with them.</p>}
       {notice && (
         <div className="mx-5 mt-3 flex items-start gap-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800" role="status">
           <span className="flex-1">{notice}</span><button onClick={() => setNotice(null)} aria-label="Dismiss" className="text-emerald-700">✕</button>
@@ -1230,9 +1290,9 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit }: 
                   </td>
                   <td className="px-5 py-3"><span className={`text-xs font-semibold ${u.is_active ? 'text-emerald-600' : 'text-slate-400'}`}>{u.is_active ? '● Active' : '○ Deactivated'}</span></td>
                   <td className="px-5 py-3"><div className="flex gap-3 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
-                    <button onClick={() => { setTarget(u); setForm({ ...blank(), email: u.email, full_name: u.full_name, role: u.role, is_active: u.is_active }); setTried(false); setModal('edit') }} className="text-blue-600 font-medium">Edit</button>
+                    <button onClick={() => { setTarget(u); setForm({ ...blank(), email: u.email, full_name: u.full_name, role: u.role, is_active: u.is_active }); setTried(false); setServerError(null); setModal('edit') }} className="text-blue-600 font-medium">Edit</button>
                     <button onClick={() => toggleActive(u)} className="text-amber-600 font-medium">{u.is_active ? 'Deactivate' : 'Activate'}</button>
-                    {u.role !== 'ADMIN' && <button onClick={() => remove(u)} className="text-red-500 font-medium">Remove</button>}
+                    {u.role !== 'ADMIN' && !online && <button onClick={() => remove(u)} className="text-red-500 font-medium">Remove</button>}
                   </div></td>
                 </tr>
               )
@@ -1246,8 +1306,11 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit }: 
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Full name"><input className={inputCls} value={form.full_name} onChange={e => set({ full_name: e.target.value })} /></Field>
-              <Field label="Email"><input type="email" className={inputCls} value={form.email} onChange={e => set({ email: e.target.value })} /></Field>
+              <Field label="Email"><input type="email" className={inputCls} value={form.email} disabled={online && modal === 'edit'} onChange={e => set({ email: e.target.value })} /></Field>
             </div>
+            {online && modal === 'add' && (
+              <Field label="Temporary password"><input type="password" autoComplete="new-password" className={inputCls} value={form.password} onChange={e => set({ password: e.target.value })} /></Field>
+            )}
             <Field label="Role"><select className={selCls} value={form.role} onChange={e => set({ role: e.target.value as UserRole })}>{(['ADMIN', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER'] as const).map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}</select></Field>
 
             {modal === 'add' && form.role === 'DRIVER' && (
@@ -1281,9 +1344,10 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit }: 
             )}
             <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.is_active} onChange={e => set({ is_active: e.target.checked })} /><span className="text-sm text-slate-600">Active account</span></label>
             {tried && errors.length > 0 && <ul className="text-xs text-red-600 space-y-0.5" role="alert">{errors.map(e => <li key={e}>{e}</li>)}</ul>}
+            {serverError && <p className="text-xs text-red-600" role="alert">{serverError}</p>}
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button>
-              <button onClick={save} disabled={tried && errors.length > 0} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50">Save</button>
+              <button onClick={save} disabled={busy || (tried && errors.length > 0)} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button>
             </div>
           </div>
         </Modal>
@@ -1398,6 +1462,68 @@ function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => 
     fetchAuthToken(activeRole).then(token => { if (!cancelled) setAuth({ role: activeRole, token }) })
     return () => { cancelled = true }
   }, [activeRole])
+
+  // ── Fleet roster: hubs, vehicles, drivers and users come from the backend so every user, role and device sees
+  // the same people and assets, and nothing is lost on reload. Offline, the built-in demo data is used and the
+  // workspace says so. Loaded once per session; later changes are saved through the actions below.
+  const [roster, setRoster] = useState<{ source: 'loading' | 'server' | 'local'; error?: string }>({ source: 'loading' })
+  const rosterLoaded = useRef(false)
+  const extras: Extras = useMemo(() => ({
+    fuelPct: plate => INIT_VEHICLES.find(v => v.plate_number === plate)?.fuel_pct,
+    rating: licence => INIT_DRIVERS.find(d => d.license_number === licence)?.rating,
+  }), [])
+  function applyRoster(r: Roster, initial: boolean) {
+    if (initial) {
+      // The demo shipments point at built-in hub / vehicle ids; re-point them at the server's records.
+      const hubId = new Map(INIT_HUBS.map(h => [h.id, r.hubs.find(x => x.code === h.code)?.id]))
+      const vehId = new Map(INIT_VEHICLES.map(v => [v.id, r.vehicles.find(x => x.plate_number === v.plate_number)?.id]))
+      setShipments(prev => prev.map(s => ({ ...s, hub_id: hubId.get(s.hub_id) ?? s.hub_id,
+        assigned_vehicle_id: s.assigned_vehicle_id != null ? vehId.get(s.assigned_vehicle_id) ?? s.assigned_vehicle_id : s.assigned_vehicle_id })))
+      setHubs(r.hubs); setVehicles(r.vehicles); setDrivers(r.drivers)
+    } else {
+      // Later reloads: profile data from the server, operational state (on a trip, current vehicle) kept from this session.
+      setDrivers(prev => r.drivers.map(d => { const local = prev.find(x => x.id === d.id); return local ? { ...d, status: local.status, current_vehicle_id: local.current_vehicle_id } : d }))
+    }
+    setUsers(r.users ?? [])
+  }
+  async function reloadRoster() {
+    if (!authToken) return
+    applyRoster(await fleetApi.load(authToken, activeRole === 'ADMIN', extras), false)
+  }
+  useEffect(() => {
+    if (rosterLoaded.current) return
+    if (auth && !auth.token) { setRoster({ source: 'local', error: 'Not signed in to the backend' }); return }
+    if (!authToken) return
+    rosterLoaded.current = true
+    fleetApi.load(authToken, activeRole === 'ADMIN', extras)
+      .then(r => { applyRoster(r, true); setRoster({ source: 'server' }) })
+      .catch(e => { rosterLoaded.current = false; setRoster({ source: 'local', error: (e as Error).message }) })
+  }, [authToken, auth])
+  const rosterOnline = roster.source === 'server' && !!authToken
+  const fleetActions: FleetActions = {
+    online: rosterOnline,
+    async saveHub(h, id) {
+      if (!rosterOnline) { const nh = { ...h, id: id ?? Date.now() }; setHubs(p => id ? p.map(x => x.id === id ? nh : x) : [...p, nh]); return }
+      const saved = await fleetApi.saveHub(authToken!, h, id)
+      setHubs(p => id ? p.map(x => x.id === id ? saved : x) : [...p, saved])
+    },
+    async deleteHub(id) { if (rosterOnline) await fleetApi.deleteHub(authToken!, id); setHubs(p => p.filter(x => x.id !== id)) },
+    async saveVehicle(v, id) {
+      if (!rosterOnline) { const nv = { ...v, id: id ?? Date.now() }; setVehicles(p => id ? p.map(x => x.id === id ? nv : x) : [...p, nv]); return }
+      const saved = { ...(await fleetApi.saveVehicle(authToken!, v, extras, id)), fuel_pct: v.fuel_pct }
+      setVehicles(p => id ? p.map(x => x.id === id ? saved : x) : [...p, saved])
+    },
+    async deleteVehicle(id) { if (rosterOnline) await fleetApi.deleteVehicle(authToken!, id); setVehicles(p => p.filter(x => x.id !== id)) },
+    async saveDriver(d, id) {
+      if (!rosterOnline) { const nd = { ...d, id: id ?? Date.now() }; setDrivers(p => id ? p.map(x => x.id === id ? { ...x, ...nd } : x) : [...p, nd]); return }
+      const saved = { ...(await fleetApi.saveDriver(authToken!, d, extras, id)), rating: d.rating }
+      setDrivers(p => id ? p.map(x => x.id === id ? saved : x) : [...p, saved])
+    },
+    async deleteDriver(id) { if (rosterOnline) await fleetApi.deleteDriver(authToken!, id); setDrivers(p => p.filter(x => x.id !== id)) },
+    async createUser(u) { await fleetApi.createUser(authToken!, u); await reloadRoster() },
+    async updateUser(id, patch) { await fleetApi.updateUser(authToken!, id, patch); await reloadRoster() },
+    async linkDriver(userId, driverId) { await fleetApi.linkDriver(authToken!, userId, driverId); await reloadRoster() },
+  }
 
   // Live Backend Probing
   useEffect(() => {
@@ -1602,9 +1728,9 @@ function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => 
           {section === 'dashboard' && <CopilotCommandCenter vehicles={vehicles} drivers={drivers} shipments={shipments} hubs={hubs} audit={audit} setSection={setSection} activeRole={activeRole} authToken={authToken} />}
           {section === 'shipments' && <ShipmentsSection shipments={shipments} setShipments={setShipments} hubs={hubs} addAudit={addAudit} onTriggerWorkflow={triggerWorkflow} activeRole={activeRole} />}
           {section === 'workflow' && <DispatchPlanner shipments={shipments} hubs={hubs} vehicles={vehicles} drivers={drivers} users={users} initialShipmentId={workflowShipment?.id ?? null} onDispatch={dispatch} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
-          {section === 'fleet' && <FleetSection vehicles={vehicles} setVehicles={setVehicles} drivers={drivers} setDrivers={setDrivers} hubs={hubs} setHubs={setHubs} users={users} onManageUsers={activeRole === 'ADMIN' ? () => setSection('users') : undefined} addAudit={addAudit} />}
+          {section === 'fleet' && <FleetSection fleet={fleetActions} vehicles={vehicles} setVehicles={setVehicles} drivers={drivers} setDrivers={setDrivers} hubs={hubs} setHubs={setHubs} users={users} onManageUsers={activeRole === 'ADMIN' ? () => setSection('users') : undefined} addAudit={addAudit} />}
           {section === 'map' && <NetworkMapSection hubs={hubs} shipments={shipments} />}
-          {section === 'routes' && <RoutePlannerSection hubs={hubs} vehicles={vehicles} drivers={drivers} users={users} shipments={shipments}
+          {section === 'routes' && <RoutePlannerSection authToken={authToken} hubs={hubs} vehicles={vehicles} drivers={drivers} users={users} shipments={shipments}
             onAddShipments={list => setShipments(prev => [...prev, ...list])} onDispatchRoutes={dispatchRoutes} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
           {section === 'reports' && <ReportsSection authToken={authToken} />}
           {section === 'executive' && <ExecutiveDashboard authToken={authToken} shipments={shipments} vehicles={vehicles} />}
@@ -1632,7 +1758,7 @@ function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => 
           </div>
           {section === 'compliance' && <ComplianceInspector />}
           {section === 'audit' && <AuditSection entries={audit} authToken={authToken} canReport={activeRole === 'ADMIN' || activeRole === 'FLEET_MANAGER'} />}
-          {section === 'users' && <UsersSection users={users} setUsers={setUsers} drivers={drivers} setDrivers={setDrivers} hubs={hubs} addAudit={addAudit} />}
+          {section === 'users' && <UsersSection fleet={fleetActions} users={users} setUsers={setUsers} drivers={drivers} setDrivers={setDrivers} hubs={hubs} addAudit={addAudit} />}
           </Suspense>
           </ErrorBoundary>
         </main>

@@ -5,6 +5,8 @@ export interface Kpis {
   trips: number; stops: number; otif_pct: number; on_time_pct: number; in_full_pct: number; sla_breach_pct: number; failed_pct: number
   avg_transit_min: number; route_efficiency_index: number; total_km: number; fuel_l: number; fuel_l_per_100km: number
   total_cost: number; cost_per_ton_km: number; fleet_utilisation_pct: number
+  energy_cost?: number; driver_cost?: number; overtime_hours?: number; overtime_cost?: number
+  co2_kg?: number; co2_kg_per_100km?: number; saving_vs_separate?: number; co2_saved_kg?: number
 }
 export interface ReportFilters { days: number; hub?: string; vehicle_type?: string; driver?: string }
 export interface MetricsResponse {
@@ -27,8 +29,9 @@ const auth = (token: string | null): Record<string, string> => (token ? { Author
 export const reportsApi = {
   metrics: (f: ReportFilters, token: string | null) => apiRequest<MetricsResponse>(`/reports/metrics?${reportQuery(f)}`, { headers: auth(token) }),
   /** Downloads a CSV or PDF export by fetching it (with the token) and saving the blob. */
-  async download(kind: 'csv' | 'pdf', f: ReportFilters, token: string | null) {
-    const res = await fetch(`${API_V1}/reports/${kind === 'csv' ? 'export.csv' : 'summary.pdf'}?${reportQuery(f)}`, { headers: auth(token) })
+  async download(kind: 'csv' | 'pdf' | 'xlsx', f: ReportFilters, token: string | null) {
+    const file = kind === 'csv' ? 'export.csv' : kind === 'xlsx' ? 'export.xlsx' : 'summary.pdf'
+    const res = await fetch(`${API_V1}/reports/${file}?${reportQuery(f)}`, { headers: auth(token) })
     if (res.status === 401 || res.status === 403) throw new Error('Your role cannot export reports.')
     if (!res.ok) throw new Error(`Export failed (${res.status})`)
     const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? `fleet-report.${kind}`
