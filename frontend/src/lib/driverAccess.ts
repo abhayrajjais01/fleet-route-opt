@@ -11,9 +11,21 @@ export function accountFor(d: Driver, users: User[]): User | null {
   return d.user_id != null ? users.find(u => u.id === d.user_id && u.role === 'DRIVER') ?? null : null
 }
 
+/**
+ * Uses the user list when this session has it (admins); otherwise the account state the backend reports on the
+ * driver itself (account_active), so dispatchers and fleet managers see the same answer.
+ */
 export function appAccess(d: Driver, users: User[]): AppAccess {
   const u = accountFor(d, users)
-  return !u ? 'none' : u.is_active ? 'active' : 'deactivated'
+  if (u) return u.is_active ? 'active' : 'deactivated'
+  if (d.account_active === true) return 'active'
+  if (d.account_active === false) return 'deactivated'
+  return 'none'
+}
+
+/** The login email to show for a driver, if any. */
+export function accountEmail(d: Driver, users: User[]): string | null {
+  return accountFor(d, users)?.email ?? d.account_email ?? null
 }
 
 /** The driver profile linked to an account, if any. */

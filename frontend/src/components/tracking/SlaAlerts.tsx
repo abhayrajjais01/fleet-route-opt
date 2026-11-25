@@ -5,12 +5,15 @@
 //   - a stop was delivered after its window closed (SLA_BREACHED)                         (Week 12)
 //   - a trip became ROUTE_BLOCKED (breakdown)                                             (Week 12)
 // Serious alerts play a short tone (Web Audio; off until the dispatcher turns sound on, since browsers
-// block audio before a click anyway).
+// block audio before a click anyway). SLA and blocked alerts offer "Suggest a fix": the Optimization Agent
+// proposes a recovery (re-sequence around the delay, or hand a blocked truck's stops to other vehicles) that the
+// dispatcher reviews and approves.
+export type FixKind = 'late' | 'blocked'
 import { useEffect, useRef, useState } from 'react'
 import type { TripView } from './simulation'
 
 type Level = 'info' | 'warning' | 'critical'
-interface Toast { id: number; level: Level; title: string; body: string }
+interface Toast { id: number; level: Level; title: string; body: string; fix?: { planId: string; kind: FixKind } }
 
 const STYLE: Record<Level, { ring: string; dot: string; label: string }> = {
   info: { ring: 'ring-slate-200', dot: 'bg-sky-500', label: 'ETA update' },
@@ -29,7 +32,7 @@ function beep(ctx: AudioContext, level: Level) {
   osc.start(); osc.stop(ctx.currentTime + 0.5)
 }
 
-export default function SlaAlerts({ views }: { views: TripView[] }) {
+export default function SlaAlerts({ views, onSuggest }: { views: TripView[]; onSuggest?: (planId: string, kind: FixKind) => void }) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [sound, setSound] = useState(false)
   const audio = useRef<AudioContext | null>(null)
@@ -38,10 +41,11 @@ export default function SlaAlerts({ views }: { views: TripView[] }) {
   })
   const nextId = useRef(1)
 
-  function push(level: Level, title: string, body: string) {
+  function push(level: Level, title: string, body: string, fix?: Toast['fix']) {
     const id = nextId.current++
-    setToasts(t => [{ id, level, title, body }, ...t].slice(0, 4))
-    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), level === 'critical' ? 12000 : 7000)
+    setToasts(t => [{ id, level, title, body, fix }, ...t].slice(0, 4))
+    // Alerts with a suggested fix stay longer so there is time to act on them.
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), fix ? 20000 : level === 'critical' ? 12000 : 7000)
     if (sound && level !== 'info' && audio.current) beep(audio.current, level)
   }
 
@@ -51,7 +55,7 @@ export default function SlaAlerts({ views }: { views: TripView[] }) {
       const plate = v.plan.vehicle.plate_number
       if (v.state === 'ROUTE_BLOCKED' && !s.blocked.has(v.plan.id)) {
         s.blocked.add(v.plan.id)
-        if (s.ready) push('critical', `${plate} is blocked`, `${v.stops.filter(x => x.state === 'BLOCKED').length} stops need another vehicle. Open the Route Planner to re-route them.`)
+        if (s.ready) push('critical', `${plate} is blocked`, `${v.stops.filter(x => x.state === 'BLOCKED').length} stops need another vehicle.`, { planId: v.plan.id, kind: 'blocked' })
       }
       let moved = 0, maxShift = 0
       for (const st of v.stops) {
@@ -64,7 +68,7 @@ export default function SlaAlerts({ views }: { views: TripView[] }) {
         // Blocked stops have no ETA (Infinity); the ROUTE_BLOCKED alert above already covers them.
         if (st.late && Number.isFinite(st.lateBy) && st.state !== 'DELIVERED' && st.state !== 'FAILED' && st.state !== 'BLOCKED' && !s.late.has(key)) {
           s.late.add(key)
-          if (s.ready) push('warning', `${st.shipment.customer_name} will be late`, `${plate} now arrives ${Math.round(st.lateBy)} min after the ${st.shipment.time_window_end} window. Tell the customer or re-route.`)
+          if (s.ready) push('warning', `${st.shipment.customer_name} will be late`, `${plate} now arrives ${Math.round(st.lateBy)} min after the ${st.shipment.time_window_end} window.`, { planId: v.plan.id, kind: 'late' })
         }
         if (st.late && st.state === 'DELIVERED' && !s.breached.has(key)) {
           s.breached.add(key)
@@ -93,6 +97,10 @@ export default function SlaAlerts({ views }: { views: TripView[] }) {
               <p className="text-[11px] font-medium text-slate-500">{STYLE[t.level].label}</p>
               <p className="text-sm font-semibold text-slate-900">{t.title}</p>
               <p className="text-xs text-slate-600 mt-0.5">{t.body}</p>
+              {t.fix && onSuggest && (
+                <button onClick={() => { onSuggest(t.fix!.planId, t.fix!.kind); setToasts(x => x.filter(y => y.id !== t.id)) }}
+                  className="mt-1.5 text-xs font-semibold text-violet-700 hover:text-violet-900">Suggest a fix →</button>
+              )}
             </div>
             <button onClick={() => setToasts(x => x.filter(y => y.id !== t.id))} aria-label="Dismiss" className="text-slate-400 hover:text-slate-700 text-sm">✕</button>
           </div>

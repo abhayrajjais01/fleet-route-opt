@@ -13,13 +13,16 @@ const KPI_TILES: { key: keyof Kpis; label: string; fmt: (v: number) => string; d
   { key: 'fuel_l_per_100km', label: 'Fuel burn', fmt: v => `${v} L/100km`, def: 'fuel_l_per_100km', good: 'down' },
   { key: 'cost_per_ton_km', label: 'Cost per ton-km', fmt: v => `₹${v}`, def: 'cost_per_ton_km', good: 'down' },
   { key: 'fleet_utilisation_pct', label: 'Fleet utilisation', fmt: v => `${v}%`, def: 'fleet_utilisation_pct', good: 'up' },
+  { key: 'overtime_cost', label: 'Driver overtime', fmt: v => `₹${Math.round(v ?? 0).toLocaleString('en-IN')}`, def: 'overtime_cost', good: 'down' },
+  { key: 'co2_kg', label: 'CO₂ emitted', fmt: v => `${Math.round(v ?? 0).toLocaleString('en-IN')} kg`, def: 'co2_kg', good: 'down' },
+  { key: 'saving_vs_separate', label: 'Saved by consolidation', fmt: v => `₹${Math.round(v ?? 0).toLocaleString('en-IN')}`, def: 'saving_vs_separate', good: 'up' },
 ]
 
 export default function ReportsSection({ authToken }: { authToken: string | null }) {
   const [filters, setFilters] = useState<ReportFilters>({ days: 30 })
   const [data, setData] = useState<MetricsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [exporting, setExporting] = useState<'csv' | 'pdf' | null>(null)
+  const [exporting, setExporting] = useState<'csv' | 'pdf' | 'xlsx' | null>(null)
 
   useEffect(() => {
     if (!authToken) {
@@ -35,7 +38,7 @@ export default function ReportsSection({ authToken }: { authToken: string | null
     return () => { cancelled = true }
   }, [JSON.stringify(filters), authToken])
 
-  async function exportFile(kind: 'csv' | 'pdf') {
+  async function exportFile(kind: 'csv' | 'pdf' | 'xlsx') {
     setExporting(kind)
     try { await reportsApi.download(kind, filters, authToken) } catch (e) { setError((e as Error).message) } finally { setExporting(null) }
   }
@@ -56,6 +59,7 @@ export default function ReportsSection({ authToken }: { authToken: string | null
           <Select id="rep-driver" label="All drivers" value={filters.driver} options={data?.options.drivers ?? []} onChange={v => set({ driver: v })} />
           <div className="flex-1" />
           <button onClick={() => exportFile('csv')} disabled={!data || !!exporting} className="px-3 py-1.5 rounded-lg bg-white ring-1 ring-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">{exporting === 'csv' ? 'Exporting…' : 'Export CSV'}</button>
+          <button onClick={() => exportFile('xlsx')} disabled={!data || !!exporting} className="px-3 py-1.5 rounded-lg bg-white ring-1 ring-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">{exporting === 'xlsx' ? 'Exporting…' : 'Export Excel'}</button>
           <button onClick={() => exportFile('pdf')} disabled={!data || !!exporting} className="px-3 py-1.5 rounded-lg bg-slate-900 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">{exporting === 'pdf' ? 'Preparing…' : 'Download PDF summary'}</button>
         </div>
 
@@ -69,7 +73,7 @@ export default function ReportsSection({ authToken }: { authToken: string | null
               {KPI_TILES.map(t => (
                 <div key={t.key} className="rounded-xl bg-white ring-1 ring-slate-200 px-4 py-3" title={data.definitions[t.def]}>
                   <p className="text-xs text-slate-500">{t.label}</p>
-                  <p className="text-2xl font-semibold text-slate-900 tabular-nums mt-0.5">{t.fmt(data.kpis[t.key])}</p>
+                  <p className="text-2xl font-semibold text-slate-900 tabular-nums mt-0.5">{t.fmt(data.kpis[t.key] ?? 0)}</p>
                   <p className="text-[11px] text-slate-400 mt-1 leading-snug">{data.definitions[t.def]}</p>
                 </div>
               ))}

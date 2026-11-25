@@ -10,6 +10,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AuditEntry, Driver, Hub, Shipment, User, Vehicle } from '../../lib/types'
 import { appAccess } from '../../lib/driverAccess'
+import { endorsementProblem, hazardClasses } from '../../lib/hazmat'
+import { inr, tripCost } from '../../lib/costs'
+import { downloadFile } from '../../lib/download'
 import { clock, estimateLeg, toMinutes, type LatLng } from '../../lib/geo'
 import { placesNear } from '../../lib/places'
 import { travelTime } from '../../lib/traffic'
@@ -28,7 +31,7 @@ export interface RouteDispatch { vehicleId: number; driverId: number; departure:
 const toStopIn = (s: Shipment): RouteStopIn => ({
   id: String(s.id), name: s.customer_name, address: s.destination_address, priority: s.priority,
   latitude: s.latitude!, longitude: s.longitude!, weight_kg: s.weight_kg, volume_m3: s.volume_m3,
-  window_start: s.time_window_start, window_end: s.time_window_end,
+  window_start: s.time_window_start, window_end: s.time_window_end, ...(s.hazard_class ? { hazard_class: s.hazard_class } : {}),
 })
 const toVehicle = (v: Vehicle, driver?: Driver | null): RouteVehicle => ({
   id: String(v.id), label: v.plate_number, capacity_kg: v.max_payload_kg, capacity_m3: v.max_volume_m3, vehicle_type: v.vehicle_type,
@@ -66,7 +69,8 @@ function localEvaluate(hub: Hub, v: Vehicle, driver: Driver | null, stops: Shipm
 
 const fmtDur = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, '0')}m` : `${Math.round(m)} min`)
 
-export default function RoutePlannerSection({ hubs, vehicles, drivers, users, shipments, onAddShipments, onDispatchRoutes, addAudit, onOpenTracking }: {
+export default function RoutePlannerSection({ hubs, vehicles, drivers, users, shipments, onAddShipments, onDispatchRoutes, addAudit, onOpenTracking, authToken }: {
+  authToken: string | null
   hubs: Hub[]; vehicles: Vehicle[]; drivers: Driver[]; users: User[]; shipments: Shipment[]
   onAddShipments: (s: Shipment[]) => void
   onDispatchRoutes: (r: RouteDispatch[]) => void
@@ -84,6 +88,7 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
   const hubVehicles = vehicles.filter(v => v.assigned_hub_id === hubId && v.current_status !== 'MAINTENANCE' && v.current_status !== 'DECOMMISSIONED')
   const [orderIds, setOrderIds] = useState<Set<number>>(new Set())
   const [vehicleIds, setVehicleIds] = useState<Set<number>>(new Set())
+  const [driverIds, setDriverIds] = useState<Set<number>>(new Set())   // drivers the planner may auto-assign
   const [plan, setPlan] = useState<PlanRoute[] | null>(null)
   const [unassigned, setUnassigned] = useState<Record<string, string>>({})
   const [stats, setStats] = useState<{ km: number; separate: number; saving: number; ms: number; roads: boolean } | null>(null)
@@ -97,17 +102,35 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
   useEffect(() => {
     setOrderIds(new Set(candidates.map(s => s.id)))
     setVehicleIds(new Set(hubVehicles.filter(v => v.current_status === 'AVAILABLE').map(v => v.id)))
+    setDriverIds(new Set(drivers.filter(d => d.assigned_hub_id === hubId && defaultOn(d)).map(d => d.id)))
     setPlan(null); setUnassigned({}); setStats(null); setError(null); setDispatched(false)
   }, [hubId])
+  // Drivers added or put on duty elsewhere (Fleet Assets, Users) join the selection as soon as they are free.
+  const driverKey = drivers.filter(d => d.assigned_hub_id === hubId).map(d => `${d.id}:${d.status}:${d.current_vehicle_id ?? ''}`).join()
+  const seenDrivers = useRef<Set<number>>(new Set())
+  useEffect(() => {
+    const here = drivers.filter(d => d.assigned_hub_id === hubId)
+    setDriverIds(prev => {
+      const n = new Set([...prev].filter(id => here.some(d => d.id === id && !unavailable(d))))
+      for (const d of here) if (!seenDrivers.current.has(d.id) && defaultOn(d)) n.add(d.id)
+      return n
+    })
+    seenDrivers.current = new Set(here.map(d => d.id))
+  }, [driverKey, hubId])
   // Newly added sample orders join the selection.
   const candidateKey = candidates.map(s => s.id).join()
   useEffect(() => { setOrderIds(prev => new Set([...prev, ...candidates.filter(s => !plan?.some(r => r.stops.includes(s))).map(s => s.id)])) }, [candidateKey])
 
   const hubPoint = { id: `hub-${hub.id}`, latitude: hub.latitude, longitude: hub.longitude }
   const hubDrivers = drivers.filter(d => d.assigned_hub_id === hubId)
-  // Auto-assignment: on-duty, unassigned drivers whose account isn't deactivated; drivers with the app first, then by rating.
+  /** Why a driver cannot be auto-assigned right now, or null if they can. */
+  const unavailable = (d: Driver): string | null =>
+    appAccess(d, users) === 'deactivated' ? 'account deactivated' : d.status === 'RESTING' ? 'mandatory rest'
+      : d.status === 'ON_TRIP' || d.current_vehicle_id != null ? 'on a trip' : null
+  const defaultOn = (d: Driver) => !unavailable(d) && d.status === 'ON_DUTY'
+  // Auto-assignment pool: the ticked drivers who are free; drivers with the app first, then by rating.
   const freeDrivers = drivers
-    .filter(d => d.assigned_hub_id === hubId && d.status === 'ON_DUTY' && d.current_vehicle_id == null && appAccess(d, users) !== 'deactivated')
+    .filter(d => d.assigned_hub_id === hubId && driverIds.has(d.id) && !unavailable(d))
     .sort((a, b) => Number(appAccess(b, users) === 'active') - Number(appAccess(a, users) === 'active') || b.rating - a.rating)
 
   async function evaluateRoute(r: PlanRoute): Promise<PlanRoute> {
@@ -122,12 +145,26 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
 
   // Dispatcher picks who drives each route. Picking a driver already on another route swaps the two.
   // Every changed route is re-checked against its new driver's shift limit.
+  // Week 14: the driver's printable stop sheet for one route.
+  const [printing, setPrinting] = useState<number | null>(null)
+  async function printManifest(ri: number) {
+    const r = plan?.[ri]
+    if (!r) return
+    setPrinting(ri); setError(null)
+    try {
+      await downloadFile('/routes/manifest.pdf', authToken, { hub: hubPoint, hub_name: hub.name, vehicle: toVehicle(r.vehicle, r.driver),
+        stops: r.stops.map(toStopIn), departure }, `manifest-${r.vehicle.plate_number}.pdf`)
+    } catch (e) { setError(e instanceof TypeError ? 'Printing needs the backend to be running.' : (e as Error).message) } finally { setPrinting(null) }
+  }
+
   async function setRouteDriver(ri: number, driverId: number | null) {
     if (!plan) return
     const chosen = drivers.find(d => d.id === driverId) ?? null
     const other = chosen ? plan.findIndex((x, k) => k !== ri && x.stops.length > 0 && x.driver?.id === chosen.id) : -1
+    // The swapped-out driver goes to the other route only if they may carry its load (hazmat endorsement).
+    const displaced = plan[ri].driver && other > -1 && !endorsementProblem(plan[ri].driver!, plan[other].stops) ? plan[ri].driver : null
     const next = plan.map((r, k) =>
-      k === ri ? { ...r, driver: chosen, confirmed: false } : k === other ? { ...r, driver: plan[ri].driver, confirmed: false } : r)
+      k === ri ? { ...r, driver: chosen, confirmed: false } : k === other ? { ...r, driver: displaced, confirmed: false } : r)
     setPlan(next)
     const changed = [ri, ...(other > -1 ? [other] : [])]
     const checked = await Promise.all(changed.map(k => evaluateRoute(next[k])))
@@ -146,11 +183,16 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
       const res = await optimizeRoutes(hubPoint, orders.map(toStopIn), fleet.map(v => toVehicle(v, null)), departure)
       const byId = new Map(orders.map(s => [String(s.id), s]))
       const pool = [...freeDrivers]
-      const routes: PlanRoute[] = res.routes.map(r => {
-        const vehicle = fleet.find(v => String(v.id) === r.vehicle_id)!
-        const driver = drivers.find(d => d.current_vehicle_id === vehicle.id && d.status === 'ON_DUTY') ?? pool.shift() ?? null
-        return { vehicle, driver, stops: r.stop_ids.map(id => byId.get(id)!), evaluation: null, confirmed: false }
-      })
+      // Hazmat routes first, so endorsed drivers go where the SOP requires them (SOP-HZ-001 §2).
+      const drafts = res.routes.map(r => ({ vehicle: fleet.find(v => String(v.id) === r.vehicle_id)!, stops: r.stop_ids.map(id => byId.get(id)!) }))
+        .sort((a, b) => hazardClasses(b.stops).length - hazardClasses(a.stops).length)
+      const routes: PlanRoute[] = drafts.map(({ vehicle, stops }) => {
+        const pick = (d: Driver) => !endorsementProblem(d, stops)
+        const own = drivers.find(d => d.current_vehicle_id === vehicle.id && d.status === 'ON_DUTY' && pick(d))
+        const i = own ? -1 : pool.findIndex(pick)
+        const driver = own ?? (i >= 0 ? pool.splice(i, 1)[0] : null)
+        return { vehicle, driver, stops, evaluation: null, confirmed: false }
+      }).sort((a, b) => res.routes.findIndex(r => r.vehicle_id === String(a.vehicle.id)) - res.routes.findIndex(r => r.vehicle_id === String(b.vehicle.id)))
       setPlan(await Promise.all(routes.map(evaluateRoute)))
       setUnassigned(res.unassigned)
       setStats({ km: res.total_distance_km, separate: res.separate_trips_km, saving: res.saving_pct, ms: res.compute_ms, roads: res.distance_source === 'osrm' })
@@ -223,7 +265,10 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
       const stops = visits.map(v => all.get(v.stop_id)).filter((s): s is Shipment => !!s)
       const existing = next.find(r => r.vehicle.id === vehicle.id)
       if (existing) existing.stops = stops
-      else next.push({ vehicle, driver: pool.shift() ?? null, stops, evaluation: null, confirmed: false })
+      else {
+        const i = pool.findIndex(d => !endorsementProblem(d, stops))
+        next.push({ vehicle, driver: i >= 0 ? pool.splice(i, 1)[0] : null, stops, evaluation: null, confirmed: false })
+      }
     }
     if (p.tool_call.name === 'reassign_stops') {
       const broken = findVehicle(String(p.tool_call.arguments.vehicle_id))
@@ -251,6 +296,7 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
         destination_address: place ? `${place.area}, ${place.city}` : `Sample stop near ${hub.name}`,
         weight_kg: 80 + Math.round(rng(320)), volume_m3: Math.round((0.4 + rng(2.4)) * 10) / 10, time_window_start: ws, time_window_end: we,
         priority: (['STANDARD', 'STANDARD', 'HIGH', 'LOW', 'EXPRESS'] as const)[i % 5], status: 'UNASSIGNED', hub_id: hub.id,
+        ...(n === 'Asian Paints' ? { hazard_class: '3' } : {}),   // paint: Class 3 flammable liquid
         latitude: place ? place.lat + jitter() : hub.latitude + (rng(0.08) - 0.04),
         longitude: place ? place.lon + jitter() : hub.longitude + (rng(0.08) - 0.04) }
     }))
@@ -323,6 +369,26 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
               </label>
             ))}
           </section>
+          <section>
+            <p className="text-xs font-semibold text-slate-500 px-1 mb-1">Drivers · {hubDrivers.length}</p>
+            {hubDrivers.length === 0 && <p className="px-2 text-xs text-slate-400">No drivers at this hub. Add one in Fleet Assets or Users.</p>}
+            {hubDrivers.map(d => {
+              const why = unavailable(d), access = appAccess(d, users)
+              return (
+                <label key={d.id} className={`flex items-start gap-2.5 px-2 py-2 rounded-lg ${why ? 'opacity-60' : 'hover:bg-slate-50 cursor-pointer'}`}>
+                  <input type="checkbox" className="mt-1 accent-violet-600" disabled={!!why} checked={!why && driverIds.has(d.id)} aria-label={`Available: ${d.full_name}`}
+                    onChange={e => setDriverIds(prev => { const n = new Set(prev); e.target.checked ? n.add(d.id) : n.delete(d.id); return n })} />
+                  <span className="min-w-0">
+                    <span className="block text-sm text-slate-900">{d.full_name} <span className="text-xs text-slate-400">★{d.rating}</span></span>
+                    <span className="block text-xs text-slate-500">
+                      {why ?? (d.status === 'OFF_DUTY' ? 'off duty · tick to call in' : 'on duty')}
+                      {access === 'none' ? ' · no app login' : ''}{d.hazmat_endorsed ? ' · hazmat ✓' : ''}
+                    </span>
+                  </span>
+                </label>
+              )
+            })}
+          </section>
         </div>
         <div className="p-4 border-t border-slate-100">
           {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
@@ -341,6 +407,23 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
               <div><p className="text-xl font-semibold text-slate-900 tabular-nums">{plan.filter(r => r.stops.length).length}</p><p className="text-xs text-slate-500">routes</p></div>
               <div><p className="text-xl font-semibold text-slate-900 tabular-nums">{plan.reduce((a, r) => a + (r.evaluation?.distance_km ?? 0), 0).toFixed(0)} km</p><p className="text-xs text-slate-500">vs {stats.separate.toFixed(0)} km separately</p></div>
               <div><p className={`text-xl font-semibold tabular-nums ${lateCount ? 'text-amber-600' : 'text-emerald-600'}`}>{lateCount}</p><p className="text-xs text-slate-500">late stops</p></div>
+              {(() => {
+                // Week 13: what this plan costs and emits, versus one round trip per customer at the same efficiency and speed.
+                const live = plan.filter(r => r.stops.length && r.evaluation)
+                if (!live.length) return null
+                const costs = live.map(r => tripCost(r.vehicle, r.evaluation!.distance_km, r.evaluation!.duration_min))
+                const km = live.reduce((a, r) => a + r.evaluation!.distance_km, 0)
+                const total = costs.reduce((a, c) => a + c.total, 0), co2 = costs.reduce((a, c) => a + c.co2, 0), ot = costs.reduce((a, c) => a + c.overtimeH, 0)
+                const scale = km ? stats.separate / km : 0
+                // Per route, like the backend: overtime is per driver, not on the fleet's combined hours.
+                const base = live.reduce((a, r, i) => a + costs[i].energy * scale + tripCost(r.vehicle, 0, r.evaluation!.duration_min * scale).driver, 0)
+                return (
+                  <p className="col-span-3 text-xs text-slate-600">
+                    Operating cost <b className="text-slate-900">{inr(total)}</b> · {Math.round(co2)} kg CO₂{ot > 0 ? ` · ${ot.toFixed(1)} h overtime` : ''}
+                    {base > total && <span className="text-emerald-700"> · saves {inr(base - total)} and {Math.round(co2 * scale - co2)} kg CO₂ vs separate trips</span>}
+                  </p>
+                )
+              })()}
               <p className="col-span-3 text-[11px] text-slate-400" title={stats.roads ? 'Distances from the OpenStreetMap road network (OSRM)' : 'Road routing unavailable; distances estimated from straight-line distance'}>
                 {stats.roads ? 'Planned on real road distances' : 'Estimated distances (road routing unavailable)'} · solved in {stats.ms < 1000 ? `${Math.round(stats.ms)} ms` : `${(stats.ms / 1000).toFixed(1)} s`}
               </p>
@@ -372,9 +455,14 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
                           : swapWith ? ` · swap with ${swapWith.vehicle.plate_number}`
                           : d.status === 'ON_DUTY' ? '' : d.status === 'ON_TRIP' && d.current_vehicle_id !== r.vehicle.id ? ' · on a trip (override)'
                           : d.status === 'RESTING' ? ' · mandatory rest' : d.status === 'OFF_DUTY' ? ' · off duty (override)' : ''
-                        return <option key={d.id} value={d.id} disabled={d.status === 'RESTING' || access === 'deactivated'}>{d.full_name} ★{d.rating}{label}{access === 'none' ? ' · no app login' : ''}</option>
+                        const hz = endorsementProblem(d, r.stops)
+                        return <option key={d.id} value={d.id} disabled={d.status === 'RESTING' || access === 'deactivated' || !!hz}>{d.full_name} ★{d.rating}{hz ? ` · ${hz}` : label}{access === 'none' ? ' · no app login' : ''}</option>
                       })}
                     </select>
+                    {hazardClasses(r.stops).length > 0 && (
+                      <span title="Dangerous goods on board: needs a hazmat-endorsed driver and placards (SOP-HZ-001)"
+                        className="flex-shrink-0 rounded-full bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700 ring-1 ring-orange-200">hazmat {hazardClasses(r.stops).map(c => `C${c}`).join(' ')}</span>
+                    )}
                     {r.driver && appAccess(r.driver, users) === 'none' && (
                       <span title="This driver has no login, so the route will not appear in their driver app. Create a login in Users, or share the route another way."
                         className="flex-shrink-0 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-200">no app login</span>
@@ -426,6 +514,7 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
                 ))}
                 <div className="flex gap-2 px-3 py-2 border-t border-slate-100 bg-slate-50/60">
                   <button onClick={() => setExplainFor(ri)} className="text-xs font-medium text-violet-700 hover:text-violet-900">Explain route</button>
+                  <button disabled={printing === ri} onClick={() => printManifest(ri)} className="text-xs font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50">{printing === ri ? 'Preparing…' : 'Print manifest'}</button>
                   {!dispatched && <button onClick={() => askAgent(`${r.vehicle.plate_number} broke down`)} className="text-xs font-medium text-slate-500 hover:text-slate-800 ml-auto">What if it breaks down?</button>}
                 </div>
               </div>
@@ -527,7 +616,11 @@ function ExplainModal({ hubName, hubPoint, route, departure, onClose }: {
 }) {
   const [ex, setEx] = useState<RouteExplanation | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [tab, setTab] = useState<'why' | 'driver'>('why')
+  const [tab, setTab] = useState<'why' | 'driver' | 'customers'>('why')
+  const [copied, setCopied] = useState<string | null>(null)
+  async function copy(id: string, text: string) {
+    try { await navigator.clipboard.writeText(text); setCopied(id); setTimeout(() => setCopied(c => (c === id ? null : c)), 1500) } catch { /* clipboard blocked: text stays selectable */ }
+  }
   useEffect(() => {
     routeOpsApi.explain(hubPoint, hubName, toVehicle(route.vehicle, route.driver), route.stops.map(toStopIn), departure)
       .then(setEx).catch(e => setErr(e instanceof TypeError ? 'Explanations need the backend to be running.' : (e as Error).message))
@@ -540,11 +633,24 @@ function ExplainModal({ hubName, hubPoint, route, departure, onClose }: {
         <>
           <p className="text-sm text-slate-800 leading-relaxed">{ex.summary}</p>
           <div className="flex bg-slate-100 rounded-lg p-0.5 mt-4">
-            {([['why', 'Stop by stop'], ['driver', 'Driver instructions']] as const).map(([k, l]) => (
+            {([['why', 'Stop by stop'], ['driver', 'Driver instructions'], ['customers', 'Customer messages']] as const).map(([k, l]) => (
               <button key={k} onClick={() => setTab(k)} className={`flex-1 py-1.5 text-sm font-medium rounded-md ${tab === k ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>{l}</button>
             ))}
           </div>
-          {tab === 'why' || !ex.legs?.length ? (
+          {tab === 'customers' ? (
+            <div className="mt-3 space-y-2">
+              <p className="text-xs text-slate-500">Ready to send by SMS or WhatsApp. Each gives a 30-minute arrival window inside the customer's booked slot.</p>
+              {(ex.customer_messages ?? []).map(m => (
+                <div key={m.stop_id} className={`rounded-xl px-3 py-2.5 ring-1 ${m.on_time ? 'ring-slate-200' : 'ring-amber-300 bg-amber-50/40'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-slate-900">{m.name} <span className="text-xs font-normal text-slate-500">· {m.window_from}–{m.window_to}{m.on_time ? '' : ' · late'}</span></p>
+                    <button onClick={() => copy(m.stop_id, m.text)} className="text-xs font-medium text-violet-700 hover:text-violet-900">{copied === m.stop_id ? 'Copied' : 'Copy'}</button>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-700 select-all">{m.text}</p>
+                </div>
+              ))}
+            </div>
+          ) : tab === 'why' || !ex.legs?.length ? (
             <ul className="mt-3 space-y-2 text-sm text-slate-700">
               {(tab === 'why' ? ex.stop_reasons.map(r => r.reason) : ex.driver_instructions).map((line, i) => <li key={i}>{line}</li>)}
             </ul>
