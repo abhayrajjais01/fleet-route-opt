@@ -92,6 +92,8 @@ The driver view opens on **My stops**: the next stop first, with the customer, t
 - **Report delay** with minutes and a reason; downstream ETAs shift for the dispatcher.
 - **Offline**: actions taken without signal are queued on the phone and sent when the connection returns. Anything
   the server rejects stays in the queue with the reason.
+- **Shared phones**: saved stops and queued actions belong to the account that created them. Another driver signing in
+  on the same phone never sees or sends them. If the app says *No driver profile linked*, an admin must link the account.
 - **Map** shows the route; the toggle in the header switches between stops and map.
 
 ## 4. Fleet manager

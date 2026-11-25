@@ -1336,8 +1336,8 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
-    restore().then(({ session: s, expired }) => {
-      if (expired) setNotice('Your session has expired. Please sign in again.')
+    restore().then(({ session: s, notice: reason }) => {
+      if (reason) setNotice(reason)
       setSession(activate(s))
     })
   }, [])
@@ -1611,15 +1611,18 @@ function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => 
           {/* Kept mounted so the simulation clock and reported events survive page switches */}
           <div className={section === 'tracking' ? 'h-full' : 'hidden'}>
             {activeRole === 'DRIVER' ? (
-              // Loads the signed-in driver's manifest from the API; these props are only the offline demo fallback
+              // Loads the driver's manifest from the API. The sample fleet is a fallback for demo mode only: a real
+              // account must never be shown (or act on) somebody else's stops.
               // Own scroll area: <main> clips overflow, and the cockpit is taller than the screen
               <div className="h-full overflow-y-auto overscroll-contain">
                 <MobileDriverCockpit
-                  shipments={shipments}
-                  vehicle={vehicles.find(v => v.id === 1) || null}
-                  driver={drivers.find(d => d.id === 1) || null}
-                  hub={hubs.find(h => h.id === 1) || null}
+                  shipments={isDemo ? shipments : []}
+                  vehicle={isDemo ? vehicles.find(v => v.id === 1) ?? null : null}
+                  driver={isDemo ? drivers.find(d => d.id === 1) ?? null : null}
+                  hub={isDemo ? hubs.find(h => h.id === 1) ?? null : null}
                   authToken={authToken}
+                  accountKey={session.mode === 'user' ? `user:${session.user.id}` : 'demo'}
+                  accountName={session.mode === 'user' ? session.user.full_name : undefined}
                   onUpdateShipmentStatus={(id, st) => setShipments(prev => prev.map(s => s.id === id ? { ...s, status: st as ShipmentStatus } : s))}
                 />
               </div>

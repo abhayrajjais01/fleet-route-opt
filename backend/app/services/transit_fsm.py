@@ -9,11 +9,12 @@ real-time multi-stop trip execution progress.
 from datetime import datetime, timezone
 from typing import Dict, Set, Optional, Tuple, Any, List
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.shipment import Shipment, ShipmentStatus
 from app.models.fleet import Vehicle, VehicleStatus, Driver, DriverStatus
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.audit import AuditAction
 from app.schemas.transit import (
     TransitFailureReason,
@@ -61,6 +62,33 @@ VALID_FSM_TRANSITIONS: Dict[ShipmentStatus, Set[ShipmentStatus]] = {
 }
 
 
+def driver_for_user(db: Session, user: User) -> Optional[Driver]:
+    """
+    The driver profile behind a login: the explicit account link, else an exact (case-insensitive) name match with
+    a profile that is not linked to any account. A profile linked to someone else is never matched by name.
+    """
+    linked = db.query(Driver).filter(Driver.user_id == user.id).first()
+    if linked:
+        return linked
+    return (
+        db.query(Driver)
+        .filter(Driver.user_id.is_(None), func.lower(func.trim(Driver.full_name)) == user.full_name.strip().lower())
+        .first()
+    )
+
+
+def ensure_driver_may_act(db: Session, actor: User, shipment: Shipment, refusal: Optional[str] = None) -> None:
+    """Drivers may only act on shipments on their own vehicle. Other roles are limited by the endpoint's RBAC."""
+    if actor.role != UserRole.DRIVER:
+        return
+    driver = driver_for_user(db, actor)
+    if not driver or driver.current_vehicle_id is None or driver.current_vehicle_id != shipment.assigned_vehicle_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=refusal or f"Driver '{actor.full_name}' is not authorized for shipment {shipment.tracking_number}: it is not on their vehicle.",
+        )
+
+
 class TransitFSMService:
     """
     Finite State Machine controller managing the lifecycle of customer consignments
@@ -101,8 +129,6 @@ class TransitFSMService:
         Validates dispatcher authority for vehicle reassignment and driver assignment integrity.
         Preserves true prior vehicle assignment in the immutable audit trail before snapshot.
         """
-        from app.models.user import UserRole
-
         shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
         if not shipment:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shipment not found.")
@@ -144,13 +170,8 @@ class TransitFSMService:
             )
 
         # Validate driver-to-vehicle authorization
-        if actor.role == UserRole.DRIVER:
-            driver_on_veh = db.query(Driver).filter(Driver.current_vehicle_id == shipment.assigned_vehicle_id).first()
-            if driver_on_veh and driver_on_veh.full_name.strip().lower() != actor.full_name.strip().lower():
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Driver '{actor.full_name}' is not authorized to depart vehicle {assigned_veh.plate_number} (assigned to {driver_on_veh.full_name}).",
-                )
+        ensure_driver_may_act(db, actor, shipment,
+                              f"Driver '{actor.full_name}' is not authorized to depart vehicle {assigned_veh.plate_number}.")
 
         target_status = ShipmentStatus.IN_TRANSIT
         cls.validate_transition(shipment.status, target_status)
@@ -214,6 +235,7 @@ class TransitFSMService:
         shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
         if not shipment:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shipment not found.")
+        ensure_driver_may_act(db, actor, shipment)
 
         target_status = ShipmentStatus.ARRIVED
         cls.validate_transition(shipment.status, target_status)
@@ -275,6 +297,7 @@ class TransitFSMService:
         shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
         if not shipment:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shipment not found.")
+        ensure_driver_may_act(db, actor, shipment)
 
         target_status = ShipmentStatus.DELIVERED
         cls.validate_transition(shipment.status, target_status)
@@ -343,6 +366,7 @@ class TransitFSMService:
         shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
         if not shipment:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shipment not found.")
+        ensure_driver_may_act(db, actor, shipment)
 
         target_status = ShipmentStatus.FAILED
         cls.validate_transition(shipment.status, target_status)
@@ -464,6 +488,7 @@ class TransitFSMService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cannot report transit delay on shipment with status '{shipment.status.value}'.",
             )
+        ensure_driver_may_act(db, actor, shipment)
 
         detail_msg = f"Reported transit delay of +{delay_minutes} mins: {reason}"
 

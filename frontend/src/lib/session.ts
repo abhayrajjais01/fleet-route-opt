@@ -48,7 +48,10 @@ export class SignInError extends Error {}
 
 async function me(token: string): Promise<SessionUser> {
   const res = await fetch(`${API_V1}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-  if (!res.ok) throw new SignInError('Your session has expired. Please sign in again.')
+  if (res.status === 401) throw new SignInError('Your session has expired. Please sign in again.')
+  if (res.status === 403) throw new SignInError('This account has been deactivated. Ask an administrator to restore it.')
+  // Anything else (5xx, rate limit, a proxy error) says nothing about the token.
+  if (!res.ok) throw new Error(`Profile check failed (${res.status})`)
   const u = await res.json()
   return { id: u.id, email: u.email, full_name: u.full_name, role: u.role }
 }
@@ -85,17 +88,17 @@ export function startDemo(startRole: UserRole = 'ADMIN'): Session {
 }
 
 /**
- * The session to resume on page load: the stored one, with a signed-in token re-checked against the server
- * (expired, revoked or deactivated → back to the login page, with `expired` set). If the server can't be reached
- * the stored session is kept, so a flaky connection doesn't sign anyone out.
+ * The session to resume on page load: the stored one, with a signed-in token re-checked against the server. Only a
+ * definite refusal (401 expired, 403 deactivated) returns to the login page, with `notice` saying why. A server error
+ * or no connection keeps the stored session, so a hiccup doesn't sign anyone out.
  */
-export async function restore(): Promise<{ session: Session | null; expired: boolean }> {
+export async function restore(): Promise<{ session: Session | null; notice: string | null }> {
   const s = read()
-  if (!s || s.mode === 'demo') return { session: s, expired: false }
+  if (!s || s.mode === 'demo') return { session: s, notice: null }
   try {
-    return { session: { ...s, user: await me(s.token) }, expired: false }
+    return { session: { ...s, user: await me(s.token) }, notice: null }
   } catch (e) {
-    return e instanceof SignInError ? { session: null, expired: true } : { session: s, expired: false }
+    return e instanceof SignInError ? { session: null, notice: e.message } : { session: s, notice: null }
   }
 }
 

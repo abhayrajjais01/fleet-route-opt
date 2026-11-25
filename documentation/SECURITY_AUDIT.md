@@ -21,6 +21,7 @@ regression `backend/tests/test_e2e_regression.py`.
 | 10 | Low | **Missing security headers; responses cacheable; server banner.** | `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`, a strict CSP on API responses (Swagger-specific CSP on `/docs`), HSTS in production, `Cache-Control: no-store` on authenticated responses, no `Server` header. | `test_security_headers_on_api_and_docs` |
 | 11 | Low | **Unbounded request bodies.** | Bodies over 10 MB get `413` before they are read (Nginx enforces the same limit). | `test_oversized_body_is_rejected` |
 | 12 | Low | **Frontend could not read download filenames** (`Content-Disposition` not exposed cross-origin). | Exposed with the rate-limit headers. | `test_cors_exposes_download_and_rate_limit_headers` |
+| 13 | High | **A driver could act on any shipment.** Arrive, deliver, fail and delay (live and offline sync) did not check whose vehicle the shipment was on, and a same-named sign-up matched an already linked driver profile. | Drivers may act only on shipments on their own vehicle (`403` otherwise); a profile linked to an account is never matched by name. Cached stops and queued actions are stored per account on the device. | `test_driver_cannot_act_on_another_drivers_shipments`, `test_same_name_does_not_take_over_a_linked_driver_profile` |
 
 ## Input sanitisation coverage
 

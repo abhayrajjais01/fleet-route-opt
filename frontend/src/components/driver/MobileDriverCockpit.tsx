@@ -10,6 +10,10 @@ interface MobileDriverCockpitProps {
   driver: Driver | null
   hub: Hub | null
   authToken: string | null
+  /** Whose device data this is ("user:<id>" or "demo"): cached stops and queued actions are stored per account. */
+  accountKey: string
+  /** Shown until the manifest names the driver. */
+  accountName?: string
   onUpdateShipmentStatus: (shipmentId: number, newStatus: string) => void
   onClose?: () => void
 }
@@ -34,7 +38,28 @@ interface ServerManifest {
   stops: Array<Pick<Shipment, 'tracking_number' | 'customer_name' | 'destination_address' | 'latitude' | 'longitude' | 'weight_kg' | 'volume_m3' | 'time_window_start' | 'time_window_end' | 'priority' | 'status'> & { shipment_id: number; sequence_index: number }>
 }
 
-const MANIFEST_CACHE_KEY = 'fleet_driver_manifest_cache'
+// Phones get shared between drivers, so both entries are scoped to the account that created them. Another account
+// never reads or sends them; they wait until their owner signs in again.
+const manifestKey = (account: string) => `fleet_driver_manifest_cache:${account}`
+const queueKey = (account: string) => `fleet_driver_offline_queue:${account}`
+// Entries from before sign-in existed. Only the demo logins could have made them.
+const LEGACY_MANIFEST_KEY = 'fleet_driver_manifest_cache'
+const LEGACY_QUEUE_KEY = 'fleet_driver_offline_queue'
+
+function readStored<T>(key: string): T | null {
+  try {
+    const saved = localStorage.getItem(key)
+    return saved ? JSON.parse(saved) as T : null
+  } catch {
+    return null
+  }
+}
+
+function readQueue(account: string): QueuedAction[] {
+  return readStored<QueuedAction[]>(queueKey(account))
+    ?? (account === 'demo' ? readStored<QueuedAction[]>(LEGACY_QUEUE_KEY) : null)
+    ?? []
+}
 
 export default function MobileDriverCockpit({
   shipments,
@@ -42,31 +67,20 @@ export default function MobileDriverCockpit({
   driver,
   hub,
   authToken,
+  accountKey,
+  accountName,
   onUpdateShipmentStatus,
   onClose,
 }: MobileDriverCockpitProps) {
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine)
-  const [offlineQueue, setOfflineQueue] = useState<QueuedAction[]>(() => {
-    try {
-      const saved = localStorage.getItem('fleet_driver_offline_queue')
-      return saved ? JSON.parse(saved) : []
-    } catch {
-      return []
-    }
-  })
+  const [offlineQueue, setOfflineQueue] = useState<QueuedAction[]>(() => readQueue(accountKey))
   const [activeTab, setActiveTab] = useState<'manifest' | 'cockpit' | 'queue'>('cockpit')
   const [actionLoading, setActionLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // The signed-in driver's manifest from the server (cached for offline use); null in local demo mode
-  const [manifest, setManifest] = useState<ServerManifest | null>(() => {
-    try {
-      const saved = localStorage.getItem(MANIFEST_CACHE_KEY)
-      return saved ? JSON.parse(saved) : null
-    } catch {
-      return null
-    }
-  })
+  const [manifest, setManifest] = useState<ServerManifest | null>(() => readStored<ServerManifest>(manifestKey(accountKey)))
+  const [manifestState, setManifestState] = useState<'loading' | 'ready' | 'unlinked' | 'unavailable'>('loading')
   // Status changes made on this device, applied on top of the server manifest
   const [localStatus, setLocalStatus] = useState<Record<number, Shipment['status']>>({})
 
@@ -74,23 +88,33 @@ export default function MobileDriverCockpit({
     if (!authToken) return
     let cancelled = false
     fetch(`${API_V1}/transit/driver/manifest`, { headers: { Authorization: `Bearer ${authToken}` } })
-      .then(res => (res.ok ? res.json() : null))
-      .then((data: ServerManifest | null) => {
-        if (cancelled || !data) return
+      .then(async res => {
+        if (cancelled) return
+        if (res.status === 403) {
+          // The server doesn't tie this account to a driver (any more): cached stops aren't theirs.
+          setManifest(null)
+          setManifestState('unlinked')
+          try { localStorage.removeItem(manifestKey(accountKey)) } catch { /* storage unavailable */ }
+          return
+        }
+        if (!res.ok) { setManifestState('unavailable'); return }
+        const data: ServerManifest = await res.json()
+        if (cancelled) return
         setManifest(data)
+        setManifestState('ready')
         setLocalStatus({})
-        try { localStorage.setItem(MANIFEST_CACHE_KEY, JSON.stringify(data)) } catch { /* storage unavailable */ }
+        try { localStorage.setItem(manifestKey(accountKey), JSON.stringify(data)) } catch { /* storage unavailable */ }
       })
-      .catch(() => { /* offline: keep the cached manifest */ })
+      .catch(() => { if (!cancelled) setManifestState('unavailable') /* offline: keep the cached manifest */ })
     return () => { cancelled = true }
-  }, [authToken])
+  }, [authToken, accountKey])
 
   function updateStatus(id: number, status: Shipment['status']) {
     setLocalStatus(prev => ({ ...prev, [id]: status }))
     onUpdateShipmentStatus(id, status)
   }
 
-  const driverName = manifest?.driver_name ?? driver?.full_name ?? null
+  const driverName = manifest?.driver_name ?? driver?.full_name ?? accountName ?? null
   const vehiclePlate = manifest?.vehicle_plate ?? vehicle?.plate_number ?? null
   const hubCode = manifest?.hub_code ?? hub?.code ?? null
   const depot = manifest?.hub_latitude != null && manifest?.hub_longitude != null
@@ -128,11 +152,13 @@ export default function MobileDriverCockpit({
   // Save queue to local storage
   useEffect(() => {
     try {
-      localStorage.setItem('fleet_driver_offline_queue', JSON.stringify(offlineQueue))
+      localStorage.setItem(queueKey(accountKey), JSON.stringify(offlineQueue))
+      localStorage.removeItem(LEGACY_MANIFEST_KEY)
+      if (accountKey === 'demo') localStorage.removeItem(LEGACY_QUEUE_KEY)   // now held under the demo account
     } catch (e) {
       console.error('Failed to persist offline queue:', e)
     }
-  }, [offlineQueue])
+  }, [offlineQueue, accountKey])
 
   // Track online/offline status
   useEffect(() => {
@@ -529,6 +555,17 @@ export default function MobileDriverCockpit({
                 {nextStop && <button onClick={() => setViewStopId(null)} className="font-semibold text-blue-300 hover:text-blue-200 whitespace-nowrap">Back to current stop →</button>}
               </div>
             )}
+          </div>
+        ) : assignedStops.length === 0 ? (
+          <div className="rounded-2xl bg-slate-800/40 border border-slate-700 p-6 text-center" role="status">
+            <h3 className="text-sm font-bold text-white">
+              {manifestState === 'loading' ? 'Loading your stops…' : manifestState === 'unlinked' ? 'No driver profile linked' : manifestState === 'unavailable' ? 'Can’t load your stops' : 'No stops assigned'}
+            </h3>
+            <p className="text-xs text-slate-400 mt-1">
+              {manifestState === 'unlinked' ? 'This account isn’t linked to a driver profile yet. Ask your administrator to link it.'
+                : manifestState === 'unavailable' ? 'The server can’t be reached and no stops are saved on this device. Try again when you have a connection.'
+                : manifestState === 'loading' ? 'Fetching today’s route from dispatch.' : 'When a dispatcher assigns you a route, your stops will appear here.'}
+            </p>
           </div>
         ) : (
           <div className="rounded-2xl bg-slate-800/40 border border-slate-700 p-6 text-center">

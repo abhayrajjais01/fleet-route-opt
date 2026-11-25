@@ -303,3 +303,49 @@ def test_driver_offline_sync_fail_and_delay(client, driver_env):
     assert data["failed_count"] == 0, data["results"]
     assert data["applied_count"] == 2
     assert data["results"][1]["new_status"] == "FAILED"
+
+
+def _other_driver(driver_env, full_name="Driver Other"):
+    user = User(email="driver_other@fleet.io", hashed_password=hash_password("password123"), full_name=full_name,
+                role=UserRole.DRIVER, is_active=True)
+    driver_env["db"].add(user)
+    driver_env["db"].commit()
+    return user, {"Authorization": f"Bearer {create_access_token({'sub': user.email, 'role': user.role.value})}"}
+
+
+def test_driver_cannot_act_on_another_drivers_shipments(client, driver_env):
+    """PR #31 review: a queue replayed under a different driver's token used to be applied."""
+    db, s1 = driver_env["db"], driver_env["s1_id"]
+    _, other = _other_driver(driver_env)
+    db.query(Shipment).update({"status": ShipmentStatus.IN_TRANSIT})
+    db.commit()
+
+    actions = [{"action_id": f"a{i}", "action_type": kind, "shipment_id": s1, "client_timestamp": "2026-11-25T10:00:00Z", "payload": payload}
+               for i, (kind, payload) in enumerate([
+                   ("ARRIVE", {}), ("DELIVER", {"recipient_name": "Someone"}),
+                   ("FAIL", {"reason_code": "OTHER", "notes": "not mine"}), ("DELAY", {"delay_minutes": 10, "reason": "traffic"})])]
+    res = client.post("/api/v1/transit/driver/offline-sync", json={"actions": actions}, headers=other).json()
+    assert res["applied_count"] == 0 and res["failed_count"] == 4
+    assert all("not authorized" in r["error"] for r in res["results"])
+
+    base = f"/api/v1/transit/shipments/{s1}"
+    assert client.post(f"{base}/arrive", json={}, headers=other).status_code == 403
+    assert client.post(f"{base}/deliver", json={"recipient_name": "Someone"}, headers=other).status_code == 403
+    assert client.post(f"{base}/fail", json={"reason_code": "OTHER", "notes": "not mine"}, headers=other).status_code == 403
+    assert client.post(f"{base}/delay", json={"delay_minutes": 10, "reason": "traffic"}, headers=other).status_code == 403
+    db.expire_all()
+    assert db.get(Shipment, s1).status == ShipmentStatus.IN_TRANSIT
+
+    assert client.post(f"{base}/arrive", json={}, headers=driver_env["headers"]).status_code == 200   # the owner still can
+
+
+def test_same_name_does_not_take_over_a_linked_driver_profile(client, driver_env):
+    """Anyone can sign up as DRIVER with any name; a profile linked to an account must not match by name."""
+    db = driver_env["db"]
+    owner = db.query(User).filter(User.email == "driver_rajesh@fleet.io").one()
+    db.get(Driver, driver_env["driver_id"]).user_id = owner.id
+    db.commit()
+    _, impostor = _other_driver(driver_env, full_name="Driver Rajesh")
+    assert client.get("/api/v1/transit/driver/manifest", headers=impostor).status_code == 403
+    assert client.post(f"/api/v1/transit/shipments/{driver_env['s1_id']}/depart", json={}, headers=impostor).status_code == 403
+    assert client.get("/api/v1/transit/driver/manifest", headers=driver_env["headers"]).status_code == 200
