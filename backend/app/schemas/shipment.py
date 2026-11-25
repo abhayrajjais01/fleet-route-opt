@@ -80,6 +80,8 @@ class PlanShipment(BaseModel):
     id: int
     expected_status: ShipmentStatus = Field(..., description="What the dispatcher was looking at; a mismatch is refused")
     expected_vehicle_id: Optional[int] = None
+    expected_route_sequence: Optional[int] = None
+    expected_dispatch_time: Optional[str] = None
     status: ShipmentStatus = Field(..., description="ASSIGNED, UNASSIGNED, or the current status when only the route changes")
     assigned_vehicle_id: Optional[int] = None
     route_sequence: Optional[int] = Field(None, ge=0, le=1000)

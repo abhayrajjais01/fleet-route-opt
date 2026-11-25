@@ -329,14 +329,17 @@ export default function LiveTrackingSection({
   // ── Week 12: recovery suggestions from the Optimization Agent ──────────────────────────────────────────────
   const toRouteVehicle = (v: Vehicle, d: Driver | null): RouteVehicle => ({ id: String(v.id), label: v.plate_number, capacity_kg: v.max_payload_kg,
     capacity_m3: v.max_volume_m3, vehicle_type: v.vehicle_type, max_shift_hours: Math.min(14, d?.max_driving_hours_per_day ?? 10), ...(d ? { driver_name: d.full_name } : {}) })
-  /** The live situation at one hub, in the shape the agent's API takes (delivered stops marked completed). */
+  /**
+   * The live situation at one hub, in the shape the agent's API takes. Online, only stops really delivered count as
+   * completed: one the simulated clock has merely passed must still be moved off a broken-down truck.
+   */
   function fleetAtHub(hubId: number): FleetRouteIn[] {
     return views.filter(v => v.plan.hub.id === hubId).map(v => ({
       vehicle: toRouteVehicle(v.plan.vehicle, v.plan.driver),
       stops: v.plan.stops.map(s => ({ id: String(s.id), latitude: s.latitude!, longitude: s.longitude!, weight_kg: s.weight_kg, volume_m3: s.volume_m3,
         window_start: s.time_window_start, window_end: s.time_window_end, name: s.customer_name, address: s.destination_address, priority: s.priority })),
       departure: clock(v.plan.departMin),
-      completed: Object.fromEntries(v.stops.filter(s => s.state === 'DELIVERED').map(s => [String(s.shipment.id), clock(s.serviceEnd)])),
+      completed: Object.fromEntries(v.stops.filter(s => online ? s.shipment.status === 'DELIVERED' : s.state === 'DELIVERED').map(s => [String(s.shipment.id), clock(s.serviceEnd)])),
     }))
   }
   async function suggestFix(planId: string, kind: FixKind) {

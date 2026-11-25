@@ -27,7 +27,7 @@ const orderBody = (s: Omit<Shipment, 'id'>) => ({
 export interface PlanState { shipments: Shipment[]; vehicles: Vehicle[]; drivers: Driver[] }
 interface PlanBody {
   reason: string
-  shipments: { id: number; expected_status: ShipmentStatus; expected_vehicle_id: number | null; status: ShipmentStatus; assigned_vehicle_id: number | null; route_sequence: number | null; dispatch_time: string | null }[]
+  shipments: { id: number; expected_status: ShipmentStatus; expected_vehicle_id: number | null; expected_route_sequence: number | null; expected_dispatch_time: string | null; status: ShipmentStatus; assigned_vehicle_id: number | null; route_sequence: number | null; dispatch_time: string | null }[]
   vehicles: { id: number; expected_status: VehicleStatus; current_status: VehicleStatus }[]
   drivers: { id: number; expected_status: DriverStatus; expected_vehicle_id: number | null; status: DriverStatus; current_vehicle_id: number | null }[]
 }
@@ -40,7 +40,8 @@ export function planChange(before: PlanState, after: PlanState, reason: string):
   const d0 = new Map(before.drivers.map(d => [d.id, d]))
   const shipments = after.shipments.flatMap(s => {
     const was = s0.get(s.id)
-    return was && key(was) !== key(s) ? [{ id: s.id, expected_status: was.status, expected_vehicle_id: was.assigned_vehicle_id ?? null, status: s.status,
+    return was && key(was) !== key(s) ? [{ id: s.id, expected_status: was.status, expected_vehicle_id: was.assigned_vehicle_id ?? null,
+      expected_route_sequence: was.route_sequence ?? null, expected_dispatch_time: was.dispatch_time ?? null, status: s.status,
       assigned_vehicle_id: s.assigned_vehicle_id ?? null, route_sequence: s.route_sequence ?? null, dispatch_time: s.dispatch_time ?? null }] : []
   })
   if (!shipments.length) return null
@@ -80,7 +81,7 @@ export const shipmentsApi = {
       method: 'POST', headers: auth(token), body: JSON.stringify({ shipments: list.map(orderBody) }) })
     return { created: res.created_shipments.map(toShipment), errors: res.errors.map(e => `Row ${e.row}${e.tracking_number ? ` (${e.tracking_number})` : ''}: ${e.reason}`) }
   },
-  savePlan: (token: string, body: PlanBody) => apiRequest<ApiShipment[]>('/shipments/plan', { method: 'POST', headers: auth(token), body: JSON.stringify(body) }),
+  savePlan: (token: string, body: PlanBody) => apiRequest<ApiShipment[]>('/shipments/plan', { method: 'POST', headers: auth(token), body: JSON.stringify(body) }).then(list => list.map(toShipment)),
   deliveryCode: (token: string, id: number, reissue = false) =>
     apiRequest<{ code: string; attempts_left: number }>(`/shipments/${id}/delivery-code${reissue ? '?reissue=true' : ''}`, { method: 'POST', headers: auth(token) }),
 }

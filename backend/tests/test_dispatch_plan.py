@@ -112,8 +112,8 @@ def test_breakdown_moves_stops_and_unassigns_the_rest(client, net):
     v0, v1 = net["v"]
     d0, d1 = net["d"]
     body = {"reason": "MH-02-PL-1000 broke down", "shipments": [
-        {"id": s0, "expected_status": "ASSIGNED", "expected_vehicle_id": v0, "status": "ASSIGNED", "assigned_vehicle_id": v1, "route_sequence": 0, "dispatch_time": "10:00"},
-        {"id": s1, "expected_status": "ASSIGNED", "expected_vehicle_id": v0, "status": "UNASSIGNED", "assigned_vehicle_id": None}],
+        {"id": s0, "expected_status": "ASSIGNED", "expected_vehicle_id": v0, "expected_route_sequence": 0, "expected_dispatch_time": "08:30", "status": "ASSIGNED", "assigned_vehicle_id": v1, "route_sequence": 0, "dispatch_time": "10:00"},
+        {"id": s1, "expected_status": "ASSIGNED", "expected_vehicle_id": v0, "expected_route_sequence": 1, "expected_dispatch_time": "08:30", "status": "UNASSIGNED", "assigned_vehicle_id": None}],
         "vehicles": [{"id": v0, "expected_status": "IN_TRANSIT", "current_status": "MAINTENANCE"}, {"id": v1, "expected_status": "AVAILABLE", "current_status": "IN_TRANSIT"}],
         "drivers": [{"id": d0, "expected_status": "ON_TRIP", "expected_vehicle_id": v0, "status": "ON_DUTY", "current_vehicle_id": None},
                     {"id": d1, "expected_status": "ON_DUTY", "expected_vehicle_id": None, "status": "ON_TRIP", "current_vehicle_id": v1}]}
@@ -162,3 +162,63 @@ def test_driver_cannot_be_taken_off_a_loaded_truck(client, net):
     assert res.status_code == 422 and "still has 1 stop" in res.json()["detail"]
     driver = client.get(f"{API}/fleet/drivers/{net['d'][0]}", headers=net["a"]).json()
     assert driver["current_vehicle_id"] == net["v"][0]
+
+
+# ─── PR #33 review ───────────────────────────────────────────────────────────────────────────
+
+def _resequence(net, i, was, to, time="08:30", new_time="08:30"):
+    return {"id": net["s"][i], "expected_status": "ASSIGNED", "expected_vehicle_id": net["v"][0], "expected_route_sequence": was, "expected_dispatch_time": time,
+            "status": "ASSIGNED", "assigned_vehicle_id": net["v"][0], "route_sequence": to, "dispatch_time": new_time}
+
+
+def test_second_resequence_does_not_overwrite_the_first(client, net):
+    assert save(client, net, dispatch(net, [0, 1])).status_code == 200
+    swap = {"reason": "Swap stops", "shipments": [_resequence(net, 0, 0, 1), _resequence(net, 1, 1, 0)]}
+    assert save(client, net, swap).status_code == 200
+    late = save(client, net, {"reason": "Leave later", "shipments": [_resequence(net, 0, 0, 0, new_time="10:00")]}, who="b")   # read before the swap
+    assert late.status_code == 409 and "PLAN-0" in late.json()["detail"]
+    retime = {"reason": "Leave later", "shipments": [_resequence(net, 0, 1, 1, new_time="10:00"), _resequence(net, 1, 0, 0, new_time="10:00")]}
+    assert save(client, net, retime).status_code == 200
+    stale_time = save(client, net, {"reason": "Back to 08:30", "shipments": [_resequence(net, 0, 1, 1)]}, who="b")
+    assert stale_time.status_code == 409
+    seen = {s["id"]: s for s in client.get(f"{API}/shipments", headers=net["b"]).json()}
+    assert [(seen[net["s"][i]]["route_sequence"], seen[net["s"][i]]["dispatch_time"]) for i in (0, 1)] == [(1, "10:00"), (0, "10:00")]
+
+
+@pytest.mark.parametrize("status", ["MAINTENANCE", "AVAILABLE"])
+def test_truck_with_stops_cannot_be_taken_out_of_the_plan(client, net, status):
+    assert save(client, net, dispatch(net, [0, 1])).status_code == 200
+    # Only one of the two stops is listed, unchanged; the other is not mentioned at all.
+    body = {"reason": "Broke down", "shipments": [_resequence(net, 0, 0, 0)],
+            "vehicles": [{"id": net["v"][0], "expected_status": "IN_TRANSIT", "current_status": status}]}
+    res = save(client, net, body)
+    assert res.status_code == 422 and "stop" in res.json()["detail"]
+    assert client.get(f"{API}/fleet/vehicles/{net['v'][0]}", headers=net["a"]).json()["current_status"] == "IN_TRANSIT"
+
+
+def test_hazard_class_of_a_dispatched_shipment_is_rechecked(client, net):
+    assert save(client, net, dispatch(net, [0, 1])).status_code == 200
+    url = f"{API}/shipments/{net['s'][0]}"
+    no_endorsement = client.patch(url, headers=net["a"], json={"hazard_class": "3", "customer_name": "Renamed"})
+    assert no_endorsement.status_code == 422 and "endorsement" in no_endorsement.json()["detail"]
+    now = client.get(url, headers=net["a"]).json()
+    assert now["hazard_class"] is None and now["customer_name"] == "Acme"            # nothing was saved
+    edit(Driver, net["d"][0], hazmat_endorsed=True)
+    assert client.patch(url, headers=net["a"], json={"hazard_class": "3"}).status_code == 200
+    mixed = client.patch(f"{API}/shipments/{net['s'][1]}", headers=net["a"], json={"hazard_class": "5.1"})
+    assert mixed.status_code == 422 and "SOP-HZ-001" in mixed.json()["detail"]
+    assert client.patch(f"{API}/shipments/{net['s'][1]}", headers=net["a"], json={"hazard_class": "8"}).status_code == 200   # 3 with 8 is allowed
+    assert client.patch(url, headers=net["a"], json={"hazard_class": None}).status_code == 200
+    assert client.patch(f"{API}/shipments/{net['s'][2]}", headers=net["a"], json={"hazard_class": "1"}).status_code == 200    # not on a truck yet
+
+
+def test_departing_on_another_truck_is_checked_too(client, net):
+    edit(Shipment, net["s"][2], hazard_class="3")
+    assert save(client, net, dispatch(net, [0])).status_code == 200
+    db = TestingSessionLocal()
+    db.query(Shipment).filter(Shipment.id == net["s"][2]).update({"status": ShipmentStatus.ASSIGNED})
+    db.commit()
+    db.close()
+    res = client.post(f"{API}/transit/shipments/{net['s'][2]}/depart", headers=net["a"], json={"vehicle_id": net["v"][0]})
+    assert res.status_code == 422 and "endorsement" in res.json()["detail"]
+    assert client.get(f"{API}/shipments/{net['s'][2]}", headers=net["a"]).json()["assigned_vehicle_id"] is None

@@ -155,6 +155,7 @@ class TransitFSMService:
                     detail=f"Cannot depart shipment with vehicle {new_vehicle.plate_number}: Vehicle is currently in '{new_vehicle.current_status.value}' status.",
                 )
             shipment.assigned_vehicle_id = vehicle_id
+            shipment.route_sequence = None
 
         if not shipment.assigned_vehicle_id:
             raise HTTPException(
@@ -179,6 +180,15 @@ class TransitFSMService:
         cls.validate_transition(shipment.status, target_status)
 
         shipment.status = target_status
+
+        if shipment.assigned_vehicle_id != old_vehicle_id:
+            from app.services.dispatch_plan import check_hazmat
+            db.flush()
+            try:
+                check_hazmat(db, shipment.assigned_vehicle_id)
+            except HTTPException:
+                db.rollback()
+                raise
 
         # Synchronize vehicle & driver
         if assigned_veh.current_status == VehicleStatus.AVAILABLE:

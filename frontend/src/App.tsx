@@ -1612,8 +1612,9 @@ function Workspace({ session, onSignOut, onSession }: { session: Session; onSign
   async function commitPlan(next: PlanState, reason: string) {
     const body = planChange({ shipments, vehicles, drivers }, next, reason)
     if (!body) return
-    if (rosterOnline) await saved(() => shipmentsApi.savePlan(authToken!, body))
-    setShipments(next.shipments); setVehicles(next.vehicles); setDrivers(next.drivers)
+    // What the server stored, not what was sent: the next plan is compared against it.
+    const stored = new Map((rosterOnline ? await saved(() => shipmentsApi.savePlan(authToken!, body)) : []).map(s => [s.id, s]))
+    setShipments(next.shipments.map(s => stored.get(s.id) ?? s)); setVehicles(next.vehicles); setDrivers(next.drivers)
   }
   const patchShipment = (s: Shipment) => setShipments(prev => prev.some(x => x.id === s.id) ? prev.map(x => x.id === s.id ? s : x) : [...prev, s])
   const shipmentActions: ShipmentActions = {

@@ -47,6 +47,50 @@ def _load(db: Session, model, ids: List[int], what: str) -> Dict[int, object]:
     return rows
 
 
+def _active_load(db: Session, vehicle_id: int) -> List[Shipment]:
+    return db.query(Shipment).filter(Shipment.assigned_vehicle_id == vehicle_id, Shipment.status.in_(ACTIVE)).populate_existing().all()
+
+
+def _crew(db: Session, vehicle_id: int) -> List[Driver]:
+    return db.query(Driver).filter(Driver.current_vehicle_id == vehicle_id, Driver.status.in_([DriverStatus.ON_DUTY, DriverStatus.ON_TRIP])).all()
+
+
+def check_hazmat(db: Session, vehicle_id: int) -> None:
+    """Refuses a load that breaks SOP-HZ-001. Call after flushing; locks the vehicle so concurrent edits are serialised."""
+    v = db.get(Vehicle, vehicle_id, with_for_update=True)
+    load = _active_load(db, vehicle_id)
+    classes = [s.hazard_class for s in load]
+    problem = segregation_conflict(classes)
+    if problem:
+        raise _invalid(f"{v.plate_number}: {problem}.")
+    if needs_endorsed_driver(classes):
+        crew = _crew(db, vehicle_id)
+        if not crew:
+            raise _invalid(f"{v.plate_number} carries dangerous goods and has no driver (SOP-HZ-001 §2).")
+        unendorsed = next((d for d in crew if not d.hazmat_endorsed), None)
+        if unendorsed:
+            raise _invalid(f"{v.plate_number} carries dangerous goods, and {unendorsed.full_name} has no hazmat endorsement (SOP-HZ-001 §2).")
+
+
+def check_vehicle(db: Session, vehicle_id: int) -> None:
+    """A vehicle with stops to serve must be in service, have exactly one driver, and carry a legal load."""
+    v = db.get(Vehicle, vehicle_id, with_for_update=True)
+    if v is None:
+        raise _conflict("That vehicle no longer exists. Refresh and try again.")
+    load = _active_load(db, vehicle_id)
+    if not load:
+        return
+    if v.current_status in (VehicleStatus.MAINTENANCE, VehicleStatus.DECOMMISSIONED):
+        raise _invalid(f"{v.plate_number} is {v.current_status.value.lower()} but would still have {len(load)} stop{'s' if len(load) != 1 else ''}. "
+                       "Move them to another vehicle or back to planning.")
+    crew = _crew(db, vehicle_id)
+    if not crew:
+        raise _invalid(f"{v.plate_number} has no driver. Assign a driver before dispatching it.")
+    if len(crew) > 1:
+        raise _conflict(f"{v.plate_number} already has a driver ({', '.join(sorted(d.full_name for d in crew))}). Nothing was saved.")
+    check_hazmat(db, vehicle_id)
+
+
 def apply_plan(db: Session, change: PlanChange, actor: User) -> List[Shipment]:
     try:
         shipments = _apply(db, change, actor)
@@ -66,7 +110,8 @@ def _apply(db: Session, change: PlanChange, actor: User) -> List[Shipment]:
 
     # ── 1. Nothing may have changed since the dispatcher looked ──
     stale = [shipments[c.id].tracking_number for c in change.shipments
-             if (shipments[c.id].status, shipments[c.id].assigned_vehicle_id) != (c.expected_status, c.expected_vehicle_id)]
+             if (shipments[c.id].status, shipments[c.id].assigned_vehicle_id, shipments[c.id].route_sequence, shipments[c.id].dispatch_time)
+             != (c.expected_status, c.expected_vehicle_id, c.expected_route_sequence, c.expected_dispatch_time)]
     stale += [vehicles[c.id].plate_number for c in change.vehicles if vehicles[c.id].current_status != c.expected_status]
     stale += [drivers[c.id].full_name for c in change.drivers
               if (drivers[c.id].status, drivers[c.id].current_vehicle_id) != (c.expected_status, c.expected_vehicle_id)]
@@ -99,7 +144,6 @@ def _apply(db: Session, change: PlanChange, actor: User) -> List[Shipment]:
             record_audit_event(db, actor, AuditAction.ASSET_UPDATED, "Driver", d.id, f"{d.full_name} reassigned ({change.reason})", before, after)
 
     # ── 3. Shipments ──
-    gained = set()
     for c in change.shipments:
         s = shipments[c.id]
         if s.status in CLOSED:
@@ -109,38 +153,24 @@ def _apply(db: Session, change: PlanChange, actor: User) -> List[Shipment]:
         on_vehicle = c.status in ACTIVE
         if on_vehicle != (c.assigned_vehicle_id is not None):
             raise _invalid(f"{s.tracking_number}: a planned shipment needs a vehicle, and an unplanned one must not have one.")
-        if on_vehicle and (c.assigned_vehicle_id != s.assigned_vehicle_id or s.status not in ACTIVE):
-            gained.add(c.assigned_vehicle_id)
-        before = {"status": s.status.value, "vehicle_id": s.assigned_vehicle_id, "route_sequence": s.route_sequence}
+        before = {"status": s.status.value, "vehicle_id": s.assigned_vehicle_id, "route_sequence": s.route_sequence, "dispatch_time": s.dispatch_time}
         s.status, s.assigned_vehicle_id = c.status, c.assigned_vehicle_id
         s.route_sequence = c.route_sequence if on_vehicle else None
         s.dispatch_time = c.dispatch_time if on_vehicle else None
-        after = {"status": s.status.value, "vehicle_id": s.assigned_vehicle_id, "route_sequence": s.route_sequence}
+        after = {"status": s.status.value, "vehicle_id": s.assigned_vehicle_id, "route_sequence": s.route_sequence, "dispatch_time": s.dispatch_time}
         if before != after:
             moved = before["vehicle_id"] != after["vehicle_id"] or before["status"] != after["status"]
             action = (AuditAction.DISPATCH_APPROVED if before["status"] in ("UNASSIGNED", "CLUSTERED") else AuditAction.STATUS_CHANGE) if moved else AuditAction.ROUTE_MODIFIED
             record_audit_event(db, actor, action, "Shipment", s.id, f"{s.tracking_number}: {change.reason}", before, after)
     db.flush()
 
-    # ── 4. The resulting plan must be safe ──
-    for vid in sorted(gained):
-        v = db.get(Vehicle, vid)
-        if v is None:
-            raise _conflict("That vehicle no longer exists. Refresh and try again.")
-        if v.current_status in (VehicleStatus.MAINTENANCE, VehicleStatus.DECOMMISSIONED):
-            raise _invalid(f"{v.plate_number} is {v.current_status.value.lower()} and can't take shipments.")
-        crew = db.query(Driver).filter(Driver.current_vehicle_id == vid, Driver.status.in_([DriverStatus.ON_DUTY, DriverStatus.ON_TRIP])).all()
-        if not crew:
-            raise _invalid(f"{v.plate_number} has no driver. Assign a driver before dispatching it.")
-        if len(crew) > 1:
-            raise _conflict(f"{v.plate_number} already has a driver ({', '.join(sorted(d.full_name for d in crew))}). Nothing was saved.")
-        load = db.query(Shipment).filter(Shipment.assigned_vehicle_id == vid, Shipment.status.in_(ACTIVE)).all()
-        classes = [s.hazard_class for s in load]
-        problem = segregation_conflict(classes)
-        if problem:
-            raise _invalid(f"{v.plate_number}: {problem}.")
-        if needs_endorsed_driver(classes) and not crew[0].hazmat_endorsed:
-            raise _invalid(f"{v.plate_number} carries dangerous goods, and {crew[0].full_name} has no hazmat endorsement (SOP-HZ-001 §2).")
+    # ── 4. The resulting plan must be safe, for every vehicle this change touches ──
+    affected = {c.assigned_vehicle_id for c in change.shipments} | {c.id for c in change.vehicles} | {c.current_vehicle_id for c in change.drivers}
+    for vid in sorted(v for v in affected if v is not None):
+        check_vehicle(db, vid)
+    for c in change.vehicles:
+        if c.current_status == VehicleStatus.AVAILABLE and _active_load(db, c.id):
+            raise _invalid(f"{vehicles[c.id].plate_number} still has stops to serve, so it can't be marked available.")
 
     # A driver can't be taken off a truck that still has stops to serve.
     for c in change.drivers:

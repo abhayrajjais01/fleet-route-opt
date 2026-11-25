@@ -28,7 +28,7 @@ from app.core.sanitize import clean_text, like_pattern
 from app.models.delivery import DeliveryProof
 from app.services import delivery_proof
 from app.services.audit_service import record_audit_event
-from app.services.dispatch_plan import apply_plan
+from app.services.dispatch_plan import ACTIVE, apply_plan, check_hazmat
 from app.services.transit_fsm import ensure_driver_may_act
 from app.services.batch_ingestion import (
     generate_csv_template,
@@ -254,6 +254,14 @@ def update_shipment(
     before = {k: getattr(shipment, k) for k in changes}
     for k, v in changes.items():
         setattr(shipment, k, v)
+    if "hazard_class" in changes and changes["hazard_class"] != before["hazard_class"] and shipment.status in ACTIVE and shipment.assigned_vehicle_id:
+        # Already on a truck: the whole load must still be legal, with an endorsed driver, or the order is replanned first.
+        db.flush()
+        try:
+            check_hazmat(db, shipment.assigned_vehicle_id)
+        except HTTPException:
+            db.rollback()
+            raise
     record_audit_event(db, current_user, AuditAction.ASSET_UPDATED, "Shipment", shipment.id,
                        f"Updated {shipment.tracking_number}: {', '.join(sorted(changes)) or 'no changes'}", before, changes)
     db.commit()
