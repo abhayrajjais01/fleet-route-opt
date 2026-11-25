@@ -240,3 +240,60 @@ def test_disruption_endpoint_returns_proposal(client):
     unknown = client.post("/api/v1/routes/disruption", json={"message": "hello there", "hub": HUB_JSON, "use_llm": False,
                                                              "routes": [{"vehicle": VAN_JSON, "stops": VAN_STOPS}]})
     assert unknown.status_code == 422
+
+
+def test_customer_messages_give_a_window_inside_the_booked_slot():
+    from app.services.optimizer.route_explainer import arrival_window
+    assert arrival_window(611, 540, 720) == (600, 630)          # 10:11 ETA -> 10:00-10:30
+    assert arrival_window(705, 540, 720) == (690, 720)          # never runs past the booked slot when on time
+    assert arrival_window(500, 540, 720) == (540, 570)          # early: starts when the slot opens
+    assert arrival_window(745, 540, 720) == (735, 765)          # late: honest window after the slot
+
+
+def test_explanation_includes_customer_messages():
+    route = [MYNTRA, TCS, NYKAA]
+    ev = evaluate(HUB, route, VAN, 510)
+    info = {"9": StopInfo("Myntra"), "2": StopInfo("TCS"), "11": StopInfo("Nykaa")}
+    ex = explain_route("Mumbai Central Depot", HUB, route, info, VAN, "MH-02", ev, 510, driver_name="Rajesh Kumar")
+    assert [m.stop_id for m in ex.customer_messages] == ["9", "2", "11"]
+    first = ex.customer_messages[0]
+    assert first.text.startswith("Hello Myntra") and "Rajesh will be your driver" in first.text and "OTP" in first.text
+    assert "MH-02" not in first.text and "SLA" not in first.text   # no internal jargon for customers
+
+
+# ==================== Week 14: printable documents ==================== #
+def _manifest_body(stops):
+    return {"hub": {"id": "hub", "latitude": 19.1136, "longitude": 72.8697}, "hub_name": "Mumbai Central Depot",
+            "vehicle": {"id": "1", "label": "MH-02-EE-1001", "capacity_kg": 1500, "capacity_m3": 12, "vehicle_type": "VAN", "driver_name": "Rajesh Kumar"},
+            "stops": stops, "departure": "08:30", "service_date": "2026-11-25"}
+
+
+def test_manifest_and_receipt_need_a_signed_in_user(client):
+    assert client.post("/api/v1/routes/manifest.pdf", json=_manifest_body([])).status_code == 401
+    assert client.post("/api/v1/routes/receipt.pdf", json={}).status_code == 401
+
+
+def test_route_manifest_pdf(client):
+    from tests.conftest import auth_headers
+    headers = auth_headers(client, "disp-docs@fleetopt-tests.io", "DISPATCHER")
+    stops = [{"id": "a", "name": "Myntra", "address": "Bandra West", "latitude": 19.0596, "longitude": 72.8295, "weight_kg": 300, "volume_m3": 1,
+              "window_start": "09:00", "window_end": "12:00", "hazard_class": "3"},
+             {"id": "b", "name": "TCS", "address": "Powai", "latitude": 19.1176, "longitude": 72.906, "weight_kg": 200, "volume_m3": 1,
+              "window_start": "10:00", "window_end": "14:00"}]
+    res = client.post("/api/v1/routes/manifest.pdf", headers=headers, json=_manifest_body(stops))
+    assert res.status_code == 200 and res.headers["content-type"] == "application/pdf"
+    assert res.content.startswith(b"%PDF") and "manifest-MH-02-EE-1001-2026-11-25.pdf" in res.headers["content-disposition"]
+
+
+def test_delivery_receipt_pdf(client):
+    from tests.conftest import auth_headers
+    from app.services.optimizer.documents import Receipt
+    headers = auth_headers(client, "disp-rcpt@fleetopt-tests.io", "DISPATCHER")
+    body = {"tracking_number": "SHP-002-MUM", "customer_name": "TCS Logistics", "address": "Powai, Mumbai", "service_date": "2026-11-25",
+            "delivered_at": "10:42", "recipient": "A. Rao", "verified_by": "OTP", "weight_kg": 180, "vehicle": "MH-02-EE-1001",
+            "driver": "Rajesh Kumar", "hub": "Mumbai Central Depot"}
+    res = client.post("/api/v1/routes/receipt.pdf", headers=headers, json=body)
+    assert res.status_code == 200 and res.content.startswith(b"%PDF")
+    r = Receipt(**body)
+    assert r.number.startswith("POD-20261125-") and r.number == Receipt(**body).number   # stable for the same delivery
+    assert client.post("/api/v1/routes/receipt.pdf", headers=headers, json={**body, "delivered_at": "25:00"}).status_code == 422

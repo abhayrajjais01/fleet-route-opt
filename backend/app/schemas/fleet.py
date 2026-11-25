@@ -106,12 +106,15 @@ class DriverUpdate(BaseModel):
     phone_number: Optional[CleanStr] = None
     status: Optional[DriverStatus] = None
     max_driving_hours_per_day: Optional[float] = Field(None, gt=0, le=14)
+    hazmat_endorsed: Optional[bool] = None
     assigned_hub_id: Optional[int] = None
     current_vehicle_id: Optional[int] = None
 
 
 class DriverResponse(DriverBase):
     id: int
+    account_active: Optional[bool] = Field(None, description="None: no login; true: has the driver app; false: login deactivated")
+    account_email: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

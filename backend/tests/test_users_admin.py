@@ -124,3 +124,16 @@ def test_deactivated_driver_cannot_sign_in(client, admin, hub_id):
     db = TestingSessionLocal()
     assert db.query(User).filter(User.email == "neha@fleetopt-tests.io").one().is_active is False
     db.close()
+
+
+def test_driver_list_shows_app_access_to_every_planner_role(client, admin, hub_id):
+    """Dispatchers cannot list users, so the driver roster itself says who can use the driver app."""
+    uid = client.post(API, headers=admin, json=new_driver(hub_id)).json()["id"]
+    _driver_profile(hub_id)  # a driver with no login
+    dispatcher = auth_headers(client, "disp2@fleetopt-tests.io", "DISPATCHER")
+    rows = {d["full_name"]: d for d in client.get("/api/v1/fleet/drivers", headers=dispatcher).json()}
+    assert rows["Neha Kulkarni"]["account_active"] is True and rows["Neha Kulkarni"]["account_email"] == "neha@fleetopt-tests.io"
+    assert rows["Amit Patil"]["account_active"] is None
+    client.patch(f"{API}/{uid}", headers=admin, json={"is_active": False})
+    rows = {d["full_name"]: d for d in client.get("/api/v1/fleet/drivers", headers=dispatcher).json()}
+    assert rows["Neha Kulkarni"]["account_active"] is False

@@ -156,6 +156,18 @@ class Driver(Base, TimestampMixin):
     # Relational mappings
     hub = relationship("Hub", back_populates="drivers")
     current_vehicle = relationship("Vehicle", back_populates="assigned_driver")
+    account = relationship("User", foreign_keys=[user_id], lazy="selectin")   # the driver's login, if any
+
+    @property
+    def account_active(self):
+        """None = no login; True = can use the driver app; False = login deactivated (cannot be assigned)."""
+        if self.account is None or getattr(self.account.role, "value", self.account.role) != "DRIVER":
+            return None
+        return bool(self.account.is_active)
+
+    @property
+    def account_email(self):
+        return self.account.email if self.account_active is not None else None
 
     def __repr__(self):
         return f"<Driver id={self.id} name={self.full_name} status={self.status}>"

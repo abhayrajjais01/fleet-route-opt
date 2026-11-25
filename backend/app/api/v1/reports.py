@@ -19,7 +19,7 @@ from app.core.security import require_roles
 from app.models.user import UserRole
 from pydantic import BaseModel
 
-from app.services.analytics.exports import stops_csv, summary_pdf
+from app.services.analytics.exports import stops_csv, stops_xlsx, summary_pdf
 from app.services.analytics.history import history
 from app.services.analytics.metrics import (
     DEFAULT_DRIVER_COST_PER_HOUR,
@@ -42,6 +42,9 @@ DEFINITIONS = {
     "fuel_l_per_100km": "Litres of fuel per 100 km driven",
     "cost_per_ton_km": "(Fuel + driver cost) per tonne-km moved; tonne-km assumes a linear unload over the route",
     "fleet_utilisation_pct": "Trip load as a share of vehicle payload",
+    "overtime_cost": "Extra pay for hours beyond an 8-hour shift (overtime at twice the ordinary rate, MTW Act 1961 s.27)",
+    "co2_kg": "Diesel 2.68 kg CO2 per litre; EVs 0.17 kWh/km on India's grid at 0.716 kg CO2 per kWh",
+    "saving_vs_separate": "Cost saved by combining deliveries, versus a separate round trip to each customer",
 }
 
 
@@ -109,6 +112,15 @@ def export_csv(days: int = DaysQ, hub: Optional[str] = HubQ, vehicle_type: Optio
     body = stops_csv(_trips(days, hub, vehicle_type, driver))
     name = f"fleet-deliveries-{date.today().isoformat()}.csv"
     return Response(body, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.get("/export.xlsx", summary="Excel export: deliveries, KPIs and per-hub sheets", response_class=Response)
+def export_xlsx(days: int = DaysQ, hub: Optional[str] = HubQ, vehicle_type: Optional[str] = TypeQ, driver: Optional[str] = DriverQ,
+                fuel_price: float = FuelQ, driver_cost: float = WageQ):
+    body = stops_xlsx(_trips(days, hub, vehicle_type, driver), fuel_price, driver_cost)
+    name = f"fleet-deliveries-{date.today().isoformat()}.xlsx"
+    return Response(body, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @router.get("/summary.pdf", summary="Printable executive trip summary", response_class=Response)

@@ -4,6 +4,11 @@ benchmark.py - Performance benchmark for the Track A engines (Week 15).
 Run from backend/:   python -m scripts.benchmark
 Prints median and p95 wall-clock times against the PRD targets:
   VRPTW solver: 50 stops < 5 s   ·   vector search < 100 ms   ·   disruption handling < 3 s
+plus the solver's scalability (10 / 25 / 50 / 100 stops, and 200 as a stress case) with peak memory per solve
+(tracemalloc) and the RAG accuracy on the development / validation / test sets.
+
+Runs on the offline distance model (no routing-server calls) so results are reproducible; the road-network
+version adds one OSRM table call per solve (about 0.3-0.6 s on the public server, cached afterwards).
 """
 
 from __future__ import annotations
@@ -12,6 +17,7 @@ import logging
 import random
 import statistics
 import time
+import tracemalloc
 from typing import Callable, List
 
 logging.disable(logging.CRITICAL)
@@ -22,6 +28,8 @@ from app.services.optimizer.distance_matrix import build_distance_matrix, clear_
 from app.services.optimizer.eta_engine import recalculate  # noqa: E402
 from app.services.optimizer.vrptw_solver import Stop, VehicleSpec, solve  # noqa: E402
 from app.services.rag.knowledge_base import get_knowledge_base  # noqa: E402
+from app.services.rag.evaluation import EVAL_SET_PATH, TEST_PATH, VALIDATION_PATH, evaluate  # noqa: E402
+from app.services.optimizer import osrm_client  # noqa: E402
 
 HUB = (19.1136, 72.8697)
 
@@ -50,12 +58,46 @@ def row(name: str, ms: List[float], target_ms: float | None) -> str:
     return f"{name:<42}{med:>10.1f}{p95:>10.1f}   {target:<12}{verdict}"
 
 
+def peak_mb(fn: Callable[[], object]) -> float:
+    """Peak Python heap allocated while fn runs (cold caches), in MB."""
+    clear_cache()
+    tracemalloc.start()
+    fn()
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    return peak / 1e6
+
+
+def scalability() -> None:
+    print(f"\n{'Solver scalability':<28}{'median ms':>10}{'p95 ms':>10}{'peak MB':>10}{'routes':>8}{'unrouted':>10}")
+    print("-" * 76)
+    for n, vehicles in [(10, 2), (25, 3), (50, 5), (100, 9), (200, 18)]:
+        st, fl = stops(n), [VehicleSpec(f"v{i}", 3000, 22, "BOX_TRUCK", 600) for i in range(vehicles)]
+        ms = timed(lambda: solve(HUB, st, fl, 480), 5)
+        sol = solve(HUB, st, fl, 480)
+        print(f"{f'{n} stops / {vehicles} vehicles':<28}{statistics.median(ms):>10.1f}{sorted(ms)[-1]:>10.1f}"
+              f"{peak_mb(lambda: solve(HUB, st, fl, 480)):>10.2f}{len(sol.routes):>8}{len(sol.unassigned):>10}")
+
+
+def rag_accuracy() -> None:
+    print(f"\n{'RAG retrieval accuracy':<28}{'R@1':>8}{'R@3':>8}{'MRR':>8}{'p95 ms':>10}")
+    print("-" * 62)
+    for label, path in (("development set", EVAL_SET_PATH), ("validation set", VALIDATION_PATH), ("test set (untuned)", TEST_PATH)):
+        r = evaluate(path=path)
+        print(f"{label:<28}{r.recall_at_1:>8.3f}{r.recall_at_3:>8.3f}{r.mrr:>8.3f}{r.p95_latency_ms:>10.3f}")
+
+
 def main() -> None:
+    with osrm_client.offline():
+        _main()
+
+
+def _main() -> None:
     print(f"{'Benchmark':<42}{'median ms':>10}{'p95 ms':>10}   {'target':<12}result")
     print("-" * 86)
-    for n, vehicles in [(25, 3), (50, 5), (100, 9), (200, 18)]:
+    for n, vehicles in [(50, 5)]:
         st, fl = stops(n), [VehicleSpec(f"v{i}", 3000, 22, "BOX_TRUCK", 600) for i in range(vehicles)]
-        print(row(f"VRPTW solve, {n} stops / {vehicles} vehicles", timed(lambda: solve(HUB, st, fl, 480), 5), 5000 if n <= 50 else None))
+        print(row(f"VRPTW solve, {n} stops / {vehicles} vehicles", timed(lambda: solve(HUB, st, fl, 480), 5), 5000))
     pts = [(s.lat, s.lon) for s in stops(250)]
     print(row("Distance matrix, 250 x 250 (cold)", timed(lambda: build_distance_matrix(pts), 10), 500))
     print(row("Distance matrix, 250 x 250 (cached)", timed(lambda: build_distance_matrix(pts), 10, cold=False), 5))
@@ -79,6 +121,8 @@ def main() -> None:
 
     simulated_history.cache_clear()
     print(row("Simulated history, 30 days (all hubs)", timed(lambda: simulated_history(30), 1, cold=False), None))
+    scalability()
+    rag_accuracy()
 
 
 if __name__ == "__main__":

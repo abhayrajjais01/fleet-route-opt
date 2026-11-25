@@ -14,8 +14,16 @@ and unit tests. Definitions (also returned by the API so the dashboard can show 
                          multi-drop van carries a full load at the start and none at the end (linear unload)
   Fleet utilisation %    mean of (trip load / vehicle payload)
   SLA breach rate %      stops arriving after the window closed
+  Driver cost            ordinary hours x wage + overtime hours x 2 x wage; overtime = trip time beyond an
+                         8-hour shift (Motor Transport Workers Act, 1961 s.27: overtime at twice the ordinary rate)
+  Energy                 diesel vehicles: litres = km / km-per-litre; EVs use electricity, not diesel:
+                         kWh = km x 0.17 kWh/km (light commercial EV)
+  CO2 (kg)               diesel 2.68 kg/L (combustion factor); EV 0.716 kg/kWh (India grid, CEA CO2 baseline)
+  Savings vs separate    the same deliveries as one round trip per customer: separate-trip km at the same
+                         km-per-litre and average speed as the real trip, minus the real trip
 
-Cost inputs are assumptions with defaults (diesel ₹95/L, driver ₹250/h) that callers can override.
+Cost inputs are assumptions with defaults (diesel ₹95/L, electricity ₹9/kWh, driver ₹250/h) that callers can
+override.
 """
 
 from __future__ import annotations
@@ -27,6 +35,12 @@ from typing import Callable, Dict, Iterable, List, Optional
 
 DEFAULT_FUEL_PRICE_PER_L = 95.0
 DEFAULT_DRIVER_COST_PER_HOUR = 250.0
+DEFAULT_ELECTRICITY_PER_KWH = 9.0
+STANDARD_SHIFT_H = 8.0          # ordinary hours; beyond this is overtime
+OVERTIME_MULTIPLIER = 2.0       # Motor Transport Workers Act, 1961 s.27
+DIESEL_CO2_KG_PER_L = 2.68
+EV_KWH_PER_KM = 0.17
+GRID_CO2_KG_PER_KWH = 0.716
 
 
 @dataclass(frozen=True)
@@ -68,8 +82,37 @@ class TripRecord:
     stops: List[StopRecord] = field(default_factory=list)
 
     @property
+    def is_ev(self) -> bool:
+        return self.vehicle_type == "EV"
+
+    @property
     def fuel_l(self) -> float:
-        return self.distance_km / self.fuel_kpl if self.fuel_kpl else 0.0
+        """Diesel burnt; EVs burn none."""
+        return 0.0 if self.is_ev else (self.distance_km / self.fuel_kpl if self.fuel_kpl else 0.0)
+
+    @property
+    def energy_kwh(self) -> float:
+        return self.distance_km * EV_KWH_PER_KM if self.is_ev else 0.0
+
+    @property
+    def co2_kg(self) -> float:
+        return self.fuel_l * DIESEL_CO2_KG_PER_L + self.energy_kwh * GRID_CO2_KG_PER_KWH
+
+    @property
+    def overtime_h(self) -> float:
+        return max(0.0, self.duration_min / 60 - STANDARD_SHIFT_H)
+
+    def costs(self, fuel_price_per_l: float, driver_cost_per_hour: float, electricity_per_kwh: float = DEFAULT_ELECTRICITY_PER_KWH) -> Dict[str, float]:
+        hours = self.duration_min / 60
+        driver = (hours - self.overtime_h) * driver_cost_per_hour + self.overtime_h * OVERTIME_MULTIPLIER * driver_cost_per_hour
+        energy = self.fuel_l * fuel_price_per_l + self.energy_kwh * electricity_per_kwh
+        # Baseline: one round trip per customer, same vehicle efficiency and average speed as this trip.
+        scale = self.separate_trips_km / self.distance_km if self.distance_km else 0.0
+        base_minutes = self.duration_min * scale
+        base_ot = max(0.0, base_minutes / 60 - STANDARD_SHIFT_H)
+        base_driver = (base_minutes / 60 - base_ot) * driver_cost_per_hour + base_ot * OVERTIME_MULTIPLIER * driver_cost_per_hour
+        return {"energy": energy, "driver": driver, "total": energy + driver, "baseline_total": energy * scale + base_driver,
+                "co2": self.co2_kg, "baseline_co2": self.co2_kg * scale}
 
     @property
     def ton_km(self) -> float:
@@ -93,6 +136,14 @@ class Metrics:
     total_cost: float
     cost_per_ton_km: float
     fleet_utilisation_pct: float
+    energy_cost: float = 0.0
+    driver_cost: float = 0.0
+    overtime_hours: float = 0.0
+    overtime_cost: float = 0.0
+    co2_kg: float = 0.0
+    co2_kg_per_100km: float = 0.0
+    saving_vs_separate: float = 0.0        # ₹ saved by consolidating versus one trip per customer
+    co2_saved_kg: float = 0.0
 
     def as_dict(self) -> Dict[str, float]:
         return dict(self.__dict__)
@@ -106,13 +157,17 @@ def compute_metrics(
     trips: Iterable[TripRecord],
     fuel_price_per_l: float = DEFAULT_FUEL_PRICE_PER_L,
     driver_cost_per_hour: float = DEFAULT_DRIVER_COST_PER_HOUR,
+    electricity_per_kwh: float = DEFAULT_ELECTRICITY_PER_KWH,
 ) -> Metrics:
     trips = list(trips)
     stops = [s for t in trips for s in t.stops]
     delivered = [s for s in stops if s.delivered]
     km = sum(t.distance_km for t in trips)
     fuel = sum(t.fuel_l for t in trips)
-    cost = fuel * fuel_price_per_l + sum(t.duration_min for t in trips) / 60 * driver_cost_per_hour
+    per_trip = [t.costs(fuel_price_per_l, driver_cost_per_hour, electricity_per_kwh) for t in trips]
+    cost = sum(c["total"] for c in per_trip)
+    ot_h = sum(t.overtime_h for t in trips)
+    co2 = sum(c["co2"] for c in per_trip)
     ton_km = sum(t.ton_km for t in trips)
     return Metrics(
         trips=len(trips),
@@ -130,6 +185,14 @@ def compute_metrics(
         total_cost=round(cost, 0),
         cost_per_ton_km=round(cost / ton_km, 2) if ton_km else 0.0,
         fleet_utilisation_pct=round(mean(min(1.0, t.load_kg / t.payload_kg) for t in trips if t.payload_kg) * 100, 1) if trips else 0.0,
+        energy_cost=round(sum(c["energy"] for c in per_trip), 0),
+        driver_cost=round(sum(c["driver"] for c in per_trip), 0),
+        overtime_hours=round(ot_h, 1),
+        overtime_cost=round(ot_h * (OVERTIME_MULTIPLIER - 1) * driver_cost_per_hour, 0),
+        co2_kg=round(co2, 1),
+        co2_kg_per_100km=round(co2 / km * 100, 2) if km else 0.0,
+        saving_vs_separate=round(sum(c["baseline_total"] - c["total"] for c in per_trip), 0),
+        co2_saved_kg=round(sum(c["baseline_co2"] - c["co2"] for c in per_trip), 1),
     )
 
 

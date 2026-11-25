@@ -130,6 +130,12 @@ class AgentError(ValueError):
 
 
 # ─────────────────────────────── Helpers ─────────────────────────────── #
+def _named(violation: str, names: Dict[str, str]) -> str:
+    """ETA-engine violations start with the stop id ("5 arrives 126 min after..."); show the customer instead."""
+    head, sep, rest = violation.partition(" ")
+    return f"{names[head]}{sep}{rest}" if head in names else violation
+
+
 def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
@@ -223,7 +229,7 @@ def tool_apply_delay(ctx: FleetContext, r: RouteState, minutes: float, reoptimiz
         proposal_id=_proposal_id(tool, args, ctx.now_min), intent="", planner="", tool=tool, arguments=args, summary=summary,
         changes=changes, routes_after={r.label: [(e.stop_id, e.arrival, e.sla) for e in best.stops]}, unassigned={},
         late_minutes_before=round(_late(delayed if not reoptimize_only else before), 1), late_minutes_after=round(_late(best), 1),
-        violations=best.violations,
+        violations=[_named(v, r.names) for v in best.violations],
     )
 
 

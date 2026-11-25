@@ -17,7 +17,10 @@ Endpoints:
 """
 
 import time
+from datetime import date
 from typing import Optional
+
+from fastapi.responses import Response
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -27,8 +30,11 @@ from app.schemas.route import (
     EvaluateRequest,
     EvaluateResponse,
     ExplainRequest,
+    CustomerMessageResponse,
     ExplainResponse,
     LegGuideResponse,
+    ManifestRequest,
+    ReceiptRequest,
     ProposalResponse,
     RecalculateRequest,
     RouteVehicle,
@@ -53,7 +59,8 @@ from app.services.optimizer.eta_engine import RouteEvaluation, recalculate
 from app.services.optimizer.route_explainer import StopInfo, explain_route
 from app.services.optimizer.vrptw_solver import Stop, VehicleSpec, solve
 from app.services.copilot.optimization_agent import AgentError, FleetContext, RouteState, handle_disruption
-from app.core.security import get_optional_user
+from app.core.security import get_current_user, get_optional_user
+from app.services.optimizer.documents import Receipt, manifest_pdf, receipt_pdf
 from app.models.user import User
 
 router = APIRouter()
@@ -119,7 +126,7 @@ def optimize_routes(request: OptimizeRequest):
     """
     solution = solve(
         hub=(request.hub.latitude, request.hub.longitude),
-        stops=[Stop(s.id, s.latitude, s.longitude, s.weight_kg, s.volume_m3, _hhmm(s.window_start), _hhmm(s.window_end), s.service_min) for s in request.stops],
+        stops=[Stop(s.id, s.latitude, s.longitude, s.weight_kg, s.volume_m3, _hhmm(s.window_start), _hhmm(s.window_end), s.service_min, s.hazard_class) for s in request.stops],
         vehicles=[VehicleSpec(v.id, v.capacity_kg, v.capacity_m3, v.vehicle_type.value, int(v.max_shift_hours * 60)) for v in request.vehicles],
         depart_min=_hhmm(request.departure),
     )
@@ -150,7 +157,7 @@ def _vehicle(v: RouteVehicle) -> VehicleSpec:
 
 
 def _stops(req_stops) -> list:
-    return [Stop(s.id, s.latitude, s.longitude, s.weight_kg, s.volume_m3, _hhmm(s.window_start), _hhmm(s.window_end), s.service_min) for s in req_stops]
+    return [Stop(s.id, s.latitude, s.longitude, s.weight_kg, s.volume_m3, _hhmm(s.window_start), _hhmm(s.window_end), s.service_min, s.hazard_class) for s in req_stops]
 
 
 def _evaluation_response(ev: RouteEvaluation) -> EvaluateResponse:
@@ -240,7 +247,8 @@ def explain(request: ExplainRequest):
     separate = float(sum(m.distance_km[0][i] + m.distance_km[i][0] for i in range(1, len(stops) + 1)))
     directions = road_directions([hub] + [(s.lat, s.lon) for s in stops] + [hub])
     ex = explain_route(request.hub_name, hub, stops, info, vehicle, request.vehicle.label or request.vehicle.id, ev,
-                       _hhmm(request.departure), separate, directions=directions, distance_source=m.source)
+                       _hhmm(request.departure), separate, directions=directions, distance_source=m.source,
+                       driver_name=request.vehicle.driver_name)
     return ExplainResponse(
         summary=ex.summary,
         stop_reasons=[{"stop_id": sid, "reason": text} for sid, text in ex.stop_reasons],
@@ -250,7 +258,37 @@ def explain(request: ExplainRequest):
         legs=[LegGuideResponse(**leg.__dict__) for leg in ex.legs],
         directions_source=ex.directions_source,
         distance_source=m.source,
+        customer_messages=[CustomerMessageResponse(**c.__dict__) for c in ex.customer_messages],
     )
+
+
+# ==================== Week 14: printable documents ==================== #
+def _pdf(body: bytes, name: str) -> Response:
+    return Response(body, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@router.post("/manifest.pdf", summary="Printable route manifest (driver stop sheet)", response_class=Response)
+def route_manifest(request: ManifestRequest, user: User = Depends(get_current_user)):
+    """One route's stop sheet: header, stops with slots / ETAs / proof-of-delivery boxes, turn-by-turn directions."""
+    stops = _stops(request.stops)
+    vehicle = _vehicle(request.vehicle)
+    hub = (request.hub.latitude, request.hub.longitude)
+    ev = recalculate(hub, stops, vehicle, _hhmm(request.departure))
+    info = {s.id: StopInfo(s.name or s.id, s.address or "", s.priority) for s in request.stops}
+    directions = road_directions([hub] + [(s.lat, s.lon) for s in stops] + [hub])
+    ex = explain_route(request.hub_name, hub, stops, info, vehicle, request.vehicle.label or request.vehicle.id, ev, _hhmm(request.departure),
+                       directions=directions, driver_name=request.vehicle.driver_name)
+    day = request.service_date or date.today().isoformat()
+    body = manifest_pdf(request.hub_name, request.vehicle.label or request.vehicle.id, request.vehicle.driver_name, stops, info, ev,
+                        _hhmm(request.departure), ex.legs, day)
+    return _pdf(body, f"manifest-{(request.vehicle.label or request.vehicle.id).replace(' ', '')}-{day}.pdf")
+
+
+@router.post("/receipt.pdf", summary="Customer delivery receipt (proof of delivery)", response_class=Response)
+def delivery_receipt(request: ReceiptRequest, user: User = Depends(get_current_user)):
+    day = request.service_date or date.today().isoformat()
+    r = Receipt(**{**request.model_dump(), "service_date": day})
+    return _pdf(receipt_pdf(r), f"receipt-{request.tracking_number}.pdf")
 
 
 # ==================== Week 9: optimization agent ==================== #
