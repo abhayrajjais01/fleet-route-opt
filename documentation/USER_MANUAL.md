@@ -28,6 +28,20 @@ cd frontend && pnpm install && pnpm dev
 Open **http://localhost:3000** (the backend allows this origin). Seed demo data once with
 `python -m scripts.seed_demo_data` from `backend/`.
 
+### Signing in
+
+The platform opens on a **login page** with two ways in:
+
+- **Sign in** with your email and password. The workspace shows only the sections your role is assigned (for
+  example a dispatcher sees orders, planning, tracking and compliance; a driver sees only the mobile app), and every
+  request runs with your account's permissions. The account menu (top right) shows who you are and has **Sign out**.
+  You stay signed in if you reload, until you sign out or close the tab; an expired session returns you to the login
+  page with a message.
+- **Explore in demo mode** with no account: pick a profile to start as. A **DEMO** badge and a role switcher appear in
+  the header, so you can move between Admin, Fleet manager, Dispatcher and Driver and see every feature with sample
+  data. *Exit demo mode* is in the account menu. A deployment can hide demo mode by building the frontend with
+  `VITE_DEMO_MODE=false` (`docker-compose.yml` → `frontend.build.args`).
+
 ### Demo accounts
 
 | Role | Email | Password |
@@ -37,8 +51,9 @@ Open **http://localhost:3000** (the backend allows this origin). Seed demo data 
 | Dispatcher | `dispatcher@fleetopt.io` | `password123` |
 | Driver | `driver@fleetopt.io` (Rajesh Kumar) | `password123` |
 
-The role switcher at the top right (a dropdown on phones) changes the view instantly. These accounts exist only
-on demo installs; production deployments do not create them.
+Sign in with any of these to see that role's view. In demo mode the role switcher at the top right (a dropdown on
+phones) changes the view instantly. These accounts exist only on demo installs; production deployments do not
+create them.
 
 ### Getting around
 
@@ -77,6 +92,8 @@ The driver view opens on **My stops**: the next stop first, with the customer, t
 - **Report delay** with minutes and a reason; downstream ETAs shift for the dispatcher.
 - **Offline**: actions taken without signal are queued on the phone and sent when the connection returns. Anything
   the server rejects stays in the queue with the reason.
+- **Shared phones**: saved stops and queued actions belong to the account that created them. Another driver signing in
+  on the same phone never sees or sends them. If the app says *No driver profile linked*, an admin must link the account.
 - **Map** shows the route; the toggle in the header switches between stops and map.
 
 ## 4. Fleet manager

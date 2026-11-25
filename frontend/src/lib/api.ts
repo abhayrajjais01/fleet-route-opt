@@ -12,7 +12,17 @@ export const DEMO_CREDENTIALS: Record<string, { email: string; pass: string }> =
 
 const cachedTokens: Record<string, string> = {}
 
+// A real signed-in account (see lib/session.ts) overrides the demo logins: every call then carries that user's
+// token, whatever role a component asks for, so the server's RBAC decides what they can do.
+let signedInToken: string | null = null
+export function setSignedInToken(token: string | null) {
+  signedInToken = token
+  for (const k of Object.keys(cachedTokens)) delete cachedTokens[k]
+}
+
+/** Demo mode: a token for the demo account of `role`. Signed in: the user's own token. */
 export async function fetchAuthToken(role: string = 'ADMIN'): Promise<string | null> {
+  if (signedInToken) return signedInToken
   if (cachedTokens[role]) return cachedTokens[role]
   try {
     const creds = DEMO_CREDENTIALS[role] || DEMO_CREDENTIALS.ADMIN

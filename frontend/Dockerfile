@@ -11,6 +11,9 @@ COPY . .
 # Empty VITE_API_URL = same-origin requests to /api/v1, which Nginx forwards to the backend.
 ARG VITE_API_URL=""
 ENV VITE_API_URL=${VITE_API_URL}
+# Demo mode on the login page (every profile, sample data). Set to "false" for a real deployment.
+ARG VITE_DEMO_MODE="true"
+ENV VITE_DEMO_MODE=${VITE_DEMO_MODE}
 RUN pnpm exec tsc -b && pnpm exec vite build
 
 FROM nginx:1.27-alpine AS runtime

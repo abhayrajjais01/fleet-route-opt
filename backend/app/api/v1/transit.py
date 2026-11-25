@@ -14,7 +14,6 @@ Exposes RESTful endpoints for driver actions:
 
 from typing import Dict, List
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -43,7 +42,7 @@ from app.schemas.transit import (
     DriverOfflineActionType,
     TransitFailureReason,
 )
-from app.services.transit_fsm import TransitFSMService, VALID_FSM_TRANSITIONS
+from app.services.transit_fsm import TransitFSMService, VALID_FSM_TRANSITIONS, driver_for_user
 
 router = APIRouter()
 
@@ -248,13 +247,8 @@ def get_driver_mobile_manifest(
     # 1. Resolve Driver entity
     driver: Optional[Driver] = None
     if current_user.role == UserRole.DRIVER:
-        # A driver only ever sees their own manifest: resolve by the explicit account link,
-        # else by an exact (case-insensitive) name match. Never fall back to another driver.
-        driver = db.query(Driver).filter(Driver.user_id == current_user.id).first()
-        if not driver:
-            driver = db.query(Driver).filter(
-                func.lower(func.trim(Driver.full_name)) == current_user.full_name.strip().lower()
-            ).first()
+        # A driver only ever sees their own manifest, never another driver's.
+        driver = driver_for_user(db, current_user)
         if not driver:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

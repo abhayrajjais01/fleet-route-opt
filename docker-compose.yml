@@ -44,6 +44,7 @@ services:
       context: ./frontend
       args:
         VITE_API_URL: ""            # same origin: Nginx forwards /api to the backend
+        VITE_DEMO_MODE: "true"      # "false" hides demo mode on the login page
     depends_on:
       backend:
         condition: service_healthy
