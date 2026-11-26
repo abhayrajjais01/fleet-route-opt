@@ -22,6 +22,8 @@ from app.schemas.transit import (
     TripFsmProgressResponse,
     TripStopFsmSummary,
 )
+from app.models.delivery import ProofMethod
+from app.services import delivery_proof
 from app.services.audit_service import record_audit_event
 
 
@@ -153,6 +155,7 @@ class TransitFSMService:
                     detail=f"Cannot depart shipment with vehicle {new_vehicle.plate_number}: Vehicle is currently in '{new_vehicle.current_status.value}' status.",
                 )
             shipment.assigned_vehicle_id = vehicle_id
+            shipment.route_sequence = None
 
         if not shipment.assigned_vehicle_id:
             raise HTTPException(
@@ -177,6 +180,15 @@ class TransitFSMService:
         cls.validate_transition(shipment.status, target_status)
 
         shipment.status = target_status
+
+        if shipment.assigned_vehicle_id != old_vehicle_id:
+            from app.services.dispatch_plan import check_hazmat
+            db.flush()
+            try:
+                check_hazmat(db, shipment.assigned_vehicle_id)
+            except HTTPException:
+                db.rollback()
+                raise
 
         # Synchronize vehicle & driver
         if assigned_veh.current_status == VehicleStatus.AVAILABLE:
@@ -287,12 +299,13 @@ class TransitFSMService:
         shipment_id: int,
         recipient_name: str,
         actor: User,
-        signature_text: Optional[str] = None,
+        delivery_code: Optional[str] = None,
+        signature: Optional[list] = None,
         notes: Optional[str] = None,
     ) -> TransitTransitionResponse:
         """
         Transitions shipment ARRIVED / IN_TRANSIT -> DELIVERED (Terminal).
-        Verifies proof of delivery consignee name and creates permanent handover record.
+        Needs proof: the customer's delivery code or a drawn signature (services/delivery_proof.py).
         """
         shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
         if not shipment:
@@ -301,12 +314,20 @@ class TransitFSMService:
 
         target_status = ShipmentStatus.DELIVERED
         cls.validate_transition(shipment.status, target_status)
+        if shipment.status == target_status:
+            # A replayed request (e.g. an offline queue sent twice): the first proof stands.
+            return TransitTransitionResponse(
+                shipment_id=shipment.id, tracking_number=shipment.tracking_number, previous_status=shipment.status,
+                current_status=shipment.status, assigned_vehicle_id=shipment.assigned_vehicle_id, actor_name=actor.full_name,
+                actor_role=actor.role.value, timestamp=datetime.now(timezone.utc), details="Already delivered; nothing changed.")
+        method = delivery_proof.verify(db, shipment, delivery_code, signature)
 
         old_status = shipment.status
         shipment.status = target_status
+        delivery_proof.record(db, shipment, method, recipient_name, signature, actor)
 
-        sig_info = f" (Signature Token: {signature_text})" if signature_text else ""
-        detail_msg = f"Delivery completed to recipient '{recipient_name}'{sig_info}"
+        how = "delivery code verified" if method == ProofMethod.DELIVERY_CODE else "signature captured"
+        detail_msg = f"Delivery completed to recipient '{recipient_name}' ({how})"
         if notes:
             detail_msg += f". Handover Notes: {notes}"
 
@@ -321,7 +342,7 @@ class TransitFSMService:
             after_state={
                 "status": target_status.value,
                 "recipient_name": recipient_name,
-                "signature": signature_text,
+                "proof": method.value,
                 "notes": notes,
             },
         )
@@ -345,7 +366,7 @@ class TransitFSMService:
             details=detail_msg,
             metadata={
                 "recipient_name": recipient_name,
-                "signature_text": signature_text,
+                "proof": method.value,
                 "notes": notes,
             },
         )
@@ -434,6 +455,8 @@ class TransitFSMService:
 
         shipment.status = target_status
         shipment.assigned_vehicle_id = None
+        shipment.route_sequence = None
+        shipment.dispatch_time = None
 
         detail_msg = f"Redispatched back to unassigned parcel queue from previous status '{old_status.value}'"
         if notes:
@@ -538,7 +561,7 @@ class TransitFSMService:
         shipments = (
             db.query(Shipment)
             .filter(Shipment.assigned_vehicle_id == vehicle_id)
-            .order_by(Shipment.id.asc())
+            .order_by(Shipment.route_sequence.is_(None), Shipment.route_sequence, Shipment.id)
             .all()
         )
 
@@ -609,6 +632,7 @@ class TransitFSMService:
         If all shipments assigned to this vehicle are terminal (DELIVERED or FAILED),
         transitions vehicle to AVAILABLE and driver to ON_DUTY.
         """
+        db.flush()      # sessions don't autoflush: the stop just closed must count as closed
         remaining = (
             db.query(Shipment)
             .filter(

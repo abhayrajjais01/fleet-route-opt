@@ -8,8 +8,13 @@ import type { RouteDispatch } from './components/routes/RoutePlannerSection'
 import AuditCompliancePanel from './components/audit/AuditCompliancePanel'
 import { applyAcceptedProposal } from './lib/proposalsApi'
 import LoginPage from './components/auth/LoginPage'
+import ChangePassword from './components/auth/ChangePassword'
 import { activate, initials, restore, type Session } from './lib/session'
 import { ACCESS_NOTE, accountEmail, accountFor, appAccess, profileFor } from './lib/driverAccess'
+import { planChange, proofMethod, proofTime, saveError, shipmentsApi, type PlanState } from './lib/shipmentsApi'
+import { arriveAtStop, deliveryProof, departShipment } from './lib/transitApi'
+import { downloadFile } from './lib/download'
+import { PLACES } from './lib/places'
 import { fleetApi, type Extras, type NewUser, type Roster } from './lib/fleetApi'
 import type { UserRole, VehicleType, VehicleStatus, DriverStatus, LicenseType, ShipmentStatus, ShipmentPriority, AuditAction, AdminSection, Vehicle, Driver, Hub, Shipment, User, AuditEntry } from './lib/types'
 
@@ -324,6 +329,20 @@ interface FleetActions {
   createUser(u: NewUser): Promise<void>
   updateUser(id: number, patch: { full_name?: string; role?: UserRole; is_active?: boolean }): Promise<void>
   linkDriver(userId: number, driverId: number | null): Promise<void>
+  resetPassword(userId: number): Promise<string>
+}
+
+// Shipment changes go through these: saved on the server for everyone when online, kept in this browser (and said so)
+// when not. Each throws with a message for the user when the change was not saved.
+interface ShipmentActions {
+  online: boolean
+  canDelete: boolean
+  save(s: Omit<Shipment, 'id'>, id?: number): Promise<Shipment>
+  advance(s: Shipment): Promise<void>
+  remove(id: number): Promise<void>
+  addMany(list: Shipment[]): Promise<{ created: Shipment[]; errors: string[] }>
+  deliveryCode(id: number, reissue?: boolean): Promise<{ code: string; attempts_left: number }>
+  receipt(s: Shipment): Promise<void>
 }
 
 function FleetSection({ vehicles, drivers, hubs, users, onManageUsers, addAudit, fleet }: {
@@ -537,7 +556,8 @@ function FleetSection({ vehicles, drivers, hubs, users, onManageUsers, addAudit,
 }
 
 // ─── SHIPMENTS SECTION ────────────────────────────────────────────────────────
-function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWorkflow, activeRole }: {
+function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWorkflow, activeRole, actions }: {
+  actions: ShipmentActions
   shipments: Shipment[]; setShipments: React.Dispatch<React.SetStateAction<Shipment[]>>
   hubs: Hub[]; addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
   onTriggerWorkflow: (s: Shipment) => void
@@ -551,7 +571,7 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
   const [batchErrors, setBatchErrors] = useState<string[]>([])
   const [batchSuccessMsg, setBatchSuccessMsg] = useState('')
   const [editTarget, setEditTarget] = useState<Shipment | null>(null)
-  const blank: Omit<Shipment, 'id'> = { tracking_number: '', customer_name: '', destination_address: '', weight_kg: 100, volume_m3: 1, time_window_start: '09:00', time_window_end: '12:00', priority: 'STANDARD', status: 'UNASSIGNED', hub_id: 1 }
+  const blank: Omit<Shipment, 'id'> = { tracking_number: '', customer_name: '', destination_address: '', weight_kg: 100, volume_m3: 1, time_window_start: '09:00', time_window_end: '12:00', priority: 'STANDARD', status: 'UNASSIGNED', hub_id: hubs[0]?.id ?? 1, hazard_class: null }
   const [form, setForm] = useState(blank)
   const [justAdded, setJustAdded] = useState<number | null>(null)
 
@@ -561,9 +581,28 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
   })
 
   const [formError, setFormError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [codeFor, setCodeFor] = useState<{ s: Shipment; code?: string; left?: number } | null>(null)
+  /** Runs a change; a refusal is shown above the table. */
+  async function attempt(task: () => Promise<unknown>) {
+    setNotice(null)
+    try { await task() } catch (e) { setNotice(saveError(e)) }
+  }
+  async function showCode(s: Shipment, reissue = false) {
+    setCodeFor({ s })
+    await attempt(async () => {
+      try { const r = await actions.deliveryCode(s.id, reissue); setCodeFor({ s, code: r.code, left: r.attempts_left }) } catch (e) { setCodeFor(null); throw e }
+    })
+  }
 
-  function save() {
+  async function save() {
+    if (saving) return
     setFormError('')
+    if (form.latitude == null || form.longitude == null || !Number.isFinite(form.latitude) || !Number.isFinite(form.longitude)) {
+      setFormError('Choose the delivery area, or enter its latitude and longitude: routes are planned from the location.')
+      return
+    }
     const norm = form.tracking_number.trim().toUpperCase()
     if (!norm) {
       setFormError('Tracking number cannot be empty.')
@@ -576,27 +615,37 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
         setFormError(`Tracking number "${form.tracking_number.trim()}" already exists in the fleet roster. Duplicate order IDs are not allowed.`)
         return
       }
-      const ns: Shipment = { ...form, tracking_number: form.tracking_number.trim(), id: Date.now() }
-      setShipments([...shipments, ns])
-      addAudit({ actor_name: activeRole || 'Admin', action_type: 'ASSET_CREATED', entity_type: 'SHIPMENT', entity_id: ns.id, details: `New shipment: ${ns.tracking_number} — AI workflow auto-triggered` })
-      setJustAdded(ns.id)
-      setModal(null); setForm(blank)
-      setTimeout(() => onTriggerWorkflow(ns), 400)
+      setSaving(true)
+      try {
+        const ns = await actions.save({ ...form, tracking_number: form.tracking_number.trim() })
+        addAudit({ actor_name: activeRole || 'Admin', action_type: 'ASSET_CREATED', entity_type: 'SHIPMENT', entity_id: ns.id, details: `New shipment: ${ns.tracking_number} — AI workflow auto-triggered` })
+        setJustAdded(ns.id)
+        setModal(null); setForm(blank)
+        setTimeout(() => onTriggerWorkflow(ns), 400)
+      } catch (e) { setFormError(saveError(e)) } finally { setSaving(false) }
     } else if (modal === 'edit' && editTarget) {
       const isDuplicate = shipments.some(s => s.id !== editTarget.id && s.tracking_number.trim().toUpperCase() === norm)
       if (isDuplicate) {
         setFormError(`Tracking number "${form.tracking_number.trim()}" is already assigned to another shipment.`)
         return
       }
-      setShipments(shipments.map(s => s.id === editTarget.id ? { ...s, ...form, tracking_number: form.tracking_number.trim() } : s))
-      setModal(null); setForm(blank)
+      setSaving(true)
+      try {
+        await actions.save({ ...form, tracking_number: form.tracking_number.trim() }, editTarget.id)
+        setModal(null); setForm(blank)
+      } catch (e) { setFormError(saveError(e)) } finally { setSaving(false) }
     }
   }
 
-  function advanceFSM(s: Shipment) {
-    const next: Record<ShipmentStatus, ShipmentStatus> = { UNASSIGNED: 'CLUSTERED', CLUSTERED: 'ASSIGNED', ASSIGNED: 'IN_TRANSIT', IN_TRANSIT: 'ARRIVED', ARRIVED: 'DELIVERED', DELIVERED: 'DELIVERED', FAILED: 'FAILED' }
-    setShipments(shipments.map(x => x.id === s.id ? { ...x, status: next[x.status] } : x))
-    addAudit({ actor_name: 'Admin', action_type: 'STATUS_CHANGE', entity_type: 'SHIPMENT', entity_id: s.id, details: `${s.tracking_number}: ${s.status} → ${next[s.status]}` })
+  // Delivery is not here on purpose: it needs proof (Live Tracking or the driver app). Assigning needs a plan.
+  const NEXT: Partial<Record<ShipmentStatus, ShipmentStatus>> = { UNASSIGNED: 'CLUSTERED', ASSIGNED: 'IN_TRANSIT', IN_TRANSIT: 'ARRIVED' }
+  async function advanceFSM(s: Shipment) {
+    const next = NEXT[s.status]
+    if (!next) return
+    await attempt(async () => {
+      await actions.advance(s)
+      addAudit({ actor_name: activeRole || 'Admin', action_type: 'STATUS_CHANGE', entity_type: 'SHIPMENT', entity_id: s.id, details: `${s.tracking_number}: ${s.status} → ${next}` })
+    })
   }
 
   const [batchFile, setBatchFile] = useState<File | null>(null)
@@ -760,63 +809,23 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
       return
     }
 
-    let importedList: Shipment[] = []
+    let finalAdditions: Shipment[] = []
     let apiErrorList: string[] = []
-    let isServerPersisted = false
-
     try {
-      const token = await fetchAuthToken(activeRole || 'ADMIN')
-      const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
-
-      // Always send the validated uniqueBatch via JSON endpoint to guarantee duplicate prevention
-      const payload = {
-        shipments: uniqueBatch.map(item => ({
-          tracking_number: item.tracking_number,
-          customer_name: item.customer_name,
-          destination_address: item.destination_address,
-          latitude: item.latitude ?? 19.0760,
-          longitude: item.longitude ?? 72.8777,
-          weight_kg: item.weight_kg,
-          volume_m3: item.volume_m3,
-          time_window_start: item.time_window_start,
-          time_window_end: item.time_window_end,
-          priority: item.priority,
-          hub_id: item.hub_id || 1,
-        })),
-      }
-      const res = await fetch(`${API_BASE}/api/v1/shipments/batch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify(payload),
-      })
-      if (res.ok) {
-        isServerPersisted = true
-        const data = await res.json()
-        if (data.created_shipments && data.created_shipments.length > 0) {
-          importedList = data.created_shipments
-        }
-        if (data.errors && data.errors.length > 0) {
-          apiErrorList = data.errors.map((e: any) => `Row ${e.row}${e.tracking_number ? ` (${e.tracking_number})` : ''}: ${e.reason}`)
-        }
-      }
+      const res = await actions.addMany(uniqueBatch.map(item => ({ ...item, latitude: item.latitude ?? 19.0760, longitude: item.longitude ?? 72.8777, hub_id: item.hub_id || hubs[0]?.id || 1 })))
+      finalAdditions = res.created
+      apiErrorList = res.errors
     } catch (e) {
-      console.warn('Backend batch endpoint unreachable, applying client-side deduplication:', e)
-    }
-
-    if (apiErrorList.length > 0 && importedList.length === 0) {
-      setBatchErrors(apiErrorList)
+      setBatchErrors([saveError(e)])
       setIsSubmittingBatch(false)
       return
     }
-
-    const finalAdditions = importedList.length > 0 ? importedList : uniqueBatch
-
-    // Strict deduplication when merging into shipments state
-    setShipments(prev => {
-      const existing = new Set(prev.map(s => s.tracking_number.trim().toUpperCase()))
-      const reallyNew = finalAdditions.filter(s => !existing.has(s.tracking_number.trim().toUpperCase()))
-      return [...prev, ...reallyNew]
-    })
+    if (finalAdditions.length === 0) {
+      setBatchErrors(apiErrorList.length ? apiErrorList : ['Nothing was imported.'])
+      setIsSubmittingBatch(false)
+      return
+    }
+    const isServerPersisted = actions.online
 
     if (apiErrorList.length > 0) {
       setBatchErrors(apiErrorList)
@@ -829,7 +838,7 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
       action_type: 'ASSET_CREATED',
       entity_type: 'SHIPMENT_BATCH',
       entity_id: Date.now(),
-      details: `Batch imported ${finalAdditions.length} orders${skippedDuplicatesCount > 0 ? ` (${skippedDuplicatesCount} duplicates skipped)` : ''} (${isServerPersisted ? 'Server DB Persisted' : 'Client Mode'})`,
+      details: `Batch imported ${finalAdditions.length} orders${skippedDuplicatesCount > 0 ? ` (${skippedDuplicatesCount} duplicates skipped)` : ''} ($(${isServerPersisted ? 'saved on the server' : 'this browser only'}))`,
     })
 
     setBatchSuccessMsg(
@@ -888,7 +897,25 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
           </div>
         ))}
       </div>
-      {duplicateKeys.length > 0 && (
+      {notice && (
+        <div role="alert" className="mx-5 mt-4 flex items-start gap-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+          <span className="flex-1">{notice}</span><button onClick={() => setNotice(null)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+      {codeFor && (
+        <Modal title={`Delivery code · ${codeFor.s.tracking_number}`} onClose={() => setCodeFor(null)}>
+          <div className="space-y-3 text-center">
+            <p className="text-sm text-slate-600">Give this to <b>{codeFor.s.customer_name}</b>. The driver types it at the door to prove the handover. Drivers can’t see it.</p>
+            <p className="font-mono text-4xl font-bold tracking-[0.3em] text-slate-900" aria-live="polite">{codeFor.code ?? '······'}</p>
+            {codeFor.left === 0 && <p className="text-xs text-red-700">Locked after too many wrong attempts. Issue a new code.</p>}
+            <div className="flex justify-center gap-2 pt-1">
+              <button onClick={() => showCode(codeFor.s, true)} disabled={!codeFor.code} className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg text-slate-600 disabled:opacity-50">Issue a new code</button>
+              <button onClick={() => setCodeFor(null)} className="px-3 py-1.5 text-xs bg-slate-900 text-white rounded-lg">Done</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {duplicateKeys.length > 0 && !actions.online && (
         <div className="mx-5 mt-4 p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-center justify-between shadow-sm flex-shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-amber-700 font-bold text-xs">⚠️ Duplicate Tracking Numbers Detected:</span>
@@ -943,9 +970,11 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
                 <td className="px-4 py-3">
                   <div className="flex gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100 transition-opacity">
                     <button onClick={() => onTriggerWorkflow(s)} className="text-violet-600 hover:text-violet-800 font-bold text-[11px] whitespace-nowrap">🤖 AI Workflow</button>
-                    {s.status !== 'DELIVERED' && s.status !== 'FAILED' && <button onClick={() => advanceFSM(s)} className="text-emerald-600 hover:text-emerald-800 font-medium">→</button>}
-                    <button onClick={() => { setEditTarget(s); setForm({ tracking_number: s.tracking_number, customer_name: s.customer_name, destination_address: s.destination_address, weight_kg: s.weight_kg, volume_m3: s.volume_m3, time_window_start: s.time_window_start, time_window_end: s.time_window_end, priority: s.priority, status: s.status, hub_id: s.hub_id }); setModal('edit') }} className="text-blue-600 font-medium">Edit</button>
-                    <button onClick={() => setShipments(shipments.filter(x => x.id !== s.id))} className="text-red-500 font-medium">Del</button>
+                    {NEXT[s.status] && <button onClick={() => advanceFSM(s)} title={`Mark ${NEXT[s.status]!.replace('_', ' ').toLowerCase()}`} className="text-emerald-600 hover:text-emerald-800 font-medium">→</button>}
+                    {actions.online && ['ASSIGNED', 'IN_TRANSIT', 'ARRIVED'].includes(s.status) && <button onClick={() => showCode(s)} className="text-slate-600 font-medium whitespace-nowrap">Delivery code</button>}
+                    {actions.online && s.status === 'DELIVERED' && <button onClick={() => attempt(() => actions.receipt(s))} className="text-violet-600 font-medium">Receipt</button>}
+                    {s.status !== 'DELIVERED' && s.status !== 'FAILED' && <button onClick={() => { setEditTarget(s); setForm({ tracking_number: s.tracking_number, customer_name: s.customer_name, destination_address: s.destination_address, weight_kg: s.weight_kg, volume_m3: s.volume_m3, time_window_start: s.time_window_start, time_window_end: s.time_window_end, priority: s.priority, status: s.status, hub_id: s.hub_id, latitude: s.latitude, longitude: s.longitude, hazard_class: s.hazard_class ?? null }); setFormError(''); setModal('edit') }} className="text-blue-600 font-medium">Edit</button>}
+                    {actions.canDelete && s.status !== 'DELIVERED' && <button onClick={() => { if (window.confirm(`Delete ${s.tracking_number}? This can't be undone.`)) attempt(() => actions.remove(s.id)) }} className="text-red-500 font-medium">Del</button>}
                   </div>
                 </td>
               </tr>
@@ -1059,14 +1088,24 @@ function ShipmentsSection({ shipments, setShipments, hubs, addAudit, onTriggerWo
             <div className="grid grid-cols-2 gap-3"><Field label="Tracking #"><input className={inputCls} value={form.tracking_number} onChange={e => setForm(p => ({ ...p, tracking_number: e.target.value }))} placeholder="SHP-XXX-HUB" /></Field><Field label="Customer"><input className={inputCls} value={form.customer_name} onChange={e => setForm(p => ({ ...p, customer_name: e.target.value }))} /></Field></div>
             <Field label="Destination Address"><input className={inputCls} value={form.destination_address} onChange={e => setForm(p => ({ ...p, destination_address: e.target.value }))} /></Field>
             <div className="grid grid-cols-3 gap-3">
+              <Field label="Delivery area"><select className={selCls} value="" onChange={e => { const pl = PLACES[Number(e.target.value)]; if (pl) setForm(p => ({ ...p, latitude: pl.lat, longitude: pl.lon, destination_address: p.destination_address || `${pl.area}, ${pl.city}` })) }}>
+                <option value="">Fill from area…</option>{PLACES.map((pl, i) => <option key={pl.area + pl.city} value={i}>{pl.area}, {pl.city}</option>)}
+              </select></Field>
+              <Field label="Latitude"><input type="number" step="any" className={inputCls} value={form.latitude ?? ''} onChange={e => setForm(p => ({ ...p, latitude: e.target.value === '' ? undefined : +e.target.value }))} /></Field>
+              <Field label="Longitude"><input type="number" step="any" className={inputCls} value={form.longitude ?? ''} onChange={e => setForm(p => ({ ...p, longitude: e.target.value === '' ? undefined : +e.target.value }))} /></Field>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
               <Field label="Weight (kg)"><input type="number" className={inputCls} value={form.weight_kg} onChange={e => setForm(p => ({ ...p, weight_kg: +e.target.value }))} /></Field>
               <Field label="Volume (m³)"><input type="number" className={inputCls} value={form.volume_m3} onChange={e => setForm(p => ({ ...p, volume_m3: +e.target.value }))} /></Field>
               <Field label="Priority"><select className={selCls} value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value as ShipmentPriority }))}>{['EXPRESS', 'HIGH', 'STANDARD', 'LOW'].map(p => <option key={p} value={p}>{p}</option>)}</select></Field>
             </div>
             <div className="grid grid-cols-2 gap-3"><Field label="Window Start"><input className={inputCls} value={form.time_window_start} onChange={e => setForm(p => ({ ...p, time_window_start: e.target.value }))} /></Field><Field label="Window End"><input className={inputCls} value={form.time_window_end} onChange={e => setForm(p => ({ ...p, time_window_end: e.target.value }))} /></Field></div>
-            <Field label="Hub"><select className={selCls} value={form.hub_id} onChange={e => setForm(p => ({ ...p, hub_id: +e.target.value }))}>{hubs.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Hub"><select className={selCls} value={form.hub_id} onChange={e => setForm(p => ({ ...p, hub_id: +e.target.value }))}>{hubs.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select></Field>
+              <Field label="Hazard class"><select className={selCls} value={form.hazard_class ?? ''} onChange={e => setForm(p => ({ ...p, hazard_class: e.target.value || null }))}><option value="">Not hazardous</option>{['1', '2', '3', '4.1', '4.2', '4.3', '5.1', '5.2', '6.1', '6.2', '7', '8', '9'].map(c => <option key={c} value={c}>Class {c}</option>)}</select></Field>
+            </div>
             {modal === 'add' && <p className="text-[11px] text-violet-600 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">🤖 After saving, Copilot will automatically generate a workflow — driver, vehicle, route, and compliance checks.</p>}
-            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={save} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg font-semibold">{modal === 'add' ? 'Save & Analyze →' : 'Save'}</button></div>
+            <div className="flex justify-end gap-2 pt-2"><button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button><button onClick={save} disabled={saving} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg font-semibold disabled:opacity-50">{saving ? 'Saving…' : modal === 'add' ? 'Save & Analyze →' : 'Save'}</button></div>
           </div>
         </Modal>
       )}
@@ -1131,6 +1170,7 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit, fl
   const [notice, setNotice] = useState<string | null>(null)
   const [tried, setTried] = useState(false)   // show validation only after the first Save, not while typing
   const [busy, setBusy] = useState(false)
+  const [temp, setTemp] = useState<{ user: User; password: string } | null>(null)
   const [serverError, setServerError] = useState<string | null>(null)
   const online = fleet.online   // online: accounts are created and changed on the server for everyone
   async function attempt(task: () => Promise<void>): Promise<boolean> {
@@ -1185,7 +1225,7 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit, fl
       if (ok) {
         addAudit({ actor_name: 'Admin', action_type: modal === 'add' ? 'ASSET_CREATED' : 'ASSET_UPDATED', entity_type: 'USER', entity_id: target?.id ?? 0,
           details: modal === 'add' ? `Created ${form.role} account ${email}` : `Updated account ${email}` })
-        if (modal === 'add') setNotice(form.role === 'DRIVER' ? `${form.full_name.trim()} can now sign in to the driver app and be planned on routes.` : `${form.full_name.trim()}'s account is ready.`)
+        if (modal === 'add') setNotice(form.role === 'DRIVER' ? `${form.full_name.trim()} can now sign in to the driver app and be planned on routes.` : `${form.full_name.trim()}'s account is ready. They choose their own password at first sign-in.`)
         setModal(null)
       }
       return
@@ -1219,6 +1259,11 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit, fl
         details: `Updated account ${email}${target.role !== form.role ? `: role ${target.role} → ${form.role}` : ''}${target.is_active !== form.is_active ? (form.is_active ? ', activated' : ', deactivated') : ''}` })
     }
     setModal(null)
+  }
+
+  async function resetPassword(u: User) {
+    if (!window.confirm(`Reset ${u.full_name}'s password? They are signed out everywhere and get a temporary password.`)) return
+    await attempt(async () => { setTemp({ user: u, password: await fleet.resetPassword(u.id) }) })
   }
 
   async function toggleActive(u: User) {
@@ -1288,10 +1333,11 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit, fl
                       : <span className="inline-flex items-center gap-2 whitespace-nowrap"><span className="font-semibold text-amber-700">Profile missing</span>
                           <button onClick={() => { setTarget(u); setLinkId(unlinked[0]?.id ?? null); setModal('link') }} className="text-blue-600 font-medium">Link profile</button></span>}
                   </td>
-                  <td className="px-5 py-3"><span className={`text-xs font-semibold ${u.is_active ? 'text-emerald-600' : 'text-slate-400'}`}>{u.is_active ? '● Active' : '○ Deactivated'}</span></td>
+                  <td className="px-5 py-3"><span className={`text-xs font-semibold ${u.is_active ? 'text-emerald-600' : 'text-slate-400'}`}>{u.is_active ? '● Active' : '○ Deactivated'}</span>{u.reset_requested && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Reset requested</span>}</td>
                   <td className="px-5 py-3"><div className="flex gap-3 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
                     <button onClick={() => { setTarget(u); setForm({ ...blank(), email: u.email, full_name: u.full_name, role: u.role, is_active: u.is_active }); setTried(false); setServerError(null); setModal('edit') }} className="text-blue-600 font-medium">Edit</button>
                     <button onClick={() => toggleActive(u)} className="text-amber-600 font-medium">{u.is_active ? 'Deactivate' : 'Activate'}</button>
+                    {online && <button onClick={() => resetPassword(u)} className="text-slate-600 font-medium whitespace-nowrap">Reset password</button>}
                     {u.role !== 'ADMIN' && !online && <button onClick={() => remove(u)} className="text-red-500 font-medium">Remove</button>}
                   </div></td>
                 </tr>
@@ -1349,6 +1395,16 @@ function UsersSection({ users, setUsers, drivers, setDrivers, hubs, addAudit, fl
               <button onClick={() => setModal(null)} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600">Cancel</button>
               <button onClick={save} disabled={busy || (tried && errors.length > 0)} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {temp && (
+        <Modal title={`Temporary password for ${temp.user.full_name}`} onClose={() => setTemp(null)}>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">Give it to {temp.user.email}. They choose their own password when they sign in. It isn’t shown again.</p>
+            <p className="rounded-lg bg-slate-100 px-3 py-2 text-center font-mono text-lg font-semibold text-slate-900 select-all">{temp.password}</p>
+            <div className="flex justify-end"><button onClick={() => setTemp(null)} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">Done</button></div>
           </div>
         </Modal>
       )}
@@ -1418,10 +1474,15 @@ export default function App() {
     return <LoginPage notice={notice} onSession={s => { setNotice(null); setSession(activate(s)) }} />
   }
   const key = session.mode === 'user' ? `user:${session.user.id}` : 'demo'
-  return <Workspace key={key} session={session} onSignOut={() => { activate(null); setSession(null) }} />
+  const signOut = () => { activate(null); setSession(null) }
+  if (session.mode === 'user' && session.user.must_change_password) {
+    return <ChangePassword session={session} required onDone={s => setSession(activate(s))} onCancel={signOut} />
+  }
+  return <Workspace key={key} session={session} onSignOut={signOut} onSession={s => setSession(activate(s))} />
 }
 
-function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+function Workspace({ session, onSignOut, onSession }: { session: Session; onSignOut: () => void; onSession: (s: Session) => void }) {
+  const [changingPassword, setChangingPassword] = useState(false)
   const isDemo = session.mode === 'demo'
   const initialRole: UserRole = session.mode === 'user' ? session.user.role : session.startRole
   // Signed in, the role is the account's and cannot be switched; demo mode can switch between every profile.
@@ -1459,46 +1520,62 @@ function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => 
 
   useEffect(() => {
     let cancelled = false
-    fetchAuthToken(activeRole).then(token => { if (!cancelled) setAuth({ role: activeRole, token }) })
-    return () => { cancelled = true }
-  }, [activeRole])
+    let retry: ReturnType<typeof setTimeout> | undefined
+    const signIn = () => fetchAuthToken(activeRole).then(token => {
+      if (cancelled) return
+      setAuth({ role: activeRole, token })
+      if (!token) retry = setTimeout(signIn, 10000)      // started offline: keep trying, so the workspace connects by itself
+    })
+    signIn()
+    return () => { cancelled = true; clearTimeout(retry) }
+  }, [activeRole, session.mode === 'user' ? session.token : null])
 
   // ── Fleet roster: hubs, vehicles, drivers and users come from the backend so every user, role and device sees
   // the same people and assets, and nothing is lost on reload. Offline, the built-in demo data is used and the
   // workspace says so. Loaded once per session; later changes are saved through the actions below.
   const [roster, setRoster] = useState<{ source: 'loading' | 'server' | 'local'; error?: string }>({ source: 'loading' })
-  const rosterLoaded = useRef(false)
   const extras: Extras = useMemo(() => ({
     fuelPct: plate => INIT_VEHICLES.find(v => v.plate_number === plate)?.fuel_pct,
     rating: licence => INIT_DRIVERS.find(d => d.license_number === licence)?.rating,
   }), [])
-  function applyRoster(r: Roster, initial: boolean) {
-    if (initial) {
-      // The demo shipments point at built-in hub / vehicle ids; re-point them at the server's records.
-      const hubId = new Map(INIT_HUBS.map(h => [h.id, r.hubs.find(x => x.code === h.code)?.id]))
-      const vehId = new Map(INIT_VEHICLES.map(v => [v.id, r.vehicles.find(x => x.plate_number === v.plate_number)?.id]))
-      setShipments(prev => prev.map(s => ({ ...s, hub_id: hubId.get(s.hub_id) ?? s.hub_id,
-        assigned_vehicle_id: s.assigned_vehicle_id != null ? vehId.get(s.assigned_vehicle_id) ?? s.assigned_vehicle_id : s.assigned_vehicle_id })))
-      setHubs(r.hubs); setVehicles(r.vehicles); setDrivers(r.drivers)
-    } else {
-      // Later reloads: profile data from the server, operational state (on a trip, current vehicle) kept from this session.
-      setDrivers(prev => r.drivers.map(d => { const local = prev.find(x => x.id === d.id); return local ? { ...d, status: local.status, current_vehicle_id: local.current_vehicle_id } : d }))
-    }
+  // Shipments, dispatches and where every vehicle and driver stands come from the server too, and are re-read every few
+  // seconds, so dispatchers share one plan. Drivers load their own manifest instead.
+  const seesPlan = activeRole !== 'DRIVER'
+  const saves = useRef(0)       // counts local saves: a refresh that started before one finished is stale, and dropped
+  function applyRoster(r: Roster) {
+    setHubs(r.hubs)
+    setVehicles(prev => r.vehicles.map(v => ({ ...v, fuel_pct: prev.find(x => x.plate_number === v.plate_number)?.fuel_pct ?? v.fuel_pct })))
+    setDrivers(r.drivers)
     setUsers(r.users ?? [])
   }
-  async function reloadRoster() {
+  async function refresh() {
     if (!authToken) return
-    applyRoster(await fleetApi.load(authToken, activeRole === 'ADMIN', extras), false)
+    const started = saves.current
+    const [r, list] = await Promise.all([fleetApi.load(authToken, activeRole === 'ADMIN', extras), seesPlan ? shipmentsApi.list(authToken) : Promise.resolve(null)])
+    if (started !== saves.current) return
+    applyRoster(r)
+    if (list) setShipments(list)
+    setRoster({ source: 'server' })
   }
+  const refreshRef = useRef(refresh)
+  refreshRef.current = refresh
   useEffect(() => {
-    if (rosterLoaded.current) return
-    if (auth && !auth.token) { setRoster({ source: 'local', error: 'Not signed in to the backend' }); return }
+    if (auth && !auth.token) setRoster({ source: 'local', error: 'Not signed in to the backend' })
     if (!authToken) return
-    rosterLoaded.current = true
-    fleetApi.load(authToken, activeRole === 'ADMIN', extras)
-      .then(r => { applyRoster(r, true); setRoster({ source: 'server' }) })
-      .catch(e => { rosterLoaded.current = false; setRoster({ source: 'local', error: (e as Error).message }) })
-  }, [authToken, auth])
+    let stopped = false
+    const load = () => refreshRef.current().catch(e => {
+      if (stopped) return
+      // FleetApiError and ApiError both carry the status. 401: the password was changed or reset elsewhere.
+      if (session.mode === 'user' && (e as { status?: number }).status === 401) { onSignOut(); return }
+      // Never loaded: the built-in sample plan, and the workspace says so. Loaded before: keep it, saving will say if it fails.
+      setRoster(r => (r.source === 'server' ? r : { source: 'local', error: (e as Error).message }))
+    })
+    load()
+    const timer = setInterval(() => { if (!document.hidden) load() }, 10000)
+    const onFocus = () => load()
+    window.addEventListener('focus', onFocus)
+    return () => { stopped = true; clearInterval(timer); window.removeEventListener('focus', onFocus) }
+  }, [authToken, auth, activeRole])
   const rosterOnline = roster.source === 'server' && !!authToken
   const fleetActions: FleetActions = {
     online: rosterOnline,
@@ -1520,9 +1597,62 @@ function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => 
       setDrivers(p => id ? p.map(x => x.id === id ? saved : x) : [...p, saved])
     },
     async deleteDriver(id) { if (rosterOnline) await fleetApi.deleteDriver(authToken!, id); setDrivers(p => p.filter(x => x.id !== id)) },
-    async createUser(u) { await fleetApi.createUser(authToken!, u); await reloadRoster() },
-    async updateUser(id, patch) { await fleetApi.updateUser(authToken!, id, patch); await reloadRoster() },
-    async linkDriver(userId, driverId) { await fleetApi.linkDriver(authToken!, userId, driverId); await reloadRoster() },
+    async createUser(u) { await fleetApi.createUser(authToken!, u); await refresh() },
+    async updateUser(id, patch) { await fleetApi.updateUser(authToken!, id, patch); await refresh() },
+    async linkDriver(userId, driverId) { await fleetApi.linkDriver(authToken!, userId, driverId); await refresh() },
+    async resetPassword(id) { const password = await fleetApi.resetPassword(authToken!, id); await refresh(); return password },
+  }
+
+  /** One server change: refreshes already on their way are dropped, and everyone's latest state is read afterwards. */
+  async function saved<T>(task: () => Promise<T>): Promise<T> {
+    saves.current++
+    try { return await task() } finally { saves.current++; refresh().catch(() => { /* the next refresh will catch up */ }) }
+  }
+  /** Saves a new plan for everyone. Throws when refused (e.g. a colleague changed it first); then nothing changes here. */
+  async function commitPlan(next: PlanState, reason: string) {
+    const body = planChange({ shipments, vehicles, drivers }, next, reason)
+    if (!body) return
+    // What the server stored, not what was sent: the next plan is compared against it.
+    const stored = new Map((rosterOnline ? await saved(() => shipmentsApi.savePlan(authToken!, body)) : []).map(s => [s.id, s]))
+    setShipments(next.shipments.map(s => stored.get(s.id) ?? s)); setVehicles(next.vehicles); setDrivers(next.drivers)
+  }
+  const patchShipment = (s: Shipment) => setShipments(prev => prev.some(x => x.id === s.id) ? prev.map(x => x.id === s.id ? s : x) : [...prev, s])
+  const shipmentActions: ShipmentActions = {
+    online: rosterOnline,
+    canDelete: !rosterOnline || activeRole === 'ADMIN' || activeRole === 'FLEET_MANAGER',
+    async save(s, id) {
+      const result = !rosterOnline ? { ...(id ? shipments.find(x => x.id === id) : {}), ...s, id: id ?? Date.now() }
+        : await saved(() => id ? shipmentsApi.update(authToken!, id, s) : shipmentsApi.create(authToken!, s))
+      patchShipment(result)
+      return result
+    },
+    async advance(s) {
+      const next = ({ UNASSIGNED: 'CLUSTERED', ASSIGNED: 'IN_TRANSIT', IN_TRANSIT: 'ARRIVED' } as Partial<Record<ShipmentStatus, ShipmentStatus>>)[s.status]
+      if (!next) return
+      if (rosterOnline) await saved(async () => {
+        if (s.status === 'UNASSIGNED') await shipmentsApi.setStatus(authToken!, s.id, next)
+        else if (s.status === 'ASSIGNED') await departShipment(s.id, undefined, undefined, authToken)
+        else await arriveAtStop(s.id, undefined, undefined, undefined, authToken)
+      })
+      patchShipment({ ...s, status: next })
+    },
+    async remove(id) {
+      if (rosterOnline) await saved(() => shipmentsApi.remove(authToken!, id))
+      setShipments(prev => prev.filter(x => x.id !== id))
+    },
+    async addMany(list) {
+      const r = rosterOnline ? await saved(() => shipmentsApi.createMany(authToken!, list)) : { created: list, errors: [] }
+      setShipments(prev => { const have = new Set(prev.map(x => x.id)); return [...prev, ...r.created.filter(x => !have.has(x.id))] })
+      return r
+    },
+    deliveryCode: (id, reissue) => shipmentsApi.deliveryCode(authToken!, id, reissue),
+    async receipt(s) {
+      const proof = await deliveryProof(s.id, authToken)
+      const vehicle = vehicles.find(v => v.id === s.assigned_vehicle_id)
+      await downloadFile('/routes/receipt.pdf', authToken, { tracking_number: s.tracking_number, customer_name: s.customer_name, address: s.destination_address,
+        delivered_at: proofTime(proof), recipient: proof.recipient_name, verified_by: proofMethod(proof), weight_kg: s.weight_kg,
+        vehicle: vehicle?.plate_number ?? '-', driver: proof.captured_by_name, hub: hubs.find(h => h.id === s.hub_id)?.name ?? '-' }, `receipt-${s.tracking_number}.pdf`)
+    },
   }
 
   // Live Backend Probing
@@ -1540,22 +1670,41 @@ function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => 
     setAudit(prev => [{ ...entry, id: prev.reduce((m, e) => Math.max(m, e.id), 0) + 1, timestamp: ts }, ...prev])
   }
 
+  // Dispatching a driver to a vehicle frees anyone else who is merely parked on it.
+  const crew = (driverId: number, vehicleId: number) => (d: Driver): Driver =>
+    d.id === driverId ? { ...d, status: 'ON_TRIP', current_vehicle_id: vehicleId } : d.current_vehicle_id === vehicleId && d.status !== 'ON_TRIP' ? { ...d, current_vehicle_id: null } : d
+  async function tryPlan(next: PlanState, reason: string): Promise<string | null> {
+    try { await commitPlan(next, reason); return null } catch (e) { return saveError(e) }
+  }
   // Dispatch Planner approval: lock the plan onto the shipment, vehicle and driver (Live Tracking picks it up).
-  function dispatch(d: DispatchDecision) {
-    setShipments(prev => prev.map(s => s.id === d.shipmentId ? { ...s, status: 'ASSIGNED', assigned_vehicle_id: d.vehicleId, dispatch_time: d.departure } : s))
-    setVehicles(prev => prev.map(v => v.id === d.vehicleId ? { ...v, current_status: 'IN_TRANSIT' } : v))
-    setDrivers(prev => prev.map(dr => dr.id === d.driverId ? { ...dr, status: 'ON_TRIP', current_vehicle_id: d.vehicleId } : dr))
+  function dispatch(d: DispatchDecision): Promise<string | null> {
+    return tryPlan({
+      shipments: shipments.map(s => s.id === d.shipmentId ? { ...s, status: 'ASSIGNED', assigned_vehicle_id: d.vehicleId, dispatch_time: d.departure, route_sequence: null } : s),
+      vehicles: vehicles.map(v => v.id === d.vehicleId ? { ...v, current_status: 'IN_TRANSIT' } : v),
+      drivers: drivers.map(crew(d.driverId, d.vehicleId)),
+    }, `Dispatched from the Dispatch Planner, leaving ${d.departure}`)
   }
 
   // Route Planner approval: every stop gets its vehicle, departure and position in the approved sequence.
-  function dispatchRoutes(routes: RouteDispatch[]) {
+  function dispatchRoutes(routes: RouteDispatch[]): Promise<string | null> {
     const seq = new Map(routes.flatMap(r => r.shipmentIds.map((id, i) => [id, { r, i }] as const)))
-    setShipments(prev => prev.map(s => {
-      const hit = seq.get(s.id)
-      return hit ? { ...s, status: 'ASSIGNED', assigned_vehicle_id: hit.r.vehicleId, dispatch_time: hit.r.departure, route_sequence: hit.i } : s
-    }))
-    setVehicles(prev => prev.map(v => routes.some(r => r.vehicleId === v.id) ? { ...v, current_status: 'IN_TRANSIT' } : v))
-    setDrivers(prev => prev.map(d => { const r = routes.find(x => x.driverId === d.id); return r ? { ...d, status: 'ON_TRIP', current_vehicle_id: r.vehicleId } : d }))
+    return tryPlan({
+      shipments: shipments.map(s => {
+        const hit = seq.get(s.id)
+        return hit ? { ...s, status: 'ASSIGNED', assigned_vehicle_id: hit.r.vehicleId, dispatch_time: hit.r.departure, route_sequence: hit.i } : s
+      }),
+      vehicles: vehicles.map(v => routes.some(r => r.vehicleId === v.id) ? { ...v, current_status: 'IN_TRANSIT' } : v),
+      drivers: routes.reduce((list, r) => list.map(crew(r.driverId, r.vehicleId)), drivers),
+    }, `Dispatched ${routes.length} route${routes.length === 1 ? '' : 's'} from the Route Planner`)
+  }
+
+  // An accepted copilot proposal or Live Tracking recovery. Throws when it could not be saved.
+  async function applyProposal(p: Parameters<typeof applyAcceptedProposal>[0], now: string, reason: string): Promise<string | undefined> {
+    const next = applyAcceptedProposal(p, shipments, vehicles, drivers, now)
+    await commitPlan(next, reason)
+    const held = next.heldBack.map(h => `${h.plate} (${h.stops} stops back to planning: no free driver)`).join('; ')
+    addAudit({ actor_name: currentUser.name, action_type: 'COPILOT_OVERRIDE', entity_type: 'ROUTE', entity_id: 0, details: `${reason}${held ? ` Held back: ${held}.` : ''}` })
+    return held ? `Not dispatched: ${held}.` : undefined
   }
 
   function triggerWorkflow(s: Shipment) {
@@ -1711,6 +1860,12 @@ function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => 
                     <p className="mt-1 text-[11px] text-slate-400">{isDemo ? 'Switch profiles from the bar above.' : `Signed in as ${activeRole.replace('_', ' ').toLowerCase()}. You see the sections this role is assigned.`}</p>
                   </div>
                   <div className="my-1 h-px bg-slate-100" />
+                  {!isDemo && (
+                    <button role="menuitem" onClick={() => { setAccountOpen(false); setChangingPassword(true) }}
+                      className="w-full rounded-lg px-2.5 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
+                      Change password
+                    </button>
+                  )}
                   <button role="menuitem" onClick={() => { setAccountOpen(false); onSignOut() }}
                     className="w-full rounded-lg px-2.5 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
                     {isDemo ? 'Exit demo mode' : 'Sign out'}
@@ -1721,17 +1876,22 @@ function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => 
           </div>
         </header>
 
+        {roster.source === 'local' && seesPlan && (
+          <p role="status" className="flex-shrink-0 bg-amber-50 px-4 py-2 text-xs text-amber-900 border-b border-amber-200">
+            <b>Not connected.</b> This is the built-in sample plan; changes stay in this browser and are not saved. Reconnecting automatically.
+          </p>
+        )}
         {/* Main content */}
         <main className="isolate flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50/30">
           <ErrorBoundary resetKey={`${section}|${activeRole}`}>
           <Suspense fallback={<SectionLoading />}>
           {section === 'dashboard' && <CopilotCommandCenter vehicles={vehicles} drivers={drivers} shipments={shipments} hubs={hubs} audit={audit} setSection={setSection} activeRole={activeRole} authToken={authToken} />}
-          {section === 'shipments' && <ShipmentsSection shipments={shipments} setShipments={setShipments} hubs={hubs} addAudit={addAudit} onTriggerWorkflow={triggerWorkflow} activeRole={activeRole} />}
+          {section === 'shipments' && <ShipmentsSection shipments={shipments} setShipments={setShipments} hubs={hubs} addAudit={addAudit} onTriggerWorkflow={triggerWorkflow} activeRole={activeRole} actions={shipmentActions} />}
           {section === 'workflow' && <DispatchPlanner shipments={shipments} hubs={hubs} vehicles={vehicles} drivers={drivers} users={users} initialShipmentId={workflowShipment?.id ?? null} onDispatch={dispatch} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
           {section === 'fleet' && <FleetSection fleet={fleetActions} vehicles={vehicles} setVehicles={setVehicles} drivers={drivers} setDrivers={setDrivers} hubs={hubs} setHubs={setHubs} users={users} onManageUsers={activeRole === 'ADMIN' ? () => setSection('users') : undefined} addAudit={addAudit} />}
           {section === 'map' && <NetworkMapSection hubs={hubs} shipments={shipments} />}
           {section === 'routes' && <RoutePlannerSection authToken={authToken} hubs={hubs} vehicles={vehicles} drivers={drivers} users={users} shipments={shipments}
-            onAddShipments={list => setShipments(prev => [...prev, ...list])} onDispatchRoutes={dispatchRoutes} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
+            onAddShipments={async list => { try { const r = await shipmentActions.addMany(list); return r.errors[0] ?? null } catch (e) { return saveError(e) } }} onDispatchRoutes={dispatchRoutes} addAudit={addAudit} onOpenTracking={() => setSection('tracking')} />}
           {section === 'reports' && <ReportsSection authToken={authToken} />}
           {section === 'executive' && <ExecutiveDashboard authToken={authToken} shipments={shipments} vehicles={vehicles} />}
           {/* Kept mounted so the simulation clock and reported events survive page switches */}
@@ -1753,7 +1913,9 @@ function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => 
                 />
               </div>
             ) : (
-              <LiveTrackingSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments} activeRole={activeRole} driverId={1} active={section === 'tracking'} addAudit={addAudit} onOpenPlanner={() => setSection('workflow')} authToken={authToken} setShipments={setShipments} />
+              <LiveTrackingSection hubs={hubs} vehicles={vehicles} drivers={drivers} shipments={shipments} activeRole={activeRole} driverId={1} active={section === 'tracking'} addAudit={addAudit} onOpenPlanner={() => setSection('workflow')} authToken={authToken} setShipments={setShipments}
+                online={rosterOnline} onSaved={() => { saves.current++; refresh().catch(() => { /* next refresh */ }) }}
+                onApplyRecovery={(p, now) => applyProposal(p, now, `Approved agent recovery (${p.tool_call.name}): ${p.summary}`)} />
             )}
           </div>
           {section === 'compliance' && <ComplianceInspector />}
@@ -1763,6 +1925,10 @@ function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => 
           </ErrorBoundary>
         </main>
       </div>
+
+      {changingPassword && session.mode === 'user' && (
+        <ChangePassword session={session} onDone={s => { setChangingPassword(false); onSession(s) }} onCancel={() => setChangingPassword(false)} />
+      )}
 
       {/* Global AI Copilot Sliding Drawer (Week 10 Track B) */}
       {/* Copilot drawer (opened from the header): hidden on AI Command (already the full copilot) and for drivers (copilot API is dispatcher-only) */}
@@ -1774,13 +1940,7 @@ function Workspace({ session, onSignOut }: { session: Session; onSignOut: () => 
           activeRole={activeRole}
           showTrigger={false}
           fleet={{ shipments, vehicles, drivers, hubs }}
-          onApplyProposal={(card, now) => {
-            const next = applyAcceptedProposal(card, shipments, vehicles, drivers, now)
-            setShipments(next.shipments); setVehicles(next.vehicles); setDrivers(next.drivers)
-            const held = next.heldBack.map(h => `${h.plate} (${h.stops} stops back to planning: no free driver)`).join('; ')
-            addAudit({ actor_name: currentUser.name, action_type: 'COPILOT_OVERRIDE', entity_type: 'ROUTE', entity_id: 0, details: `Accepted copilot proposal ${card.card_id} (${card.tool_call.name}): ${card.summary}${held ? ` Held back: ${held}.` : ''}` })
-            return held ? `Not dispatched: ${held}.` : undefined
-          }}
+          onApplyProposal={(card, now) => applyProposal(card, now, `Accepted copilot proposal ${card.card_id} (${card.tool_call.name}): ${card.summary}`)}
         />
       )}
     </div>

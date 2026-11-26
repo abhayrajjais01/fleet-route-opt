@@ -6,6 +6,7 @@ Endpoints (ADMIN only):
 - POST  /users                     create an account; a DRIVER account is created together with its driver profile
                                    (or linked to an existing profile) in one transaction
 - PATCH /users/{id}                rename, change role, activate / deactivate
+- POST  /users/{id}/reset-password issue a temporary password (shown once; ends the account's sessions)
 - PUT   /users/{id}/driver         link or unlink a driver profile
 - GET   /users/unlinked-drivers    driver profiles that have no login yet (people who cannot use the driver app)
 
@@ -14,6 +15,7 @@ and the last active admin can never be removed. Accounts are deactivated, never 
 keeps every actor. Every change is written to the audit log.
 """
 
+import secrets
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -25,7 +27,7 @@ from app.models.audit import AuditAction
 from app.models.fleet import Driver, Hub
 from app.models.user import User, UserRole
 from app.schemas.fleet import DriverResponse
-from app.schemas.users import DriverLinkRequest, LinkedDriver, ManagedUserCreate, ManagedUserResponse, ManagedUserUpdate
+from app.schemas.users import DriverLinkRequest, LinkedDriver, ManagedUserCreate, ManagedUserResponse, ManagedUserUpdate, TemporaryPassword
 from app.services.audit_service import record_audit_event
 
 router = APIRouter(tags=["User Management"])
@@ -40,7 +42,7 @@ def _response(db: Session, user: User) -> ManagedUserResponse:
     d = _profile(db, user)
     linked = LinkedDriver(id=d.id, full_name=d.full_name, assigned_hub_id=d.assigned_hub_id, status=d.status) if d else None
     return ManagedUserResponse.model_validate(user).model_copy(
-        update={"driver": linked, "profile_missing": user.role == UserRole.DRIVER and d is None})
+        update={"driver": linked, "reset_requested": user.reset_requested_at is not None, "profile_missing": user.role == UserRole.DRIVER and d is None})
 
 
 def _get_user(db: Session, user_id: int) -> User:
@@ -84,7 +86,7 @@ def create_user(body: ManagedUserCreate, db: Session = Depends(get_db), admin: U
     existing = _free_profile(db, body.driver_id) if body.driver_id is not None else None
 
     user = User(email=body.email, full_name=body.full_name, role=body.role, is_active=body.is_active,
-                hashed_password=hash_password(body.password))
+                hashed_password=hash_password(body.password), must_change_password=True)
     db.add(user)
     db.flush()
     if body.driver:
@@ -125,6 +127,22 @@ def update_user(user_id: int, body: ManagedUserUpdate, db: Session = Depends(get
     db.commit()
     db.refresh(user)
     return _response(db, user)
+
+
+@router.post("/{user_id}/reset-password", response_model=TemporaryPassword, summary="Issue a temporary password")
+def reset_password(user_id: int, db: Session = Depends(get_db), admin: User = Depends(admin_only)):
+    user = _get_user(db, user_id)
+    if user.id == admin.id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Use Change password for your own account")
+    temporary = secrets.token_urlsafe(9)
+    user.hashed_password = hash_password(temporary)
+    user.must_change_password = True
+    user.reset_requested_at = None
+    user.token_version = (user.token_version or 0) + 1
+    record_audit_event(db, admin, AuditAction.ASSET_UPDATED, "User", user.id, f"Reset the password of {user.email}",
+                       {"password": "previous"}, {"password": "temporary, must be changed"})
+    db.commit()
+    return TemporaryPassword(temporary_password=temporary)
 
 
 @router.put("/{user_id}/driver", response_model=ManagedUserResponse, summary="Link or unlink a driver profile")

@@ -12,9 +12,11 @@ Implements:
 3. LangGraph node integration: Intent -> Policy Check -> Citation Synthesis -> Action Proposal.
 """
 
+from itertools import combinations
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
+from app.services.optimizer.hazmat import normalise, segregation_conflict
 from app.models.fleet import Driver, DriverStatus, LicenseType, Vehicle, VehicleStatus, VehicleType
 from app.models.shipment import Shipment, ShipmentPriority, ShipmentStatus
 from app.schemas.copilot import (
@@ -48,7 +50,7 @@ SOP_RULES = {
         section_number="§5",
         clause_heading="Segregation and Co-Loading of Incompatible Classes",
         standard_reference="UN Model Regulations on the Transport of Dangerous Goods",
-        clause_summary="Flammable liquids (Class 3) and corrosives (Class 8) must never be loaded into the same compartment without chemical segregation barriers.",
+        clause_summary="Incompatible hazard classes must never share a vehicle: Class 1 with any other class; Class 5.1 with Class 3 or 4.1; Class 8 with Class 6.1.",
     ),
     "COLD_CHAIN_WINDOW": SOPRuleCitation(
         sop_doc_id="SOP-CC-001",
@@ -69,16 +71,8 @@ SOP_RULES = {
 }
 
 
-# Hazard-class pairs that SOP-HZ-001 §5 forbids in the same load (main UN class, order-free).
-INCOMPATIBLE_HAZARD_CLASSES = {frozenset({"3", "8"})}
-
-
 class UnresolvedManifestError(ValueError):
     """Raised when the manifest references vehicles, drivers or shipments that do not exist."""
-
-
-def _main_hazard_class(hazard_class: str) -> str:
-    return hazard_class.strip().split(".")[0]
 
 
 class PolicyComplianceAgent:
@@ -258,33 +252,35 @@ class PolicyComplianceAgent:
                 )
                 recommendations.append("Assign a Hazmat-endorsed driver to this manifest.")
 
-            # Co-loading: incompatible classes may not share the vehicle (SOP-HZ-001 §5)
+            # Co-loading: incompatible classes may not share the vehicle. The rules are the route planner's own
+            # (optimizer/hazmat.py, SOP-HZ-001 §5), so planning and compliance can never disagree.
             by_class: Dict[str, List[Shipment]] = {}
             for s in hazmat_shipments:
-                by_class.setdefault(_main_hazard_class(s.hazard_class), []).append(s)
-            for pair in INCOMPATIBLE_HAZARD_CLASSES:
-                a, b = sorted(pair)
-                if a in by_class and b in by_class:
-                    rule_seg = SOP_RULES["HAZMAT_SEGREGATION"]
-                    if rule_seg not in cited_rules:
-                        cited_rules.append(rule_seg)
-                    violations.append(
-                        PolicyViolation(
-                            rule_code="HAZMAT_INCOMPATIBLE_COLOAD",
-                            sop_doc_id=rule_seg.sop_doc_id,
-                            sop_section=rule_seg.section_number,
-                            sop_heading=rule_seg.clause_heading,
-                            severity=ViolationSeverity.CRITICAL,
-                            description=(
-                                f"Class {a} consignment(s) ({', '.join(x.tracking_number for x in by_class[a])}) are loaded with "
-                                f"Class {b} consignment(s) ({', '.join(x.tracking_number for x in by_class[b])}), which must not share a load."
-                            ),
-                            remediation=f"Move the Class {a} or Class {b} consignments to a separate vehicle.",
-                            impacted_entity_type="Shipment",
-                            impacted_entity_id=by_class[b][0].id,
-                        )
+                by_class.setdefault(normalise(s.hazard_class), []).append(s)
+            for a, b in combinations(sorted(by_class), 2):
+                conflict = segregation_conflict([a, b])
+                if not conflict:
+                    continue
+                rule_seg = SOP_RULES["HAZMAT_SEGREGATION"]
+                if rule_seg not in cited_rules:
+                    cited_rules.append(rule_seg)
+                violations.append(
+                    PolicyViolation(
+                        rule_code="HAZMAT_INCOMPATIBLE_COLOAD",
+                        sop_doc_id=rule_seg.sop_doc_id,
+                        sop_section=rule_seg.section_number,
+                        sop_heading=rule_seg.clause_heading,
+                        severity=ViolationSeverity.CRITICAL,
+                        description=(
+                            f"{conflict}: Class {a} consignment(s) ({', '.join(x.tracking_number for x in by_class[a])}) are loaded "
+                            f"with Class {b} consignment(s) ({', '.join(x.tracking_number for x in by_class[b])})."
+                        ),
+                        remediation=f"Move the Class {a} or Class {b} consignments to a separate vehicle.",
+                        impacted_entity_type="Shipment",
+                        impacted_entity_id=by_class[b][0].id,
                     )
-                    recommendations.append(f"Split Class {a} and Class {b} dangerous goods onto separate vehicles.")
+                )
+                recommendations.append(f"Split Class {a} and Class {b} dangerous goods onto separate vehicles.")
 
         # ----------------------------------------------------
         # 4. Cold Chain & Holdover Window Verification

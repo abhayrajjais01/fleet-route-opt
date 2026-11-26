@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import type { Driver, Hub, Shipment, Vehicle } from '../../lib/types'
-import { arriveAtStop, deliverShipment, failDelivery, reportDelay as apiReportDelay } from '../../lib/transitApi'
-import { API_V1 } from '../../lib/api'
+import { arriveAtStop, deliverShipment, departShipment, failDelivery, reportDelay as apiReportDelay } from '../../lib/transitApi'
+import { API_V1, ApiError } from '../../lib/api'
+import ProofFields, { emptyProof, proofOf, type ProofDraft } from '../delivery/ProofOfDelivery'
 import DriverRouteMap, { type DriverMapStop } from './DriverRouteMap'
 
 interface MobileDriverCockpitProps {
@@ -18,9 +19,11 @@ interface MobileDriverCockpitProps {
   onClose?: () => void
 }
 
+type OfflineAction = 'DEPART' | 'ARRIVE' | 'DELIVER' | 'FAIL' | 'DELAY'
+
 interface QueuedAction {
   id: string
-  actionType: 'ARRIVE' | 'DELIVER' | 'FAIL' | 'DELAY'
+  actionType: OfflineAction
   shipmentId: number
   payload: any
   timestamp: string
@@ -74,6 +77,8 @@ export default function MobileDriverCockpit({
 }: MobileDriverCockpitProps) {
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine)
   const [offlineQueue, setOfflineQueue] = useState<QueuedAction[]>(() => readQueue(accountKey))
+  const queueRef = React.useRef(offlineQueue)
+  queueRef.current = offlineQueue
   const [activeTab, setActiveTab] = useState<'manifest' | 'cockpit' | 'queue'>('cockpit')
   const [actionLoading, setActionLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -81,6 +86,7 @@ export default function MobileDriverCockpit({
   // The signed-in driver's manifest from the server (cached for offline use); null in local demo mode
   const [manifest, setManifest] = useState<ServerManifest | null>(() => readStored<ServerManifest>(manifestKey(accountKey)))
   const [manifestState, setManifestState] = useState<'loading' | 'ready' | 'unlinked' | 'unavailable'>('loading')
+  const [reload, setReload] = useState(0)
   // Status changes made on this device, applied on top of the server manifest
   const [localStatus, setLocalStatus] = useState<Record<number, Shipment['status']>>({})
 
@@ -102,12 +108,13 @@ export default function MobileDriverCockpit({
         if (cancelled) return
         setManifest(data)
         setManifestState('ready')
-        setLocalStatus({})
+        // Keep what is still waiting in the queue; everything else is now the server's word.
+        setLocalStatus(prev => Object.fromEntries(Object.entries(prev).filter(([id]) => queueRef.current.some(a => !a.lastError && a.shipmentId === Number(id)))))
         try { localStorage.setItem(manifestKey(accountKey), JSON.stringify(data)) } catch { /* storage unavailable */ }
       })
       .catch(() => { if (!cancelled) setManifestState('unavailable') /* offline: keep the cached manifest */ })
     return () => { cancelled = true }
-  }, [authToken, accountKey])
+  }, [authToken, accountKey, reload])
 
   function updateStatus(id: number, status: Shipment['status']) {
     setLocalStatus(prev => ({ ...prev, [id]: status }))
@@ -141,8 +148,7 @@ export default function MobileDriverCockpit({
 
   // Delivery Modal
   const [deliverModalStop, setDeliverModalStop] = useState<Shipment | null>(null)
-  const [recipientName, setRecipientName] = useState('')
-  const [signatureOtp, setSignatureOtp] = useState('')
+  const [proof, setProof] = useState<ProofDraft>(emptyProof)
 
   // Fail Modal
   const [failModalStop, setFailModalStop] = useState<Shipment | null>(null)
@@ -246,6 +252,13 @@ export default function MobileDriverCockpit({
           if (r?.success) return []
           return [{ ...a, lastError: r?.error ?? 'Not processed by server' }]
         }))
+        // A refused action didn't happen: show the server's status for that stop again, and re-read the manifest.
+        setLocalStatus(prev => {
+          const next = { ...prev }
+          for (const r of data.results) if (!r.success) delete next[sent.find(a => a.id === r.action_id)?.shipmentId ?? -1]
+          return next
+        })
+        setReload(n => n + 1)
         if (data.failed_count > 0) {
           const firstError = data.results.find(r => !r.success)?.error
           setActionMessage({
@@ -263,55 +276,57 @@ export default function MobileDriverCockpit({
     }
   }
 
+  /**
+   * Sends one action. 'sent': the server applied it. 'queue': it never reached the server (no signal, or the server is
+   * down), so it waits on this phone. 'refused': the server said no; nothing happened, and the driver sees why.
+   */
+  async function send(call: () => Promise<unknown>): Promise<'sent' | 'queue' | 'refused'> {
+    if (!isOnline || !authToken) return 'queue'
+    try {
+      await call()
+      return 'sent'
+    } catch (err) {
+      if (err instanceof ApiError && err.status < 500) {
+        setActionMessage({ type: 'error', text: err.message })
+        return 'refused'
+      }
+      return 'queue'
+    }
+  }
+  /** A stop still at the depot departs first; there is no shortcut from ASSIGNED. */
+  const departFirst = async (s: Shipment) => { if (s.status === 'ASSIGNED') await departShipment(s.id, undefined, 'On the road', authToken) }
+  const queueDepartFirst = (s: Shipment) => { if (s.status === 'ASSIGNED') queueOfflineAction('DEPART', s.id, {}) }
+
   // Handle Arrive
   async function handleArrive(s: Shipment) {
     setActionLoading(true)
     setActionMessage(null)
     const lat = s.latitude || 19.0760
     const lng = s.longitude || 72.8777
-
-    if (isOnline && authToken) {
-      try {
-        await arriveAtStop(s.id, lat, lng, 'Driver checked in on mobile', authToken)
-        updateStatus(s.id, 'ARRIVED')
-        setActionMessage({ type: 'success', text: `Checked in at ${s.customer_name}!` })
-      } catch (err: any) {
-        queueOfflineAction('ARRIVE', s.id, { latitude: lat, longitude: lng, notes: 'Queued arrive' })
-        updateStatus(s.id, 'ARRIVED')
-      }
-    } else {
-      queueOfflineAction('ARRIVE', s.id, { latitude: lat, longitude: lng, notes: 'Queued arrive' })
+    const outcome = await send(async () => { await departFirst(s); await arriveAtStop(s.id, lat, lng, 'Driver checked in on mobile', authToken) })
+    if (outcome !== 'refused') {
+      if (outcome === 'queue') { queueDepartFirst(s); queueOfflineAction('ARRIVE', s.id, { latitude: lat, longitude: lng, notes: 'Queued arrive' }) }
+      else setActionMessage({ type: 'success', text: `Checked in at ${s.customer_name}!` })
       updateStatus(s.id, 'ARRIVED')
     }
     setActionLoading(false)
   }
 
-  // Handle Confirm Delivery
+  // Handle Confirm Delivery: only with real proof (the customer's code or a drawn signature)
   async function handleConfirmDelivery() {
-    if (!deliverModalStop) return
+    const ready = proofOf(proof)
+    if (!deliverModalStop || !ready) return
     const s = deliverModalStop
     setActionLoading(true)
-    const recipient = recipientName.trim() || s.customer_name
-    const sig = signatureOtp.trim() || 'OTP-VERIFIED'
-
-    if (isOnline && authToken) {
-      try {
-        await deliverShipment(s.id, recipient, sig, 'Handed over on mobile cockpit', authToken)
-        updateStatus(s.id, 'DELIVERED')
-        setActionMessage({ type: 'success', text: `Delivered to ${recipient}!` })
-      } catch (err: any) {
-        queueOfflineAction('DELIVER', s.id, { recipient_name: recipient, signature_text: sig })
-        updateStatus(s.id, 'DELIVERED')
-      }
-    } else {
-      queueOfflineAction('DELIVER', s.id, { recipient_name: recipient, signature_text: sig })
-      updateStatus(s.id, 'DELIVERED')
-    }
-
-    setDeliverModalStop(null)
-    setRecipientName('')
-    setSignatureOtp('')
+    setActionMessage(null)
+    const outcome = await send(() => deliverShipment(s.id, ready.recipient, ready.proof, 'Handed over on mobile cockpit', authToken))
     setActionLoading(false)
+    if (outcome === 'refused') return          // keep the form open so the driver can fix it
+    if (outcome === 'queue') queueOfflineAction('DELIVER', s.id, { recipient_name: ready.recipient, ...ready.proof })
+    else setActionMessage({ type: 'success', text: `Delivered to ${ready.recipient}!` })
+    updateStatus(s.id, 'DELIVERED')
+    setDeliverModalStop(null)
+    setProof(emptyProof())
   }
 
   // Handle Confirm Failure
@@ -320,19 +335,12 @@ export default function MobileDriverCockpit({
     const s = failModalStop
     setActionLoading(true)
 
-    if (isOnline && authToken) {
-      try {
-        await failDelivery(s.id, failReason as any, failNotes || 'Mobile reported issue', authToken)
-        updateStatus(s.id, 'FAILED')
-        setActionMessage({ type: 'error', text: `Marked stop failed: ${failReason}` })
-      } catch (err: any) {
-        queueOfflineAction('FAIL', s.id, { reason_code: failReason, notes: failNotes })
-        updateStatus(s.id, 'FAILED')
-      }
-    } else {
-      queueOfflineAction('FAIL', s.id, { reason_code: failReason, notes: failNotes })
-      updateStatus(s.id, 'FAILED')
-    }
+    const notes = failNotes.trim().length >= 3 ? failNotes : 'Reported from the driver app'
+    const outcome = await send(async () => { await departFirst(s); await failDelivery(s.id, failReason as any, notes, authToken) })
+    if (outcome === 'refused') { setActionLoading(false); return }
+    if (outcome === 'queue') { queueDepartFirst(s); queueOfflineAction('FAIL', s.id, { reason_code: failReason, notes }) }
+    else setActionMessage({ type: 'error', text: `Marked stop failed: ${failReason}` })
+    updateStatus(s.id, 'FAILED')
 
     setFailModalStop(null)
     setFailNotes('')
@@ -342,20 +350,14 @@ export default function MobileDriverCockpit({
   // Handle Delay
   async function handleReportDelay(s: Shipment, minutes: number, reason: string) {
     setActionLoading(true)
-    if (isOnline && authToken) {
-      try {
-        await apiReportDelay(s.id, minutes, reason, authToken)
-        setActionMessage({ type: 'success', text: `+${minutes} min delay reported (${reason})` })
-      } catch (err: any) {
-        queueOfflineAction('DELAY', s.id, { delay_minutes: minutes, reason })
-      }
-    } else {
-      queueOfflineAction('DELAY', s.id, { delay_minutes: minutes, reason })
-    }
+    const outcome = await send(async () => { await departFirst(s); await apiReportDelay(s.id, minutes, reason, authToken) })
+    if (outcome === 'queue') { queueDepartFirst(s); queueOfflineAction('DELAY', s.id, { delay_minutes: minutes, reason }) }
+    else if (outcome === 'sent') setActionMessage({ type: 'success', text: `+${minutes} min delay reported (${reason})` })
+    if (outcome !== 'refused' && s.status === 'ASSIGNED') updateStatus(s.id, 'IN_TRANSIT')
     setActionLoading(false)
   }
 
-  function queueOfflineAction(actionType: 'ARRIVE' | 'DELIVER' | 'FAIL' | 'DELAY', shipmentId: number, payload: any) {
+  function queueOfflineAction(actionType: OfflineAction, shipmentId: number, payload: any) {
     const item: QueuedAction = {
       id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       actionType,
@@ -524,7 +526,7 @@ export default function MobileDriverCockpit({
                 </button>
               ) : (
                 <button
-                  onClick={() => setDeliverModalStop(shown)}
+                  onClick={() => { setProof(emptyProof()); setActionMessage(null); setDeliverModalStop(shown) }}
                   disabled={actionLoading}
                   className="col-span-2 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-900/30 active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
                 >
@@ -639,33 +641,14 @@ export default function MobileDriverCockpit({
 
       {/* ── Handover Delivery Modal ── */}
       {deliverModalStop && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+        <div className="fixed inset-0 z-[1000] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
           <div className="w-full max-w-sm rounded-2xl bg-slate-800 border border-slate-700 p-5 shadow-2xl">
             <h3 className="text-base font-bold text-white">Confirm Consignee Handover</h3>
             <p className="text-xs text-slate-400 mt-0.5">{deliverModalStop.customer_name} · {deliverModalStop.tracking_number}</p>
 
-            <div className="mt-4 space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Recipient Name</label>
-                <input
-                  type="text"
-                  value={recipientName}
-                  onChange={e => setRecipientName(e.target.value)}
-                  placeholder={deliverModalStop.customer_name}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Delivery OTP / Signature Token</label>
-                <input
-                  type="text"
-                  value={signatureOtp}
-                  onChange={e => setSignatureOtp(e.target.value)}
-                  placeholder="e.g. OTP-4829 or Signed by security"
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs focus:outline-none focus:border-emerald-500"
-                />
-              </div>
+            <div className="mt-4">
+              <ProofFields draft={proof} onChange={setProof} dark offline={!isOnline} />
+              {actionMessage?.type === 'error' && <p role="alert" className="mt-3 rounded-lg bg-rose-500/15 px-3 py-2 text-xs text-rose-300">{actionMessage.text}</p>}
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-2">
@@ -677,8 +660,8 @@ export default function MobileDriverCockpit({
               </button>
               <button
                 onClick={handleConfirmDelivery}
-                disabled={actionLoading}
-                className="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
+                disabled={actionLoading || !proofOf(proof)}
+                className="py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold disabled:opacity-40"
               >
                 Confirm Delivered
               </button>
@@ -689,7 +672,7 @@ export default function MobileDriverCockpit({
 
       {/* ── Failure Reporting Modal ── */}
       {failModalStop && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+        <div className="fixed inset-0 z-[1000] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
           <div className="w-full max-w-sm rounded-2xl bg-slate-800 border border-slate-700 p-5 shadow-2xl">
             <h3 className="text-base font-bold text-white">Report Delivery Issue</h3>
             <p className="text-xs text-slate-400 mt-0.5">{failModalStop.customer_name}</p>

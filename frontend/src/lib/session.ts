@@ -9,7 +9,7 @@
 import { API_V1, setSignedInToken } from './api'
 import type { UserRole } from './types'
 
-export interface SessionUser { id: number; email: string; full_name: string; role: UserRole }
+export interface SessionUser { id: number; email: string; full_name: string; role: UserRole; must_change_password?: boolean }
 export type Session =
   | { mode: 'user'; token: string; user: SessionUser }
   | { mode: 'demo'; startRole: UserRole }
@@ -46,6 +46,8 @@ export function activate(s: Session | null): Session | null {
 
 export class SignInError extends Error {}
 
+const toUser = (u: SessionUser): SessionUser => ({ id: u.id, email: u.email, full_name: u.full_name, role: u.role, must_change_password: !!u.must_change_password })
+
 async function me(token: string): Promise<SessionUser> {
   const res = await fetch(`${API_V1}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
   if (res.status === 401) throw new SignInError('Your session has expired. Please sign in again.')
@@ -53,7 +55,7 @@ async function me(token: string): Promise<SessionUser> {
   // Anything else (5xx, rate limit, a proxy error) says nothing about the token.
   if (!res.ok) throw new Error(`Profile check failed (${res.status})`)
   const u = await res.json()
-  return { id: u.id, email: u.email, full_name: u.full_name, role: u.role }
+  return toUser(u)
 }
 
 /** Email + password sign-in. Throws SignInError with a message fit to show under the form. */
@@ -78,9 +80,38 @@ export async function signIn(email: string, password: string): Promise<Session> 
   }
   const data = await res.json()
   const user: SessionUser = data.user
-    ? { id: data.user.id, email: data.user.email, full_name: data.user.full_name, role: data.user.role }
+    ? toUser(data.user)
     : await me(data.access_token)
   return { mode: 'user', token: data.access_token, user }
+}
+
+async function post(path: string, body: unknown, token?: string): Promise<Response> {
+  try {
+    return await fetch(`${API_V1}${path}`, { method: 'POST', body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) } })
+  } catch {
+    throw new SignInError("Can't reach the server. Check your connection, then try again.")
+  }
+}
+
+/** Changes the signed-in user's password. The server ends every other session and gives this one a new token. */
+export async function changePassword(s: Extract<Session, { mode: 'user' }>, current: string, next: string): Promise<Session> {
+  const res = await post('/auth/change-password', { current_password: current, new_password: next }, s.token)
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => null))?.detail
+    if (res.status === 401) throw new SignInError('Your session has ended. Sign in again.')
+    throw new SignInError(typeof detail === 'string' ? detail : 'The password was not changed. Please check it and try again.')
+  }
+  const data = await res.json()
+  return { mode: 'user', token: data.access_token, user: toUser(data.user) }
+}
+
+/** Asks an administrator to reset the password. The answer never says whether the account exists. */
+export async function requestReset(email: string): Promise<string> {
+  const res = await post('/auth/forgot-password', { email: email.trim() })
+  const data = await res.json().catch(() => null)
+  if (res.ok) return data?.message ?? 'Your administrator has been asked to reset the password.'
+  throw new SignInError(res.status === 422 ? 'Enter a valid email address.' : typeof data?.detail === 'string' ? data.detail : 'Please try again in a minute.')
 }
 
 export function startDemo(startRole: UserRole = 'ADMIN'): Session {

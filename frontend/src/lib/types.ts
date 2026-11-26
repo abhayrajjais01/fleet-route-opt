@@ -13,5 +13,5 @@ export interface Driver { id: number; full_name: string; license_number: string;
   hazmat_endorsed?: boolean; account_active?: boolean | null; account_email?: string | null }
 export interface Hub { id: number; name: string; code: string; address: string; latitude: number; longitude: number; contact_phone: string; operating_hours: string }
 export interface Shipment { id: number; tracking_number: string; customer_name: string; destination_address: string; weight_kg: number; volume_m3: number; time_window_start: string; time_window_end: string; priority: ShipmentPriority; status: ShipmentStatus; hub_id: number; latitude?: number; longitude?: number; assigned_vehicle_id?: number | null; dispatch_time?: string; route_sequence?: number | null; hazard_class?: string | null }
-export interface User { id: number; email: string; full_name: string; role: UserRole; is_active: boolean }
+export interface User { id: number; email: string; full_name: string; role: UserRole; is_active: boolean; reset_requested?: boolean }
 export interface AuditEntry { id: number; timestamp: string; actor_name: string; action_type: AuditAction; entity_type: string; entity_id: number; details: string }

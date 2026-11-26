@@ -9,9 +9,11 @@ mobile driver manifests, and offline action synchronization.
 from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.models.shipment import ShipmentStatus, ShipmentPriority
 from app.core.sanitize import CleanStr, CleanText
+from app.models.delivery import ProofMethod
+from app.services.delivery_proof import check_strokes
 
 
 class TransitFailureReason(str, Enum):
@@ -37,8 +39,23 @@ class TransitArriveRequest(BaseModel):
 
 class TransitDeliverRequest(BaseModel):
     recipient_name: CleanStr = Field(..., min_length=2, max_length=255, description="Name of consignee accepting package")
-    signature_text: Optional[CleanStr] = Field(None, max_length=255, description="Signee verification text or digital token")
+    delivery_code: Optional[str] = Field(None, pattern=r"^\d{6}$", description="The customer's 6-digit code, verified by the server")
+    signature: Optional[List[List[List[float]]]] = Field(None, description="Signature strokes: [[[x, y], ...], ...] with x, y from 0 to 1")
     notes: Optional[CleanText] = Field(None, max_length=500, description="Handover delivery notes")
+
+    @field_validator("signature")
+    @classmethod
+    def really_drawn(cls, v):
+        return None if v is None else check_strokes(v)
+
+
+class DeliveryProofResponse(BaseModel):
+    shipment_id: int
+    method: ProofMethod
+    recipient_name: str
+    captured_by_name: str
+    created_at: datetime
+    signature: Optional[List[List[List[float]]]] = None
 
 
 class TransitFailRequest(BaseModel):
@@ -151,6 +168,7 @@ class DriverMobileManifestResponse(BaseModel):
 
 
 class DriverOfflineActionType(str, Enum):
+    DEPART = "DEPART"
     ARRIVE = "ARRIVE"
     DELIVER = "DELIVER"
     FAIL = "FAIL"

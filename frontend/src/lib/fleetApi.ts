@@ -32,7 +32,7 @@ interface ApiDriver {
   max_driving_hours_per_day: number; hazmat_endorsed: boolean; assigned_hub_id: number; user_id: number | null; current_vehicle_id: number | null
   account_active: boolean | null; account_email: string | null
 }
-interface ApiUser { id: number; email: string; full_name: string; role: UserRole; is_active: boolean; driver: { id: number } | null; profile_missing: boolean }
+interface ApiUser { id: number; email: string; full_name: string; role: UserRole; is_active: boolean; driver: { id: number } | null; profile_missing: boolean; reset_requested: boolean }
 
 /** Fields the backend does not store (fuel gauge, driver rating) keep the value the app already showed. */
 export interface Extras { fuelPct: (plate: string) => number | undefined; rating: (licence: string) => number | undefined }
@@ -46,7 +46,7 @@ export const toDriver = (d: ApiDriver, x: Extras): Driver => ({ id: d.id, full_n
   phone_number: d.phone_number, status: d.status, max_driving_hours_per_day: d.max_driving_hours_per_day, assigned_hub_id: d.assigned_hub_id,
   current_vehicle_id: d.current_vehicle_id, rating: x.rating(d.license_number) ?? 4.5, user_id: d.user_id, hazmat_endorsed: d.hazmat_endorsed,
   account_active: d.account_active, account_email: d.account_email })
-const toUser = (u: ApiUser): User => ({ id: u.id, email: u.email, full_name: u.full_name, role: u.role, is_active: u.is_active })
+const toUser = (u: ApiUser): User => ({ id: u.id, email: u.email, full_name: u.full_name, role: u.role, is_active: u.is_active, reset_requested: u.reset_requested })
 
 export interface Roster { hubs: Hub[]; vehicles: Vehicle[]; drivers: Driver[]; users: User[] | null }
 
@@ -93,6 +93,7 @@ export const fleetApi = {
   createUser: (token: string, u: NewUser) => call<ApiUser>('/users', token, { method: 'POST', body: JSON.stringify(u) }).then(toUser),
   updateUser: (token: string, id: number, patch: { full_name?: string; role?: UserRole; is_active?: boolean }) =>
     call<ApiUser>(`/users/${id}`, token, { method: 'PATCH', body: JSON.stringify(patch) }).then(toUser),
+  resetPassword: (token: string, id: number) => call<{ temporary_password: string }>(`/users/${id}/reset-password`, token, { method: 'POST' }).then(r => r.temporary_password),
   linkDriver: (token: string, userId: number, driverId: number | null) =>
     call<ApiUser>(`/users/${userId}/driver`, token, { method: 'PUT', body: JSON.stringify({ driver_id: driverId }) }).then(toUser),
 }

@@ -15,6 +15,7 @@ from app.models.shipment import (
     ShipmentPriority,
     ShipmentStatus,
 )
+from app.models.delivery import DeliveryProof, ProofMethod
 from app.models.audit import (
     AuditLog,
     AuditAction,
@@ -35,6 +36,8 @@ __all__ = [
     "Shipment",
     "ShipmentPriority",
     "ShipmentStatus",
+    "DeliveryProof",
+    "ProofMethod",
     "AuditLog",
     "AuditAction",
 ]

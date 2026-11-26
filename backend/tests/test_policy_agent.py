@@ -16,6 +16,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.services.optimizer.hazmat import segregation_conflict
 from app.main import app
 from app.core.database import Base, get_db
 from app.core.security import hash_password, create_access_token
@@ -357,22 +358,31 @@ def test_commercial_licence_without_endorsement_is_not_hazmat_certified(policy_e
     assert "HAZMAT_DRIVER_UNENDORSED" not in [v.rule_code for v in report.violations]
 
 
-def test_incompatible_hazmat_coload_violation(policy_env):
-    """Class 3 and Class 8 in the same load violate SOP-HZ-001 §5 even with an endorsed driver."""
+@pytest.mark.parametrize("classes, conflict", [
+    (("3", "8"), False),                                        # not listed in SOP-HZ-001 §5
+    (("5.1", "3"), True), (("5.1", "4.1"), True), (("5.1", "4.2"), False),
+    (("8", "6.1"), True), (("8", "6.2"), False),
+    (("1.4", "3"), True), (("3", "3"), False),
+])
+def test_coload_rule_matches_the_sop_and_the_planner(policy_env, classes, conflict):
+    """Same verdict as the route planner's hazmat rules for every pair, even with an endorsed driver."""
     db = policy_env["db"]
-    driver = db.get(Driver, policy_env["d_comm_id"])
-    driver.hazmat_endorsed = True
+    db.get(Driver, policy_env["d_comm_id"]).hazmat_endorsed = True
+    ids = [policy_env["s_hazmat_id"], policy_env["s_corrosive_id"]]
+    for sid, hazard_class in zip(ids, classes):
+        db.get(Shipment, sid).hazard_class = hazard_class
     db.commit()
     report = PolicyComplianceAgent.evaluate_manifest(
         db=db,
         vehicle_id=policy_env["v_large_id"],
         driver_id=policy_env["d_comm_id"],
-        shipment_ids=[policy_env["s_hazmat_id"], policy_env["s_corrosive_id"]],
+        shipment_ids=ids,
         estimated_duration_minutes=120.0,
     )
-    assert report.is_compliant is False
     seg = [v for v in report.violations if v.rule_code == "HAZMAT_INCOMPATIBLE_COLOAD"]
-    assert seg and seg[0].sop_section == "§5"
+    assert bool(seg) is conflict is bool(segregation_conflict(classes))
+    if conflict:
+        assert report.is_compliant is False and seg[0].sop_section == "§5"
 
 
 def test_unresolved_references_are_rejected(policy_env):

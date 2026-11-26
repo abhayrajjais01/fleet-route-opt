@@ -25,6 +25,7 @@ class UserUpdate(BaseModel):
 
 class UserResponse(UserBase):
     id: int
+    must_change_password: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -34,6 +35,19 @@ class UserResponse(UserBase):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128, description="At least 8 characters, different from the current one")
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class Message(BaseModel):
+    message: str
 
 
 class Token(BaseModel):

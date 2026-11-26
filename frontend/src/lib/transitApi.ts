@@ -63,6 +63,15 @@ function authHeaders(token?: string | null): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
+/** Signature strokes: lists of [x, y] points, 0..1 across the pad. */
+export type Strokes = [number, number][][]
+/** What proves a handover: the customer's code (checked by the server) or the recipient's drawn signature. */
+export type Proof = { delivery_code: string } | { signature: Strokes }
+export interface DeliveryProof { shipment_id: number; method: 'DELIVERY_CODE' | 'SIGNATURE'; recipient_name: string; captured_by_name: string; created_at: string }
+
+export const deliveryProof = (shipmentId: number, token?: string | null) =>
+  apiRequest<DeliveryProof>(`/transit/shipments/${shipmentId}/proof`, { headers: authHeaders(token) })
+
 export async function departShipment(
   shipmentId: number,
   vehicleId?: number,
@@ -93,14 +102,14 @@ export async function arriveAtStop(
 export async function deliverShipment(
   shipmentId: number,
   recipientName: string,
-  signatureText?: string,
+  proof: Proof,
   notes?: string,
   token?: string | null
 ): Promise<TransitTransitionResponse> {
   return apiRequest<TransitTransitionResponse>(`/transit/shipments/${shipmentId}/deliver`, {
     method: 'POST',
     headers: authHeaders(token),
-    body: JSON.stringify({ recipient_name: recipientName, signature_text: signatureText, notes }),
+    body: JSON.stringify({ recipient_name: recipientName, ...proof, notes }),
   })
 }
 

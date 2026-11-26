@@ -119,6 +119,13 @@ def apply_database_migrations() -> None:
 _ADDED_COLUMNS = [
     ("drivers", "hazmat_endorsed", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("shipments", "hazard_class", "VARCHAR(10)"),
+    ("users", "must_change_password", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("users", "token_version", "INTEGER NOT NULL DEFAULT 0"),
+    ("users", "reset_requested_at", "TIMESTAMP"),
+    ("shipments", "dispatch_time", "VARCHAR(5)"),
+    ("shipments", "route_sequence", "INTEGER"),
+    ("shipments", "delivery_code_nonce", "VARCHAR(32)"),
+    ("shipments", "delivery_code_attempts", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

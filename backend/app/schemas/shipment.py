@@ -2,6 +2,7 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from app.models.fleet import DriverStatus, VehicleStatus
 from app.models.shipment import ShipmentPriority, ShipmentStatus
 from app.core.sanitize import CleanStr, CleanText
 
@@ -32,12 +33,21 @@ class ShipmentBase(BaseModel):
 
 
 class ShipmentCreate(ShipmentBase):
-    pass
+    @field_validator("status")
+    @classmethod
+    def starts_before_the_trip(cls, v: ShipmentStatus) -> ShipmentStatus:
+        if v not in (ShipmentStatus.UNASSIGNED, ShipmentStatus.CLUSTERED, ShipmentStatus.ASSIGNED):
+            raise ValueError("a new shipment cannot already be in transit or closed")
+        return v
 
 
 class ShipmentUpdate(BaseModel):
+    """Order details. Status, vehicle and route position change through the plan and transit endpoints."""
+    tracking_number: Optional[CleanStr] = Field(None, min_length=3, max_length=50)
+    hub_id: Optional[int] = None
+    hazard_class: Optional[CleanStr] = Field(None, max_length=10)
     customer_name: Optional[CleanStr] = Field(None, min_length=2, max_length=255)
-    destination_address: Optional[CleanStr] = None
+    destination_address: Optional[CleanStr] = Field(None, min_length=5, max_length=500)
     latitude: Optional[float] = Field(None, ge=-90.0, le=90.0, allow_inf_nan=False)
     longitude: Optional[float] = Field(None, ge=-180.0, le=180.0, allow_inf_nan=False)
     weight_kg: Optional[float] = Field(None, gt=0, allow_inf_nan=False)
@@ -45,8 +55,6 @@ class ShipmentUpdate(BaseModel):
     time_window_start: Optional[str] = Field(None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
     time_window_end: Optional[str] = Field(None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
     priority: Optional[ShipmentPriority] = None
-    status: Optional[ShipmentStatus] = None
-    assigned_vehicle_id: Optional[int] = None
 
 
 class ShipmentStatusUpdate(BaseModel):
@@ -56,10 +64,54 @@ class ShipmentStatusUpdate(BaseModel):
 
 class ShipmentResponse(ShipmentBase):
     id: int
+    dispatch_time: Optional[str] = None
+    route_sequence: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# =====================================================================
+# Saved plans (dispatches and re-routes)
+# =====================================================================
+
+class PlanShipment(BaseModel):
+    id: int
+    expected_status: ShipmentStatus = Field(..., description="What the dispatcher was looking at; a mismatch is refused")
+    expected_vehicle_id: Optional[int] = None
+    expected_route_sequence: Optional[int] = None
+    expected_dispatch_time: Optional[str] = None
+    status: ShipmentStatus = Field(..., description="ASSIGNED, UNASSIGNED, or the current status when only the route changes")
+    assigned_vehicle_id: Optional[int] = None
+    route_sequence: Optional[int] = Field(None, ge=0, le=1000)
+    dispatch_time: Optional[str] = Field(None, pattern=r"^([01]\d|2[0-3]):([0-5]\d)$")
+
+
+class PlanVehicle(BaseModel):
+    id: int
+    expected_status: VehicleStatus
+    current_status: VehicleStatus
+
+
+class PlanDriver(BaseModel):
+    id: int
+    expected_status: DriverStatus
+    expected_vehicle_id: Optional[int] = None
+    status: DriverStatus
+    current_vehicle_id: Optional[int] = None
+
+
+class PlanChange(BaseModel):
+    reason: CleanStr = Field(..., min_length=3, max_length=300, description="Recorded in the audit trail")
+    shipments: List[PlanShipment] = Field(..., min_length=1, max_length=500)
+    vehicles: List[PlanVehicle] = Field(default_factory=list, max_length=100)
+    drivers: List[PlanDriver] = Field(default_factory=list, max_length=100)
+
+
+class DeliveryCodeResponse(BaseModel):
+    code: str = Field(..., description="6 digits. Pass it to the customer; drivers cannot see it")
+    attempts_left: int
 
 
 # =====================================================================

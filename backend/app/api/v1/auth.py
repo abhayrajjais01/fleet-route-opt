@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timezone
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -8,17 +8,23 @@ from app.core.database import get_db
 from app.core.security import (
     hash_password,
     verify_password,
-    create_access_token,
     get_current_user,
     get_optional_user,
+    get_signed_in_user,
+    issue_token,
 )
+from app.models.audit import AuditAction
 from app.models.user import User, UserRole
 from app.schemas.auth import (
     UserCreate,
     UserResponse,
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
     LoginRequest,
+    Message,
     Token,
 )
+from app.services.audit_service import record_audit_event
 
 router = APIRouter(tags=["Authentication & RBAC"])
 SELF_SERVICE_ROLE = UserRole.DRIVER
@@ -66,9 +72,7 @@ def register(user_in: UserCreate, db: Session = Depends(get_db), caller: Optiona
     db.refresh(new_user)
 
     # Create access token
-    access_token = create_access_token(
-        data={"sub": new_user.email, "role": new_user.role.value}
-    )
+    access_token = issue_token(new_user)
 
     return Token(
         access_token=access_token,
@@ -98,9 +102,7 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)) -> Any:
             detail="User account is inactive"
         )
 
-    access_token = create_access_token(
-        data={"sub": user.email, "role": user.role.value}
-    )
+    access_token = issue_token(user)
 
     return Token(
         access_token=access_token,
@@ -115,7 +117,7 @@ def login(credentials: LoginRequest, db: Session = Depends(get_db)) -> Any:
     summary="Current User Profile",
     description="Returns the profile and role privileges of the currently authenticated user.",
 )
-def get_me(current_user: User = Depends(get_current_user)) -> Any:
+def get_me(current_user: User = Depends(get_signed_in_user)) -> Any:
     return current_user
 
 
@@ -126,14 +128,55 @@ def get_me(current_user: User = Depends(get_current_user)) -> Any:
     description="Issues a renewed access token for the active session.",
 )
 def refresh_token(current_user: User = Depends(get_current_user)) -> Any:
-    access_token = create_access_token(
-        data={"sub": current_user.email, "role": current_user.role.value}
-    )
+    access_token = issue_token(current_user)
     return Token(
         access_token=access_token,
         token_type="bearer",
         user=UserResponse.model_validate(current_user),
     )
+
+
+@router.post(
+    "/change-password",
+    response_model=Token,
+    summary="Change Your Password",
+    description="Needs the current password. Ends every other session and returns a fresh token for this one.",
+)
+def change_password(body: ChangePasswordRequest, db: Session = Depends(get_db), user: User = Depends(get_signed_in_user)) -> Any:
+    # 400, not 401: the session itself is fine, and clients treat 401 as "signed out".
+    if not verify_password(body.current_password, user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Your current password is not correct.")
+    if body.new_password == body.current_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose a password you are not already using.")
+    if body.new_password.strip().lower() == user.email.lower():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Your password cannot be your email address.")
+    user.hashed_password = hash_password(body.new_password)
+    user.must_change_password = False
+    user.reset_requested_at = None
+    user.token_version = (user.token_version or 0) + 1
+    record_audit_event(db, user, AuditAction.ASSET_UPDATED, "User", user.id, f"{user.email} changed their password",
+                       {"password": "previous"}, {"password": "changed by the account holder"})
+    db.commit()
+    db.refresh(user)
+    return Token(access_token=issue_token(user), user=UserResponse.model_validate(user))
+
+
+@router.post(
+    "/forgot-password",
+    response_model=Message,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Ask for a Password Reset",
+    description="Flags the account for an administrator, who issues a temporary password from the Users page. The answer "
+                "is the same whether or not the account exists, so it cannot be used to discover accounts.",
+)
+def forgot_password(body: ForgotPasswordRequest, db: Session = Depends(get_db)) -> Any:
+    user = db.query(User).filter(User.email == body.email).first()
+    if user and user.is_active and user.reset_requested_at is None:
+        user.reset_requested_at = datetime.now(timezone.utc)
+        record_audit_event(db, user, AuditAction.ASSET_UPDATED, "User", user.id, f"Password reset requested for {user.email}",
+                           {"reset_requested": False}, {"reset_requested": True})
+        db.commit()
+    return Message(message="If that account exists, your administrator has been asked to reset its password.")
 
 
 @router.post(

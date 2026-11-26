@@ -35,7 +35,8 @@ class Bucket:
 def default_buckets(api: str, auth_per_min: int, ai_per_min: int, export_per_min: int, default_per_min: int) -> List[Bucket]:
     """First match wins. Paths are matched without the query string."""
     return [
-        Bucket("auth", auth_per_min, prefixes=(f"{api}/auth/login", f"{api}/auth/register", f"{api}/auth/token")),
+        Bucket("auth", auth_per_min, prefixes=(f"{api}/auth/login", f"{api}/auth/register", f"{api}/auth/token",
+                                               f"{api}/auth/forgot-password", f"{api}/auth/change-password")),
         Bucket("ai", ai_per_min, prefixes=(f"{api}/copilot/query", f"{api}/copilot/proposals", f"{api}/copilot/guardrails",
                                            f"{api}/routes/disruption", f"{api}/rag/search", f"{api}/rag/benchmark")),
         Bucket("export", export_per_min, suffixes=(".csv", ".pdf")),

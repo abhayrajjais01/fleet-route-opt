@@ -72,8 +72,8 @@ const fmtDur = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${String(Math.r
 export default function RoutePlannerSection({ hubs, vehicles, drivers, users, shipments, onAddShipments, onDispatchRoutes, addAudit, onOpenTracking, authToken }: {
   authToken: string | null
   hubs: Hub[]; vehicles: Vehicle[]; drivers: Driver[]; users: User[]; shipments: Shipment[]
-  onAddShipments: (s: Shipment[]) => void
-  onDispatchRoutes: (r: RouteDispatch[]) => void
+  onAddShipments: (s: Shipment[]) => Promise<string | null>
+  onDispatchRoutes: (r: RouteDispatch[]) => Promise<string | null>
   addAudit: (a: Omit<AuditEntry, 'id' | 'timestamp'>) => void
   onOpenTracking: () => void
 }) {
@@ -97,6 +97,7 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
   const [focusId, setFocusId] = useState<string | null>(null)
   const [explainFor, setExplainFor] = useState<number | null>(null)
   const [dispatched, setDispatched] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   // Reset selections when the hub changes: all open orders, all free vehicles.
   useEffect(() => {
@@ -223,10 +224,13 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
       details: `${s.tracking_number} moved to stop ${target + 1} on ${next[to.route].vehicle.plate_number} (manual resequence)` })
   }
 
-  function approveAll() {
-    if (!plan) return
+  async function approveAll() {
+    if (!plan || saving) return
     const routes = plan.filter(r => r.stops.length && r.driver)
-    onDispatchRoutes(routes.map(r => ({ vehicleId: r.vehicle.id, driverId: r.driver!.id, departure, shipmentIds: r.stops.map(s => s.id) })))
+    setSaving(true); setError(null)
+    const problem = await onDispatchRoutes(routes.map(r => ({ vehicleId: r.vehicle.id, driverId: r.driver!.id, departure, shipmentIds: r.stops.map(s => s.id) })))
+    setSaving(false)
+    if (problem) { setError(problem); return }
     routes.forEach(r => addAudit({ actor_name: 'Dispatcher', action_type: 'DISPATCH_APPROVED', entity_type: 'VEHICLE', entity_id: r.vehicle.id,
       details: `${r.vehicle.plate_number} dispatched with ${r.driver!.full_name} at ${departure}: ${r.stops.map(s => s.tracking_number).join(' → ')}` }))
     setDispatched(true)
@@ -281,14 +285,14 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
     setProposal(null); setAgentText('')
   }
 
-  function addSamples() {
+  async function addSamples() {
     const rng = (n: number) => Math.random() * n
     const windows = [['08:30', '11:00'], ['09:00', '12:00'], ['10:00', '13:00'], ['11:00', '15:00'], ['12:00', '17:00']]
     const names = ['Croma', 'Decathlon', 'Big Basket', 'Asian Paints', 'Zepto', 'Blinkit', 'Lenskart', 'Pepperfry']
     const base = Date.now()
     // Real localities near the hub (so stops are on reachable streets); a small offset keeps repeat samples apart.
     const places = placesNear(hub, names.length)
-    onAddShipments(names.map((n, i) => {
+    const problem = await onAddShipments(names.map((n, i) => {
       const [ws, we] = windows[i % windows.length]
       const place = places[i]
       const jitter = () => rng(0.003) - 0.0015
@@ -300,6 +304,7 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
         latitude: place ? place.lat + jitter() : hub.latitude + (rng(0.08) - 0.04),
         longitude: place ? place.lon + jitter() : hub.longitude + (rng(0.08) - 0.04) }
     }))
+    if (problem) setError(problem)
   }
 
   const routesForMap: PlanMapRoute[] = (plan ?? []).filter(r => r.stops.length).map((r, i) => ({
@@ -545,7 +550,7 @@ export default function RoutePlannerSection({ hubs, vehicles, drivers, users, sh
             ) : (
               <>
                 {blockers.length > 0 && <p className="text-xs text-red-600 mb-2">{blockers[0]}{blockers.length > 1 ? ` (+${blockers.length - 1} more)` : ''}</p>}
-                <button onClick={approveAll} disabled={blockers.length > 0}
+                <button onClick={approveAll} disabled={blockers.length > 0 || saving}
                   className="w-full py-2.5 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:bg-slate-100 disabled:text-slate-400">
                   Approve & dispatch {plan.filter(r => r.stops.length).length} route{plan.filter(r => r.stops.length).length === 1 ? '' : 's'}
                 </button>

@@ -72,3 +72,6 @@ def auth_headers(client, email: str, role: str = "ADMIN", full_name: str | None 
     assert res.status_code == 201, res.text
     return {"Authorization": f"Bearer {res.json()['access_token']}"}
 
+
+# A drawn signature (two strokes across the pad), accepted as proof of delivery.
+SIGNATURE = [[[0.1 + i * 0.04, 0.5 + (0.2 if i % 2 else -0.2)] for i in range(12)], [[0.6, 0.4], [0.7, 0.6], [0.85, 0.45]]]

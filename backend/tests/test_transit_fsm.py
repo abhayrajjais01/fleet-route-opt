@@ -16,6 +16,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from tests.conftest import SIGNATURE
 from app.main import app
 from app.core.database import Base, get_db
 from app.core.security import hash_password, create_access_token
@@ -281,7 +282,7 @@ def test_deliver_shipment_happy_path(fsm_client, fsm_env):
         f"/api/v1/transit/shipments/{s1_id}/deliver",
         json={
             "recipient_name": "Sanjay Mehta (Store Mgr)",
-            "signature_text": "SIG-OTP-98214",
+            "signature": SIGNATURE,
             "notes": "Handed to dock supervisor with invoice",
         },
         headers=fsm_env["driver_headers"],
@@ -299,7 +300,7 @@ def test_deliver_terminal_state_cannot_transition(fsm_client, fsm_env):
     fsm_client.post(f"/api/v1/transit/shipments/{s1_id}/depart", json={}, headers=fsm_env["driver_headers"])
     fsm_client.post(
         f"/api/v1/transit/shipments/{s1_id}/deliver",
-        json={"recipient_name": "John Doe"},
+        json={"recipient_name": "John Doe", "signature": SIGNATURE},
         headers=fsm_env["driver_headers"],
     )
 
@@ -387,7 +388,7 @@ def test_trip_fsm_progress_metrics_and_driver_role(fsm_client, fsm_env):
 
     # Deliver S1
     fsm_client.post(f"/api/v1/transit/shipments/{s1_id}/depart", json={}, headers=fsm_env["driver_headers"])
-    fsm_client.post(f"/api/v1/transit/shipments/{s1_id}/deliver", json={"recipient_name": "R. Sharma"}, headers=fsm_env["driver_headers"])
+    fsm_client.post(f"/api/v1/transit/shipments/{s1_id}/deliver", json={"recipient_name": "R. Sharma", "signature": SIGNATURE}, headers=fsm_env["driver_headers"])
 
     # Query trip progress
     resp = fsm_client.get(f"/api/v1/transit/trips/{vehicle_id}/progress", headers=fsm_env["driver_headers"])

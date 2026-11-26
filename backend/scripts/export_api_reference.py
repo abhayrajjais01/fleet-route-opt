@@ -55,7 +55,7 @@ def _roles(route: APIRoute) -> str:
             for role in cells.get("allowed_roles", []):
                 if role.value not in found:
                     found.append(role.value)
-        elif name == "get_current_user":
+        elif name in ("get_current_user", "get_signed_in_user"):
             signed_in = True
         for sub in dep.dependencies:
             walk(sub)

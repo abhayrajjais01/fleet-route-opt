@@ -14,13 +14,9 @@ import TrackingMap, { type MapInsets, STOP_COLOR } from './TrackingMap'
 import { FsmProgressBar } from './FsmProgressBar'
 import SlaAlerts, { type FixKind } from './SlaAlerts'
 import { downloadFile } from '../../lib/download'
-import {
-  arriveAtStop,
-  deliverShipment,
-  failDelivery,
-  reportDelay as apiReportDelay,
-  type TransitFailureReason,
-} from '../../lib/transitApi'
+import { arriveAtStop, deliverShipment, failDelivery, reportDelay as apiReportDelay, type TransitFailureReason, departShipment, deliveryProof } from '../../lib/transitApi'
+import { proofMethod, proofTime, saveError } from '../../lib/shipmentsApi'
+import ProofFields, { emptyProof, proofOf, type ProofDraft } from '../delivery/ProofOfDelivery'
 
 const TRIP_COLORS = ['#7c3aed', '#0891b2', '#ea580c', '#db2777', '#16a34a']
 const DEFAULT_DEPART = '08:30'
@@ -69,6 +65,12 @@ export interface LiveTrackingSectionProps {
   onOpenPlanner?: () => void
   authToken?: string | null
   setShipments?: React.Dispatch<React.SetStateAction<Shipment[]>>
+  /** Shipments are saved on the server: it decides, and nothing changes here until it agrees. */
+  online?: boolean
+  /** Re-reads the saved plan after a change. */
+  onSaved?: () => void
+  /** Saves an accepted recovery. Resolves to a note for the dispatcher; throws when it could not be saved. */
+  onApplyRecovery?: (p: DisruptionProposal, now: string) => Promise<string | void>
 }
 
 export default function LiveTrackingSection({
@@ -83,6 +85,9 @@ export default function LiveTrackingSection({
   onOpenPlanner,
   authToken,
   setShipments,
+  online = false,
+  onSaved,
+  onApplyRecovery,
 }: LiveTrackingSectionProps) {
   const [plans, setPlans] = useState<TripPlan[]>([])
   const [events, setEvents] = useState<Record<string, TripEvents>>({})
@@ -94,14 +99,12 @@ export default function LiveTrackingSection({
 
   // Driver modal state
   const [deliverModal, setDeliverModal] = useState<StopView | null>(null)
-  const [recipientInput, setRecipientInput] = useState('')
+  const [proof, setProof] = useState<ProofDraft>(emptyProof)
   const [failModal, setFailModal] = useState<StopView | null>(null)
   const [failReason, setFailReason] = useState<TransitFailureReason>('CONSIGNEE_UNAVAILABLE')
   const [failNotes, setFailNotes] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-  // Proof of delivery captured in this session (who signed, when), used on the customer's receipt.
-  const [pod, setPod] = useState<Record<number, { recipient: string; at: string }>>({})
   const [fix, setFix] = useState<{ planId: string; plate: string; loading: boolean; proposal?: DisruptionProposal; error?: string } | null>(null)
 
   const tripInputs = useMemo(() => {
@@ -186,30 +189,36 @@ export default function LiveTrackingSection({
 
   const actor = isDriver ? myTrip?.plan.driver?.full_name ?? 'Driver' : 'Dispatcher'
 
-  // Trips planned in the browser (Route Planner, sample orders) live only in the client simulation, so the server's
-  // FSM can reject them (unknown id, or still UNASSIGNED there). Server sync is best-effort: the simulation always
-  // updates so downstream ETAs and SLA alerts stay correct, and a rejection is shown as a notice instead of a dead button.
-  async function serverSync(call: () => Promise<unknown>, what: string) {
-    if (!authToken) return
+  // Online, the server's FSM decides: a refusal is shown and nothing changes here. Offline, the simulation carries on
+  // in this browser only (deliveries excepted: those need the server to record the proof).
+  async function serverSync(call: () => Promise<unknown>, what: string): Promise<boolean> {
+    if (!online || !authToken) return true
     try {
       await call()
       setActionError(null)
-    } catch (err: any) {
-      setActionError(`${what} applied to the live simulation only. Server: ${err?.message || 'rejected'}`)
+      onSaved?.()
+      return true
+    } catch (err) {
+      setActionError(`${what} not saved. ${saveError(err)}`)
+      return false
     }
+  }
+  /** A stop that hasn't left the depot yet departs first (the FSM has no shortcut from ASSIGNED). */
+  async function departIfNeeded(s: Shipment) {
+    if (s.status === 'ASSIGNED') await departShipment(s.id, undefined, 'On the road', authToken)
   }
 
   const actions = {
     async delay(trip: TripView, minutes: number, reason: string) {
       const next = trip.nextStop
-      if (next) await serverSync(() => apiReportDelay(next.shipment.id, minutes, reason, authToken), 'Delay')
+      if (next && !(await serverSync(() => apiReportDelay(next.shipment.id, minutes, reason, authToken), 'Delay'))) return
       updateEvents(trip, e => ({ ...e, delays: [...e.delays, { at: simMin, minutes, reason }] }))
       addAudit({ actor_name: actor, action_type: 'STATUS_CHANGE', entity_type: 'ROUTE', entity_id: trip.plan.vehicle.id, details: `${trip.plan.vehicle.plate_number} delayed +${minutes} min (${reason}) at ${clock(simMin)}; downstream ETAs recalculated` })
     },
     async arrive(trip: TripView) {
       const s = trip.nextStop
       if (!s) return
-      await serverSync(() => arriveAtStop(s.shipment.id, s.shipment.latitude, s.shipment.longitude, 'Driver checked in', authToken), 'Arrival')
+      if (!(await serverSync(async () => { await departIfNeeded(s.shipment); await arriveAtStop(s.shipment.id, s.shipment.latitude, s.shipment.longitude, 'Driver checked in', authToken) }, 'Arrival'))) return
       if (setShipments) {
         setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'ARRIVED' } : sh))
       }
@@ -227,7 +236,7 @@ export default function LiveTrackingSection({
       if (!s) return
       setActionError(null)
       setDeliverModal(s)
-      setRecipientInput(s.shipment.customer_name)
+      setProof(emptyProof())
     },
     breakdown(trip: TripView) {
       updateEvents(trip, e => ({ ...e, blockedAt: simMin }))
@@ -238,16 +247,18 @@ export default function LiveTrackingSection({
   async function handleConfirmDelivery() {
     if (!deliverModal) return
     const s = deliverModal
+    const ready = proofOf(proof)
+    if (!ready) return
+    if (!online || !authToken) { setActionError('A delivery can only be confirmed while connected: the server records the proof.'); return }
     setActionLoading(true)
     setActionError(null)
-    const recipient = recipientInput.trim() || s.shipment.customer_name
-
-    await serverSync(() => deliverShipment(s.shipment.id, recipient, 'SIG-VERIFIED', 'Handed over to consignee', authToken), 'Delivery')
+    const { recipient } = ready
+    const saved = await serverSync(async () => { await departIfNeeded(s.shipment); await deliverShipment(s.shipment.id, recipient, ready.proof, 'Handed over to consignee', authToken) }, 'Delivery')
+    if (!saved) { setActionLoading(false); return }
 
     if (setShipments) {
       setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'DELIVERED' } : sh))
     }
-    setPod(prev => ({ ...prev, [s.shipment.id]: { recipient, at: clock(simMin) } }))
 
     addAudit({
       actor_name: actor,
@@ -267,7 +278,7 @@ export default function LiveTrackingSection({
     setActionLoading(true)
     setActionError(null)
 
-    await serverSync(() => failDelivery(s.shipment.id, failReason, failNotes || 'Delivery failed', authToken), 'Failed stop')
+    if (!(await serverSync(async () => { await departIfNeeded(s.shipment); await failDelivery(s.shipment.id, failReason, failNotes || 'Delivery failed', authToken) }, 'Failed stop'))) { setActionLoading(false); return }
 
     if (setShipments) {
       setShipments(prev => prev.map(sh => sh.id === s.shipment.id ? { ...sh, status: 'FAILED' } : sh))
@@ -304,12 +315,12 @@ export default function LiveTrackingSection({
 
   // ── Week 14: customer delivery receipt (proof of delivery) ─────────────────────────────────────────────────
   async function downloadReceipt(v: TripView, s: StopView) {
-    const p = pod[s.shipment.id]
     try {
+      // Only a delivery with recorded proof gets a receipt; a stop the clock has merely passed does not.
+      const p = await deliveryProof(s.shipment.id, authToken)
       await downloadFile('/routes/receipt.pdf', authToken ?? null, {
         tracking_number: s.shipment.tracking_number, customer_name: s.shipment.customer_name, address: s.shipment.destination_address,
-        delivered_at: p?.at ?? clock(s.serviceEnd), recipient: p?.recipient ?? s.shipment.customer_name,
-        verified_by: p ? 'Signature captured by the driver' : 'Delivery confirmed in the driver app', weight_kg: s.shipment.weight_kg,
+        delivered_at: proofTime(p), recipient: p.recipient_name, verified_by: proofMethod(p), weight_kg: s.shipment.weight_kg,
         vehicle: v.plan.vehicle.plate_number, driver: v.plan.driver?.full_name ?? null, hub: v.plan.hub.name,
       }, `receipt-${s.shipment.tracking_number}.pdf`)
     } catch (e) { setActionError(e instanceof TypeError ? 'Receipts need the backend to be running.' : (e as Error).message) }
@@ -318,14 +329,17 @@ export default function LiveTrackingSection({
   // ── Week 12: recovery suggestions from the Optimization Agent ──────────────────────────────────────────────
   const toRouteVehicle = (v: Vehicle, d: Driver | null): RouteVehicle => ({ id: String(v.id), label: v.plate_number, capacity_kg: v.max_payload_kg,
     capacity_m3: v.max_volume_m3, vehicle_type: v.vehicle_type, max_shift_hours: Math.min(14, d?.max_driving_hours_per_day ?? 10), ...(d ? { driver_name: d.full_name } : {}) })
-  /** The live situation at one hub, in the shape the agent's API takes (delivered stops marked completed). */
+  /**
+   * The live situation at one hub, in the shape the agent's API takes. Online, only stops really delivered count as
+   * completed: one the simulated clock has merely passed must still be moved off a broken-down truck.
+   */
   function fleetAtHub(hubId: number): FleetRouteIn[] {
     return views.filter(v => v.plan.hub.id === hubId).map(v => ({
       vehicle: toRouteVehicle(v.plan.vehicle, v.plan.driver),
       stops: v.plan.stops.map(s => ({ id: String(s.id), latitude: s.latitude!, longitude: s.longitude!, weight_kg: s.weight_kg, volume_m3: s.volume_m3,
         window_start: s.time_window_start, window_end: s.time_window_end, name: s.customer_name, address: s.destination_address, priority: s.priority })),
       departure: clock(v.plan.departMin),
-      completed: Object.fromEntries(v.stops.filter(s => s.state === 'DELIVERED').map(s => [String(s.shipment.id), clock(s.serviceEnd)])),
+      completed: Object.fromEntries(v.stops.filter(s => online ? s.shipment.status === 'DELIVERED' : s.state === 'DELIVERED').map(s => [String(s.shipment.id), clock(s.serviceEnd)])),
     }))
   }
   async function suggestFix(planId: string, kind: FixKind) {
@@ -346,24 +360,16 @@ export default function LiveTrackingSection({
     }
   }
   /** Applies an approved proposal to the live plan: new vehicle for moved stops, new visiting order everywhere. */
-  function approveFix() {
+  async function approveFix() {
     const p = fix?.proposal
-    if (!p || !setShipments) return
-    const byPlate = new Map(vehicles.map(v => [v.plate_number, v.id]))
-    const order = new Map<number, number>()
-    for (const stops of Object.values(p.routes_after)) stops.forEach((s, i) => order.set(Number(s.stop_id), i + 1))
-    const moves = new Map(p.changes.filter(c => c.from_vehicle !== c.to_vehicle).map(c => [Number(c.stop_id), c.to_vehicle]))
-    setShipments(prev => prev.map(s => {
-      if (moves.has(s.id)) {
-        const to = moves.get(s.id)
-        return to ? { ...s, assigned_vehicle_id: byPlate.get(to) ?? s.assigned_vehicle_id, status: 'ASSIGNED' as ShipmentStatus, route_sequence: order.get(s.id) ?? null }
-          : { ...s, assigned_vehicle_id: null, status: 'UNASSIGNED' as ShipmentStatus, route_sequence: null }
-      }
-      return order.has(s.id) ? { ...s, route_sequence: order.get(s.id)! } : s
-    }))
-    addAudit({ actor_name: 'Dispatcher', action_type: 'COPILOT_OVERRIDE', entity_type: 'VEHICLE', entity_id: vehicles.find(v => v.plate_number === fix!.plate)?.id ?? 0,
-      details: `Approved agent recovery for ${fix!.plate} (${p.tool_call.name}): ${p.summary}` })
-    setFix(null)
+    if (!p || !onApplyRecovery) return
+    try {
+      const note = await onApplyRecovery(p, clock(simMin))
+      if (note) setActionError(note)
+      setFix(null)
+    } catch (e) {
+      setFix(f => (f ? { ...f, error: saveError(e) } : f))
+    }
   }
 
   return (
@@ -523,7 +529,7 @@ export default function LiveTrackingSection({
 
       {/* ── Confirm Delivery Modal ── */}
       {deliverModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
@@ -538,16 +544,7 @@ export default function LiveTrackingSection({
                   ⚠ {actionError}
                 </div>
               )}
-              <div>
-                <label className="text-xs font-semibold text-slate-600 block mb-1">Customer / Consignee Name</label>
-                <input
-                  type="text"
-                  value={recipientInput}
-                  onChange={e => setRecipientInput(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-500"
-                  placeholder="Enter recipient name"
-                />
-              </div>
+              <ProofFields draft={proof} onChange={setProof} />
               <div className="bg-slate-50 rounded-lg p-2.5 text-xs text-slate-600 space-y-1">
                 <p><b>Address:</b> {deliverModal.shipment.destination_address}</p>
                 <p><b>Parcel Weight:</b> {deliverModal.shipment.weight_kg} kg</p>
@@ -558,7 +555,7 @@ export default function LiveTrackingSection({
               <button onClick={() => setDeliverModal(null)} className="px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50">Cancel</button>
               <button
                 onClick={handleConfirmDelivery}
-                disabled={actionLoading}
+                disabled={actionLoading || !proofOf(proof)}
                 className="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
               >
                 {actionLoading ? 'Confirming...' : 'Confirm Delivery ✓'}
@@ -570,7 +567,7 @@ export default function LiveTrackingSection({
 
       {/* ── Report Failure Modal ── */}
       {failModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
